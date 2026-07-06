@@ -260,72 +260,80 @@ export default {
     let robotModel = null
     const createRobotModel = () => {
       try {
-        // 创建机器人组合体
         robotModel = new THREE.Group()
 
-        // 机器人底盘 (长方体)
-        const chassisGeometry = new THREE.BoxGeometry(1.0, 0.6, 0.3)
-        const chassisMaterial = new THREE.MeshLambertMaterial({ color: 0x4CAF50 })
-        const chassis = new THREE.Mesh(chassisGeometry, chassisMaterial)
-        chassis.position.set(0, 0, 0.15)
-        robotModel.add(chassis)
+        const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0x2e7d32 })
+        const armMaterial = new THREE.MeshLambertMaterial({ color: 0x455a64 })
+        const rotorMaterial = new THREE.MeshLambertMaterial({ color: 0x90a4ae, transparent: true, opacity: 0.75 })
+        const lidarMaterial = new THREE.MeshLambertMaterial({ color: 0x1e88e5 })
+        const accentMaterial = new THREE.MeshLambertMaterial({ color: 0xff7043 })
 
-        // 机器人头部/传感器 (圆柱体)
-        const headGeometry = new THREE.CylinderGeometry(0.15, 0.15, 0.2)
-        const headMaterial = new THREE.MeshLambertMaterial({ color: 0x2196F3 })
-        const head = new THREE.Mesh(headGeometry, headMaterial)
-        head.position.set(0.3, 0, 0.4)
-        robotModel.add(head)
+        // Central UAV body, slightly flattened for a clear top-down silhouette.
+        const bodyGeometry = new THREE.BoxGeometry(0.55, 0.42, 0.16)
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial)
+        body.position.set(0, 0, 0.02)
+        robotModel.add(body)
 
-        // 方向指示箭头
-        const arrowGeometry = new THREE.ConeGeometry(0.1, 0.3)
-        const arrowMaterial = new THREE.MeshLambertMaterial({ color: 0xFF5722 })
-        const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial)
-        arrow.position.set(0.6, 0, 0.15)
+        // X frame: two diagonal arms for a quadrotor top-down silhouette.
+        const armGeometry = new THREE.BoxGeometry(1.65, 0.08, 0.06)
+        const armA = new THREE.Mesh(armGeometry, armMaterial)
+        const armB = new THREE.Mesh(armGeometry, armMaterial)
+        armA.position.set(0, 0, 0.02)
+        armB.position.set(0, 0, 0.02)
+        armA.rotation.z = Math.PI / 4
+        armB.rotation.z = -Math.PI / 4
+        robotModel.add(armA)
+        robotModel.add(armB)
+
+        // Horizontal discs represent the combined motors and propellers.
+        const rotorGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.035, 40)
+        const rotorOffset = 0.58
+        const rotorPositions = [
+          { x: rotorOffset, y: rotorOffset },
+          { x: rotorOffset, y: -rotorOffset },
+          { x: -rotorOffset, y: rotorOffset },
+          { x: -rotorOffset, y: -rotorOffset }
+        ]
+
+        rotorPositions.forEach(pos => {
+          const rotor = new THREE.Mesh(rotorGeometry, rotorMaterial)
+          rotor.position.set(pos.x, pos.y, 0.04)
+          rotor.rotation.x = Math.PI / 2
+          robotModel.add(rotor)
+        })
+
+        // Small cylinder on top representing the LiDAR.
+        const lidarGeometry = new THREE.CylinderGeometry(0.12, 0.12, 0.12, 32)
+        const lidar = new THREE.Mesh(lidarGeometry, lidarMaterial)
+        lidar.position.set(0, 0, 0.14)
+        lidar.rotation.x = Math.PI / 2
+        robotModel.add(lidar)
+
+        // Forward direction marker along +X.
+        const arrowGeometry = new THREE.ConeGeometry(0.09, 0.24, 16)
+        const arrow = new THREE.Mesh(arrowGeometry, accentMaterial)
+        arrow.position.set(0.34, 0, 0.04)
         arrow.rotation.z = -Math.PI / 2
         robotModel.add(arrow)
 
-        // 轮子 (4个圆柱体)
-        const wheelGeometry = new THREE.CylinderGeometry(0.15, 0.15, 0.1)
-        const wheelMaterial = new THREE.MeshLambertMaterial({ color: 0x424242 })
-
-        const wheelPositions = [
-          { x: 0.35, y: 0.35, z: 0.15 },
-          { x: 0.35, y: -0.35, z: 0.15 },
-          { x: -0.35, y: 0.35, z: 0.15 },
-          { x: -0.35, y: -0.35, z: 0.15 }
-        ]
-
-        wheelPositions.forEach(pos => {
-          const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial)
-          wheel.position.set(pos.x, pos.y, pos.z)
-          wheel.rotation.x = Math.PI / 2
-          robotModel.add(wheel)
-        })
-
-        // 机器人坐标轴 (小一点的轴)
-        const robotAxes = new THREE.AxesHelper(0.5)
-        robotAxes.position.set(0, 0, 0.3)
+        const robotAxes = new THREE.AxesHelper(0.45)
+        robotAxes.position.set(0, 0, 0.16)
         robotModel.add(robotAxes)
 
-        // 初始位置
         robotModel.position.set(0, 0, 0)
         robotModel.userData = {
-          type: 'robot',
+          type: 'uav',
           lastUpdate: Date.now()
         }
 
         scene.add(robotModel)
-        console.log('机器人模型已创建')
+        console.log('UAV model created')
 
       } catch (error) {
-        console.warn('创建机器人模型失败:', error)
+        console.warn('Failed to create UAV model:', error)
       }
     }
 
-    /**
-     * 更新机器人位置
-     */
     const updateRobotPosition = (position, orientation = null) => {
       if (!robotModel) return
 
@@ -336,7 +344,7 @@ export default {
         const y = position.y || position._y || 0
         const z = position.z || position._z || 0
 
-        robotModel.position.set(x, y, z + 0.15)  // 稍微抬高避免与地面重合
+        robotModel.position.set(x, y, z)
 
         // 更新方向，支持下划线前缀
         if (orientation) {
