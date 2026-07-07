@@ -187,7 +187,6 @@
                     @settings-update="onSettingsUpdate"
                     @camera-reset="onCameraReset"
                     @view-preset="onViewPreset"
-                    @navigation-tool-change="onNavigationToolChange"
                   />
                 </div>
               </div>
@@ -324,7 +323,6 @@
                 @settings-update="onSettingsUpdate"
                 @camera-reset="onCameraReset"
                 @view-preset="onViewPreset"
-                @navigation-tool-change="onNavigationToolChange"
               />
               <StatusPanel v-else-if="panel.id === 'status'" :compact="false" />
               <ChartPanel v-else-if="panel.id === 'chart'" :compact="false" />

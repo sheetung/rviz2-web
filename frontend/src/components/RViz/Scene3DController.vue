@@ -210,40 +210,6 @@
           />
         </div>
 
-        <div class="control-item">
-          <label>导航工具:</label>
-          <div class="navigation-tools">
-            <el-button-group size="small">
-              <el-button
-                :type="currentTool === '2d_goal' ? 'primary' : 'default'"
-                @click="setNavigationTool('2d_goal')"
-                title="点击并拖拽设置目标位置和方向"
-              >
-                <el-icon><Aim /></el-icon>
-                2D目标点
-              </el-button>
-              <el-button
-                :type="currentTool === '2d_pose' ? 'primary' : 'default'"
-                @click="setNavigationTool('2d_pose')"
-                title="点击并拖拽设置初始位置和方向"
-              >
-                <el-icon><Location /></el-icon>
-                2D位置估计
-              </el-button>
-              <el-button
-                :type="currentTool === 'none' ? 'primary' : 'default'"
-                @click="setNavigationTool('none')"
-              >
-                <el-icon><Close /></el-icon>
-                取消
-              </el-button>
-            </el-button-group>
-          </div>
-          <div v-if="currentTool !== 'none'" class="tool-hint">
-            <small>{{ currentTool === '2d_goal' ? `Goal -> ${expectedControlTopic}` : `Pose -> ${initialPoseTopic}` }}</small>
-          </div>
-        </div>
-        
         <div class="position-info" v-if="currentPose">
           <div class="info-row">
             <span class="label">位置 X:</span>
@@ -273,7 +239,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { Refresh, Aim, Folder, Location, Close } from '@element-plus/icons-vue'
+import { Refresh, Aim, Folder } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { ROS_TOPICS } from '../../config/rosTopics'
@@ -281,7 +247,7 @@ import { ROS_TOPICS } from '../../config/rosTopics'
 export default {
   name: 'Scene3DController',
   components: {
-    Refresh, Aim, Folder, Location, Close
+    Refresh, Aim, Folder
   },
   emits: [
     'laser-type-change',
@@ -292,8 +258,7 @@ export default {
     'odom-topic-change',
     'settings-update',
     'camera-reset',
-    'view-preset',
-    'navigation-tool-change'
+    'view-preset'
   ],
   setup(props, { emit }) {
     const rosbridge = useRosbridge()
@@ -325,11 +290,6 @@ export default {
     const showTrajectory = ref(true)
     const trajectoryLength = ref(100)
 
-    // 导航工具设置
-    const currentTool = ref('none')
-    const expectedControlTopic = ROS_TOPICS.expectedControl
-    const initialPoseTopic = ROS_TOPICS.initialPose
-    
     // 全局设置
     const showGrid = ref(true)
     const showAxes = ref(true)
@@ -571,12 +531,6 @@ export default {
       })
     }
 
-    const setNavigationTool = (tool) => {
-      currentTool.value = tool
-      emit('navigation-tool-change', tool)
-      console.log('设置导航工具:', tool)
-    }
-
     const updateTrajectorySettings = () => {
       // 统一使用 trajectoryLength 字段名，便于场景侧消费
       emit('settings-update', {
@@ -634,9 +588,6 @@ export default {
       trajectoryLength,
       currentPose,
       currentVelocity,
-      currentTool,
-      expectedControlTopic,
-      initialPoseTopic,
       
       // 全局设置
       showGrid,
@@ -661,7 +612,6 @@ export default {
       updateMapSettings,
       updatePositionSettings,
       updateTrajectorySettings,
-      setNavigationTool,
       resetMapView,
       centerOnMap,
     }
@@ -726,19 +676,6 @@ export default {
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 12px;
-}
-
-.tool-hint {
-  margin-top: 8px;
-  padding: 6px 8px;
-  background: rgba(59, 130, 246, 0.1);
-  border-radius: 4px;
-  border-left: 3px solid #3b82f6;
-}
-
-.tool-hint small {
-  color: #93c5fd;
-  font-size: 11px;
 }
 
 .position-info {
