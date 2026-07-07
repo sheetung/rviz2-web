@@ -342,19 +342,19 @@ export default {
       try {
         // 更新位置 - 确保使用正确的坐标映射，支持下划线前缀
         // X: 水平 (前后), Y: 水平 (左右), Z: 高度
-        const x = position.x || position._x || 0
-        const y = position.y || position._y || 0
-        const z = position.z || position._z || 0
+        const x = Number(position.x ?? position._x ?? 0)
+        const y = Number(position.y ?? position._y ?? 0)
+        const z = Number(position.z ?? position._z ?? 0)
 
         robotModel.position.set(x, y, z)
 
         // 更新方向，支持下划线前缀
         if (orientation) {
           robotModel.quaternion.set(
-            orientation.x || orientation._x || 0,
-            orientation.y || orientation._y || 0,
-            orientation.z || orientation._z || 0,
-            orientation.w || orientation._w || 1
+            Number(orientation.x ?? orientation._x ?? 0),
+            Number(orientation.y ?? orientation._y ?? 0),
+            Number(orientation.z ?? orientation._z ?? 0),
+            Number(orientation.w ?? orientation._w ?? 1)
           )
         }
 
@@ -1038,16 +1038,24 @@ export default {
             break
           case 'nav_msgs/msg/Odometry':
           case 'nav_msgs/Odometry':
-            console.log(`[Scene3D] 🔄 准备处理里程计消息，主题: ${topic}`)
-            console.log(`[Scene3D] 🔄 里程计消息内容预览:`, {
-              topic,
-              hasMessage: !!message,
-              hasHeader: !!message?.header,
-              hasPose: !!message?.pose,
-              hasPosePose: !!message?.pose?.pose,
-              hasPosition: !!message?.pose?.pose?.position
-            })
-            updateOdometry(topic, message)
+            {
+              const pose = message?.pose || message?._pose
+              const poseData = pose?.pose || pose?._pose
+              const position = poseData?.position || poseData?._position
+              const orientation = poseData?.orientation || poseData?._orientation
+
+              console.log(`[Scene3D] 🔄 准备处理里程计消息，主题: ${topic}`)
+              console.log(`[Scene3D] 🔄 里程计消息内容预览:`, {
+                topic,
+                hasMessage: !!message,
+                hasHeader: !!(message?.header || message?._header),
+                hasPose: !!pose,
+                hasPosePose: !!poseData,
+                hasPosition: !!position,
+                hasOrientation: !!orientation
+              })
+              updateOdometry(topic, message)
+            }
             break
           case 'geometry_msgs/msg/PoseStamped':
           case 'geometry_msgs/PoseStamped':
@@ -1872,114 +1880,26 @@ export default {
       try {
         removeVisualization(topic)
 
-        if (!message.pose || !message.pose.pose || !message.pose.pose.position) {
-          console.warn('Invalid odometry message format')
+        const pose = message?.pose || message?._pose
+        const poseData = pose?.pose || pose?._pose
+        const position = poseData?.position || poseData?._position
+        const orientation = poseData?.orientation || poseData?._orientation
+
+        if (!position) {
+          console.warn('[Scene3D] Invalid odometry message format:', {
+            topic,
+            keys: message ? Object.keys(message) : [],
+            poseKeys: pose ? Object.keys(pose) : [],
+            poseDataKeys: poseData ? Object.keys(poseData) : []
+          })
           return
         }
-
-        const position = message.pose.pose.position
-        const orientation = message.pose.pose.orientation
 
         // 更新机器人模型位置
         updateRobotPosition(position, orientation)
 
-        // 创建位置指示器（箭头）
-        const arrowGeometry = new THREE.ConeGeometry(0.2, 1, 8)
-        const arrowMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00, transparent: true, opacity: 0.8 })
-        const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial)
-
-        // 设置位置
-        arrow.position.set(position.x, position.y, position.z + 0.5) // 稍微抬高
-
-        // 设置方向（如果有方向信息）
-        if (orientation) {
-          arrow.quaternion.set(orientation.x, orientation.y, orientation.z, orientation.w)
-          // 调整箭头方向，使其指向正前方
-          arrow.rotateX(-Math.PI / 2)
-        }
-
-        // 创建轨迹线（如果是第一次或距离较远）
-        const currentPos = new THREE.Vector3(position.x, position.y, position.z)
-
-        // 只在位置变化超过阈值时添加轨迹点
-        if (trajectoryPoints.length === 0 ||
-            trajectoryPoints[trajectoryPoints.length - 1].distanceTo(currentPos) > 0.1) {
-          trajectoryPoints.push(currentPos.clone())
-          // console.log(`[Trajectory] 添加轨迹点 #${trajectoryPoints.length}: (${currentPos.x.toFixed(2)}, ${currentPos.y.toFixed(2)}, ${currentPos.z.toFixed(2)})`)
-
-          // 限制轨迹点数量（由控制面板传入，范围10~100）
-          const maxLen = Math.max(10, Math.min(100, persistentSettings.position.trajectoryLength || 100))
-          if (trajectoryPoints.length > maxLen) {
-            trajectoryPoints.shift()
-          }
-        }
-
-        // 创建轨迹线
-        if (trajectoryPoints.length > 1) {
-          const trajectoryGeometry = new THREE.BufferGeometry().setFromPoints(trajectoryPoints)
-          const trajectoryMaterial = new THREE.LineBasicMaterial({
-            color: 0xff0000,  // 改为红色便于识别
-            transparent: false, // 不透明
-            linewidth: 5      // 更大的线宽
-          })
-          const trajectoryLine = new THREE.Line(trajectoryGeometry, trajectoryMaterial)
-          trajectoryLine.userData = { type: 'trajectory' }  // 添加类型标识
-
-          // 强制轨迹可见用于调试
-          trajectoryLine.visible = true
-
-          // 详细调试信息
-          console.log(`[Trajectory] 创建轨迹线详细信息:`)
-          console.log(`  - 点数: ${trajectoryPoints.length}`)
-          console.log(`  - 几何体顶点数: ${trajectoryGeometry.attributes.position.count}`)
-          console.log(`  - 可见性: ${trajectoryLine.visible}`)
-          console.log(`  - 设置中的显示轨迹: ${persistentSettings.position.showTrajectory}`)
-          console.log(`  - 材质颜色: 0x${trajectoryMaterial.color.getHex().toString(16)}`)
-          console.log(`  - 轨迹点坐标:`, trajectoryPoints.map(p => `(${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)})`))
-
-          const group = new THREE.Group()
-          group.add(arrow)
-          group.add(trajectoryLine)
-
-          // 确保整个组可见
-          group.visible = true
-
-          console.log(`[Trajectory] 组对象信息:`)
-          console.log(`  - 组可见性: ${group.visible}`)
-          console.log(`  - 组内对象数: ${group.children.length}`)
-          console.log(`  - 轨迹线在组中: ${group.children.includes(trajectoryLine)}`)
-          console.log(`  - 场景添加前场景对象数: ${scene.children.length}`)
-
-          // 额外创建一个独立的轨迹线直接添加到场景，用于调试
-          const debugTrajectoryGeometry = new THREE.BufferGeometry().setFromPoints(trajectoryPoints)
-          const debugTrajectoryMaterial = new THREE.LineBasicMaterial({
-            color: 0x00ff00,  // 绿色调试轨迹
-            transparent: false,
-            linewidth: 8
-          })
-          const debugTrajectoryLine = new THREE.Line(debugTrajectoryGeometry, debugTrajectoryMaterial)
-          debugTrajectoryLine.position.set(0, 0, 1) // 稍微抬高避免重叠
-          scene.add(debugTrajectoryLine)
-          console.log(`[Trajectory] 添加了独立的绿色调试轨迹线到场景，位置: (0,0,1)`)
-
-          group.userData = {
-            topic,
-            messageType: 'nav_msgs/msg/Odometry',
-            type: 'robot_pose',  // 添加类型标识
-            position: { x: position.x, y: position.y, z: position.z },
-            trajectoryLength: trajectoryPoints.length
-          }
-
-          scene.add(group)
-          visualizationObjects.set(topic, group)
-        } else {
-          // 只有箭头
-          arrow.userData = { topic, messageType: 'nav_msgs/msg/Odometry' }
-          scene.add(arrow)
-          visualizationObjects.set(topic, arrow)
-        }
-
-        // console.log(`Successfully updated odometry at (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`)
+        // Odom from the position panel drives the UAV model itself. Do not draw
+        // an extra odom arrow here; it can visually cover the aircraft model.
 
       } catch (error) {
         console.error('Error updating odometry:', error)

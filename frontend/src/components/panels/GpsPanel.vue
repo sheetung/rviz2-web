@@ -1,5 +1,24 @@
 <template>
   <div class="position-panel">
+    <div class="odom-selector">
+      <span class="label">Odom:</span>
+      <el-select
+        v-model="selectedOdomTopic"
+        filterable
+        size="small"
+        placeholder="选择 odom 话题"
+        @visible-change="onOdomSelectVisibleChange"
+        @change="onOdomTopicChange"
+      >
+        <el-option
+          v-for="topic in availableOdomTopics"
+          :key="topic.name"
+          :label="topic.name"
+          :value="topic.name"
+        />
+      </el-select>
+    </div>
+
     <div class="position-info">
       <div class="info-row">
         <span class="label">X位置:</span>
@@ -29,16 +48,26 @@
 </template>
 
 <script>
-import { ref, computed, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { useConnectionStore } from '../../composables/useConnectionStore'
-import { getPositionTopics } from '../../config/rosTopics'
+import { rosApi } from '../../services/api'
 
 export default {
   name: 'PositionPanel',
-  setup() {
+  props: {
+    currentOdomTopic: {
+      type: String,
+      default: ''
+    }
+  },
+  emits: ['odom-topic-change'],
+  setup(props, { emit }) {
     const rosbridge = useRosbridge()
     const connectionStore = useConnectionStore()
+    const selectedOdomTopic = ref(props.currentOdomTopic || '')
+    const availableTopics = ref([])
+    const isLoadingTopics = ref(false)
 
     const positionData = ref({
       x: 0.0,
@@ -78,7 +107,9 @@ export default {
 
     const subscriptions = []
 
-    const positionTopics = getPositionTopics()
+    const availableOdomTopics = computed(() =>
+      availableTopics.value.filter(topic => topic.messageType.includes('Odometry'))
+    )
 
     const toNumber = (value, fallback = 0) => {
       const number = Number(value)
@@ -159,30 +190,88 @@ export default {
         return
       }
 
+      const topic = selectedOdomTopic.value
+      if (!topic) {
+        positionData.value.status = 'NO_DATA'
+        positionData.value.sourceTopic = ''
+        return
+      }
+
       if (subscriptions.length > 0) {
         return
       }
 
-      console.log('[PositionPanel] 订阅无人机 odom 位置信息...')
+      console.log('[PositionPanel] 订阅无人机 odom 位置信息: ' + topic)
 
-      positionTopics.forEach(({ topic, type }) => {
-        try {
-          const subscription = rosbridge.subscribe(topic, type, (message) => {
-            updatePositionFromMessage(topic, type, message)
-          })
+      try {
+        const type = 'nav_msgs/msg/Odometry'
+        const subscription = rosbridge.subscribe(topic, type, (message) => {
+          updatePositionFromMessage(topic, type, message)
+        })
 
-          if (subscription) {
-            subscriptions.push({ topic, subscription })
-            console.log('[PositionPanel] subscribed: ' + topic)
-          }
-        } catch (error) {
-          console.warn('[PositionPanel] failed to subscribe ' + topic + ':', error)
+        if (subscription) {
+          subscriptions.push({ topic, subscription })
+          console.log('[PositionPanel] subscribed: ' + topic)
         }
-      })
+      } catch (error) {
+        console.warn('[PositionPanel] failed to subscribe ' + topic + ':', error)
+      }
 
       if (subscriptions.length === 0) {
         positionData.value.status = 'NO_DATA'
       }
+    }
+
+    const normalizeTopicList = (topicList = [], topicTypes = {}) => {
+      return topicList.map(topicInfo => {
+        const topicName = typeof topicInfo === 'string' ? topicInfo : topicInfo.name
+        const messageType = typeof topicInfo === 'string'
+          ? topicTypes[topicName]
+          : (topicInfo.messageType || topicInfo.message_type || topicTypes[topicName])
+        return {
+          name: topicName,
+          messageType: messageType || 'unknown'
+        }
+      })
+        .filter(topic => topic.name)
+        .sort((a, b) => a.name.localeCompare(b.name))
+    }
+
+    const loadAvailableTopics = async () => {
+      if (isLoadingTopics.value) return
+      isLoadingTopics.value = true
+      try {
+        const topicList = await rosApi.getTopics()
+        availableTopics.value = normalizeTopicList(topicList)
+      } catch (error) {
+        console.warn('[PositionPanel] HTTP加载话题失败，回退到websocket:', error)
+        try {
+          const [topicList, topicTypes] = await Promise.all([
+            rosbridge.getTopics(),
+            rosbridge.getTopicTypes()
+          ])
+          availableTopics.value = normalizeTopicList(topicList, topicTypes)
+        } catch (wsError) {
+          console.error('[PositionPanel] 加载话题列表失败:', wsError)
+        }
+      } finally {
+        isLoadingTopics.value = false
+      }
+    }
+
+    const onOdomSelectVisibleChange = (visible) => {
+      if (visible) {
+        loadAvailableTopics()
+      }
+    }
+
+    const onOdomTopicChange = (topic) => {
+      selectedOdomTopic.value = topic || ''
+      emit('odom-topic-change', selectedOdomTopic.value)
+      clearPositionSubscriptions()
+      positionData.value.status = selectedOdomTopic.value ? 'NO_DATA' : 'INACTIVE'
+      positionData.value.sourceTopic = ''
+      subscribeToPosition()
     }
 
     const stopConnectionWatch = watch(
@@ -199,16 +288,35 @@ export default {
       { immediate: true }
     )
 
+    const stopTopicWatch = watch(
+      () => props.currentOdomTopic,
+      (topic) => {
+        if ((topic || '') === selectedOdomTopic.value) return
+        selectedOdomTopic.value = topic || ''
+        clearPositionSubscriptions()
+        subscribeToPosition()
+      }
+    )
+
+    onMounted(() => {
+      loadAvailableTopics()
+    })
+
     onUnmounted(() => {
       console.log('[PositionPanel] 组件卸载 - 清理所有订阅')
       stopConnectionWatch()
+      stopTopicWatch()
       clearPositionSubscriptions()
     })
 
     return {
       positionData,
+      selectedOdomTopic,
+      availableOdomTopics,
       positionStatusClass,
-      positionStatusText
+      positionStatusText,
+      onOdomSelectVisibleChange,
+      onOdomTopicChange
     }
   }
 }
@@ -226,6 +334,14 @@ export default {
 
 .position-info {
   flex: 1;
+}
+
+.odom-selector {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
 }
 
 .info-row {

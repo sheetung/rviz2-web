@@ -60,7 +60,11 @@
             panel-class="gps-mini-panel"
             :style="getSidePanelStyle('gps')"
           >
-            <GpsPanel :compact="true" />
+            <GpsPanel
+              :compact="true"
+              :current-odom-topic="settingsSnapshot.position.odomTopic"
+              @odom-topic-change="onOdomTopicChange"
+            />
           </WorkbenchPanel>
           <div
             class="side-panel-resize-handle"
@@ -530,9 +534,20 @@ export default {
     }
 
     const onOdomTopicChange = (topicName) => {
-      console.log(`里程计主题切换: ${topicName}`)
-      settingsSnapshot.value.position.odomTopic = topicName
-      onTopicSubscribe(topicName, 'nav_msgs/msg/Odometry')
+      const nextTopic = topicName || ''
+      const previousTopic = settingsSnapshot.value.position.odomTopic
+      console.log(`里程计主题切换: ${nextTopic}`)
+
+      if (previousTopic && previousTopic !== nextTopic) {
+        scene3dRef.value?.unsubscribeFromRosTopic?.(previousTopic)
+        scene3dRef.value?.removeVisualization?.(previousTopic)
+      }
+
+      settingsSnapshot.value.position.odomTopic = nextTopic
+
+      if (nextTopic) {
+        onTopicSubscribe(nextTopic, 'nav_msgs/msg/Odometry')
+      }
     }
 
     const onSettingsUpdate = (settings) => {
