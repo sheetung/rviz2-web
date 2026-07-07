@@ -56,19 +56,6 @@
             class="property-row display-property"
             @click.stop
           >
-            <span>Enabled</span>
-            <el-switch
-              v-model="display.visible"
-              size="small"
-              @change="toggleDisplayTopic(display)"
-            />
-          </div>
-
-          <div
-            v-if="selectedDisplayId === display.id"
-            class="property-row display-property"
-            @click.stop
-          >
             <span>Topic</span>
             <el-select
               v-model="display.name"
@@ -77,6 +64,7 @@
               default-first-option
               size="small"
               @focus="rememberDisplayName(display)"
+              @visible-change="onTopicSelectVisibleChange"
               @change="updateDisplayTopic(display)"
             >
               <el-option
@@ -112,11 +100,69 @@
           </div>
 
           <div
-            v-if="selectedDisplayId === display.id"
-            class="property-row display-property read-only"
+            v-if="selectedDisplayId === display.id && isPointCloudDisplay(display)"
+            class="property-row display-property"
+            @click.stop
           >
-            <span>Status</span>
-            <span>{{ display.visible ? 'OK' : 'Hidden' }}</span>
+            <span>Point Size</span>
+            <div class="display-setting-control">
+              <el-slider
+                v-model="display.config.pointSize"
+                :min="0.01"
+                :max="1"
+                :step="0.01"
+                @input="updateDisplayTopic(display)"
+              />
+              <el-input-number
+                v-model="display.config.pointSize"
+                :min="0.01"
+                :max="1"
+                :step="0.01"
+                :precision="2"
+                controls-position="right"
+                size="small"
+                @change="updateDisplayTopic(display)"
+              />
+            </div>
+          </div>
+
+          <div
+            v-if="selectedDisplayId === display.id && isPathDisplay(display)"
+            class="property-row display-property"
+            @click.stop
+          >
+            <span>Line Width</span>
+            <div class="display-setting-control">
+              <el-slider
+                v-model="display.config.lineWidth"
+                :min="1"
+                :max="20"
+                :step="1"
+                @input="updateDisplayTopic(display)"
+              />
+              <el-input-number
+                v-model="display.config.lineWidth"
+                :min="1"
+                :max="20"
+                :step="1"
+                controls-position="right"
+                size="small"
+                @change="updateDisplayTopic(display)"
+              />
+            </div>
+          </div>
+
+          <div
+            v-if="selectedDisplayId === display.id && isPathDisplay(display)"
+            class="property-row display-property"
+            @click.stop
+          >
+            <span>Color</span>
+            <el-color-picker
+              v-model="display.config.color"
+              size="small"
+              @change="updateDisplayTopic(display)"
+            />
           </div>
         </template>
 
@@ -151,6 +197,12 @@
       <el-tabs v-model="createMode" class="create-tabs">
         <el-tab-pane label="By topic" name="topic">
           <div class="topic-browser">
+            <div class="topic-browser-toolbar">
+              <span>{{ availableTopics.length }} topics</span>
+              <el-button size="small" text :loading="isLoadingTopics" @click="loadAvailableTopics">
+                Refresh
+              </el-button>
+            </div>
             <button
               v-for="topic in availableTopics"
               :key="topic.name"
@@ -162,6 +214,9 @@
               <span>{{ topic.name }}</span>
               <small>{{ topic.messageType }}</small>
             </button>
+            <div v-if="!isLoadingTopics && availableTopics.length === 0" class="empty-topics">
+              未读取到 ROS2 话题
+            </div>
           </div>
         </el-tab-pane>
 
@@ -192,6 +247,7 @@
             default-first-option
             placeholder="选择或输入话题"
             size="small"
+            @visible-change="onTopicSelectVisibleChange"
             @change="onNewDisplayTopicChange"
           >
             <el-option
@@ -235,6 +291,7 @@ import { computed, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, CopyDocument, Delete, View, Hide } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
+import { rosApi } from '../../services/api'
 import { ROS_TOPICS } from '../../config/rosTopics'
 
 export default {
@@ -259,6 +316,7 @@ export default {
   setup(props, { emit, expose }) {
     const rosbridge = useRosbridge()
     const availableTopics = ref([])
+    const isLoadingTopics = ref(false)
     const fixedFrame = ref('map')
     const newDisplayTopic = ref('')
     const newDisplayType = ref('sensor_msgs/msg/PointCloud2')
@@ -278,12 +336,33 @@ export default {
     ]
 
     let displayIdCounter = 0
-    const createDisplayTopic = (name, messageType, visible = true) => ({
+    const createDefaultDisplayConfig = (messageType) => {
+      if ((messageType || '').includes('PointCloud2')) {
+        return {
+          pointSize: 0.03
+        }
+      }
+      if ((messageType || '').includes('Path')) {
+        return {
+          lineWidth: 2,
+          color: '#00ff00'
+        }
+      }
+      return {}
+    }
+
+    const normalizeDisplayConfig = (messageType, config = {}) => ({
+      ...createDefaultDisplayConfig(messageType),
+      ...(config || {})
+    })
+
+    const createDisplayTopic = (name, messageType, visible = true, config = {}) => ({
       id: `display_${++displayIdCounter}`,
       name,
       messageType,
       visible,
-      previousName: name
+      previousName: name,
+      config: normalizeDisplayConfig(messageType, config)
     })
     const createDefaultDisplayTopics = () => [
       createDisplayTopic(ROS_TOPICS.pointCloud, 'sensor_msgs/msg/PointCloud2'),
@@ -293,28 +372,47 @@ export default {
       createDisplayTopic(ROS_TOPICS.inflatedMap, 'sensor_msgs/msg/PointCloud2')
     ].filter(display => display.name)
     const displayTopics = ref(props.displays.length > 0
-      ? props.displays.map(display => createDisplayTopic(display.name, display.messageType, display.visible !== false))
+      ? props.displays.map(display => createDisplayTopic(display.name, display.messageType, display.visible !== false, display.config))
       : createDefaultDisplayTopics()
     )
     const selectedDisplay = computed(() =>
       displayTopics.value.find(display => display.id === selectedDisplayId.value) || null
     )
 
+    const normalizeTopicList = (topicList = [], topicTypes = {}) => {
+      return topicList.map(topicInfo => {
+        const topicName = typeof topicInfo === 'string' ? topicInfo : topicInfo.name
+        const messageType = typeof topicInfo === 'string'
+          ? topicTypes[topicName]
+          : (topicInfo.messageType || topicInfo.message_type || topicTypes[topicName])
+        return {
+          name: topicName,
+          messageType: messageType || 'unknown'
+        }
+      })
+        .filter(topic => topic.name)
+        .sort((a, b) => a.name.localeCompare(b.name))
+    }
+
     const loadAvailableTopics = async () => {
+      if (isLoadingTopics.value) return
+      isLoadingTopics.value = true
       try {
-        const [topicList, topicTypes] = await Promise.all([
-          rosbridge.getTopics(),
-          rosbridge.getTopicTypes()
-        ])
-        availableTopics.value = topicList.map(topicInfo => {
-          const topicName = typeof topicInfo === 'string' ? topicInfo : topicInfo.name
-          return {
-            name: topicName,
-            messageType: topicTypes[topicName] || 'unknown'
-          }
-        })
+        const topicList = await rosApi.getTopics()
+        availableTopics.value = normalizeTopicList(topicList)
       } catch (error) {
-        console.error('加载主题列表失败:', error)
+        console.warn('HTTP 加载主题列表失败，回退到 websocket:', error)
+        try {
+          const [topicList, topicTypes] = await Promise.all([
+            rosbridge.getTopics(),
+            rosbridge.getTopicTypes()
+          ])
+          availableTopics.value = normalizeTopicList(topicList, topicTypes)
+        } catch (wsError) {
+          console.error('加载主题列表失败:', wsError)
+        }
+      } finally {
+        isLoadingTopics.value = false
       }
     }
 
@@ -328,7 +426,8 @@ export default {
         display: {
           name: display.name,
           messageType: display.messageType,
-          visible: display.visible
+          visible: display.visible,
+          config: normalizeDisplayConfig(display.messageType, display.config)
         },
         ...extra
       })
@@ -350,6 +449,7 @@ export default {
       if (existing) {
         existing.visible = true
         existing.messageType = newDisplayType.value
+        existing.config = normalizeDisplayConfig(existing.messageType, existing.config)
         emitDisplayTopicChange('update', existing, { oldName: existing.previousName || existing.name })
         existing.previousName = existing.name
         selectedDisplayId.value = existing.id
@@ -364,9 +464,16 @@ export default {
       newDisplayTopic.value = ''
     }
 
-    const openCreateDialog = () => {
+    const openCreateDialog = async () => {
       isCreateOpen.value = true
+      await loadAvailableTopics()
       createMode.value = availableTopics.value.length > 0 ? 'topic' : 'type'
+    }
+
+    const onTopicSelectVisibleChange = (visible) => {
+      if (visible) {
+        loadAvailableTopics()
+      }
     }
 
     const selectTopic = (topic) => {
@@ -384,6 +491,7 @@ export default {
 
     const updateDisplayTopic = (display) => {
       if (!display.name || !display.messageType) return
+      display.config = normalizeDisplayConfig(display.messageType, display.config)
       emitDisplayTopicChange('update', display, { oldName: display.previousName || display.name })
       display.previousName = display.name
     }
@@ -414,7 +522,7 @@ export default {
     const duplicateSelectedDisplay = () => {
       if (!selectedDisplay.value) return
       const source = selectedDisplay.value
-      const copy = createDisplayTopic(source.name, source.messageType, source.visible)
+      const copy = createDisplayTopic(source.name, source.messageType, source.visible, source.config)
       displayTopics.value.push(copy)
       emitDisplayTopicChange(copy.visible ? 'add' : 'hide', copy)
       selectedDisplayId.value = copy.id
@@ -433,6 +541,10 @@ export default {
       return display.name || displayTypeLabel(display.messageType)
     }
 
+    const isPointCloudDisplay = (display) => (display.messageType || '').includes('PointCloud2')
+
+    const isPathDisplay = (display) => (display.messageType || '').includes('Path')
+
     const applyDisplayTopics = () => {
       displayTopics.value.forEach(display => {
         emitDisplayTopicChange(display.visible ? 'add' : 'hide', display)
@@ -446,7 +558,7 @@ export default {
         : createDefaultDisplayTopics()
       displayTopics.value = nextDisplays
         .filter(display => display.name && display.messageType)
-        .map(display => createDisplayTopic(display.name, display.messageType, display.visible !== false))
+        .map(display => createDisplayTopic(display.name, display.messageType, display.visible !== false, display.config))
       selectedDisplayId.value = 'global'
       applyDisplayTopics()
     }
@@ -454,7 +566,8 @@ export default {
     const getDisplays = () => displayTopics.value.map(display => ({
       name: display.name,
       messageType: display.messageType,
-      visible: display.visible
+      visible: display.visible,
+      config: normalizeDisplayConfig(display.messageType, display.config)
     }))
 
     const setFixedFrameSilently = (frameId) => {
@@ -485,6 +598,7 @@ export default {
       selectedDisplay,
       selectedDisplayId,
       isCreateOpen,
+      isLoadingTopics,
       createMode,
       newDisplayTopic,
       newDisplayType,
@@ -492,8 +606,12 @@ export default {
       selectDisplay,
       displayTypeLabel,
       displayLabel,
+      isPointCloudDisplay,
+      isPathDisplay,
       updateFixedFrame,
+      loadAvailableTopics,
       onNewDisplayTopicChange,
+      onTopicSelectVisibleChange,
       openCreateDialog,
       selectTopic,
       selectDisplayType,
@@ -635,6 +753,17 @@ export default {
   color: #8d98a3;
 }
 
+.display-setting-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 10px;
+  align-items: center;
+}
+
+.display-setting-control :deep(.el-input-number) {
+  width: 96px;
+}
+
 .empty-displays {
   padding: 24px 12px;
   color: #7f8790;
@@ -650,11 +779,6 @@ export default {
   padding: 6px;
   border-top: 1px solid #3a3a3a;
   background: #252525;
-}
-
-:deep(.el-switch) {
-  --el-switch-on-color: #2fb36d;
-  --el-switch-off-color: #5c6570;
 }
 
 :deep(.el-select .el-input__wrapper),
@@ -708,6 +832,21 @@ export default {
   background: #171717;
 }
 
+.topic-browser-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-bottom: 1px solid #2d2d2d;
+  background: #202020;
+  color: #aeb8c2;
+  font-size: 12px;
+}
+
 .topic-choice,
 .type-choice {
   width: 100%;
@@ -741,6 +880,13 @@ export default {
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.empty-topics {
+  padding: 22px 8px;
+  color: #88929c;
+  font-size: 12px;
+  text-align: center;
 }
 
 .create-form {

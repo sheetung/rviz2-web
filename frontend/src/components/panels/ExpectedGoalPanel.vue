@@ -37,6 +37,13 @@
     </div>
 
     <div class="goal-meta">
+      <span>Topic</span>
+      <el-input
+        v-model="localGoal.topic"
+        size="small"
+        placeholder="选择或输入目标话题"
+        @change="emitGoalUpdate"
+      />
       <span>Frame</span>
       <strong>{{ fixedFrame || 'map' }}</strong>
       <span>方向</span>
@@ -57,12 +64,14 @@
 import { computed, reactive, watch } from 'vue'
 
 const createDefaultGoal = () => ({
+  topic: '',
   x: 0,
   y: 0,
   z: 0
 })
 
 const normalizeGoal = (goal) => ({
+  topic: typeof goal?.topic === 'string' ? goal.topic.trim() : '',
   x: Number(goal?.x) || 0,
   y: Number(goal?.y) || 0,
   z: Number(goal?.z) || 0
@@ -87,6 +96,7 @@ export default {
 
     const syncFromProps = () => {
       const nextGoal = normalizeGoal(props.goal)
+      localGoal.topic = nextGoal.topic
       localGoal.x = nextGoal.x
       localGoal.y = nextGoal.y
       localGoal.z = nextGoal.z
@@ -97,6 +107,7 @@ export default {
     }
 
     const resetGoal = () => {
+      localGoal.topic = ''
       localGoal.x = 0
       localGoal.y = 0
       localGoal.z = 0
@@ -141,7 +152,7 @@ export default {
 
 .goal-meta {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   padding: 8px;

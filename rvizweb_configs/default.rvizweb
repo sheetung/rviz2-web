@@ -9,14 +9,14 @@
       "viewPreset": "iso",
       "camera": {
         "position": {
-          "x": 0,
-          "y": -16.328910919955987,
-          "z": 11.663507799968517
+          "x": 0.0001380255656906077,
+          "y": -14.000272318169724,
+          "z": 9.999677162072201
         },
         "target": {
-          "x": 0,
-          "y": 0,
-          "z": 0
+          "x": 0.00013710924082511693,
+          "y": -0.0002720640707630427,
+          "z": -0.00032248217494392373
         },
         "up": {
           "x": 0,
@@ -29,14 +29,15 @@
       "sceneWidth": 68,
       "panelHeights": {
         "gps": 220,
-        "topics": 560,
         "goal": 220,
+        "topics": 560,
         "settings": 360,
         "controller": 520,
         "chart": 420
       }
     },
     "goal": {
+      "topic": "/goal_pose",
       "x": 0,
       "y": 0,
       "z": 0
@@ -68,27 +69,47 @@
       {
         "name": "/uav1/prometheus/local_points",
         "messageType": "sensor_msgs/msg/PointCloud2",
-        "visible": true
+        "visible": false,
+        "config": {
+          "pointSize": 0.23
+        }
       },
       {
         "name": "/uav1/prometheus/odom_slam",
         "messageType": "nav_msgs/msg/Odometry",
-        "visible": false
+        "visible": false,
+        "config": {}
       },
       {
         "name": "/visualization/goal",
         "messageType": "visualization_msgs/msg/MarkerArray",
-        "visible": true
+        "visible": true,
+        "config": {}
       },
       {
         "name": "/fsm/path",
         "messageType": "nav_msgs/msg/Path",
-        "visible": true
+        "visible": true,
+        "config": {
+          "lineWidth": 2,
+          "color": "#00ff00"
+        }
       },
       {
         "name": "/rog_map/inf_occ",
         "messageType": "sensor_msgs/msg/PointCloud2",
-        "visible": true
+        "visible": false,
+        "config": {
+          "pointSize": 0.03
+        }
+      },
+      {
+        "name": "/rog_map/occ",
+        "messageType": "sensor_msgs/msg/PointCloud2",
+        "visible": true,
+        "config": {
+          "pointSize": 0.15
+        }
       }
     ]
   }

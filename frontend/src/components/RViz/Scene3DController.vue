@@ -86,15 +86,26 @@
         <div class="control-item" v-if="laserType === '3d'">
           <label>点云设置:</label>
           <div class="pointcloud-settings">
-            <div class="setting-row">
-              <span>点大小:</span>
+            <div class="setting-row point-size-row">
+              <span>Point Size:</span>
               <el-slider
                 v-model="pointSize"
                 :min="0.01"
-                :max="0.2"
+                :max="1"
                 :step="0.01"
+                @input="updatePointCloudSettings"
+                style="flex: 1;"
+              />
+              <el-input-number
+                v-model="pointSize"
+                :min="0.01"
+                :max="1"
+                :step="0.01"
+                :precision="2"
+                controls-position="right"
+                size="small"
                 @change="updatePointCloudSettings"
-                style="flex: 1; margin-left: 12px;"
+                class="point-size-input"
               />
             </div>
             <div class="setting-row">
@@ -698,6 +709,16 @@ export default {
   margin-bottom: 8px;
   color: #cbd5e1;
   font-size: 12px;
+}
+
+.point-size-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 96px;
+  gap: 10px;
+}
+
+.point-size-input {
+  width: 96px;
 }
 
 .file-controls {

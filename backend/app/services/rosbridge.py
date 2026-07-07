@@ -6,6 +6,7 @@ Rosbridge 服务
 import asyncio
 import json
 import logging
+import subprocess
 from typing import Dict, List, Optional, Any
 from collections import defaultdict, deque
 import time
@@ -975,8 +976,59 @@ class RosbridgeService:
             return {"error": str(e), "message_type": type(msg).__name__}
     
     # API 方法实现
+    def _get_topics_from_cli_sync(self) -> List[TopicInfo]:
+        """Read the live ROS graph using the ros2 CLI."""
+        try:
+            result = subprocess.run(
+                ["ros2", "topic", "list", "-t"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+        except FileNotFoundError:
+            logger.debug("ros2 CLI not found, falling back to rclpy topic discovery")
+            return []
+        except subprocess.TimeoutExpired:
+            logger.warning("ros2 topic list timed out, falling back to rclpy topic discovery")
+            return []
+        except Exception as e:
+            logger.debug(f"Failed to read topics from ros2 CLI: {e}")
+            return []
+
+        if result.returncode != 0:
+            logger.debug(f"ros2 topic list failed: {result.stderr.strip()}")
+            return []
+
+        topics = []
+        for raw_line in result.stdout.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            if line.endswith("]") and " [" in line:
+                name, _, type_part = line.rpartition(" [")
+                message_type = type_part[:-1].strip() or "unknown"
+            else:
+                name = line
+                message_type = "unknown"
+
+            if name:
+                topics.append(TopicInfo(
+                    name=name,
+                    message_type=message_type,
+                    publishers=[],
+                    subscribers=[]
+                ))
+
+        return topics
+
     async def get_topics(self) -> List[TopicInfo]:
         """获取主题列表"""
+        cli_topics = await asyncio.to_thread(self._get_topics_from_cli_sync)
+        if cli_topics:
+            return cli_topics
+
         if not self.node:
             return []
             
@@ -1089,16 +1141,12 @@ class RosbridgeService:
     
     async def get_topic_types(self) -> Dict[str, str]:
         """获取主题类型映射"""
-        if not self.node:
-            return {}
-            
         try:
-            topic_names_and_types = self.node.get_topic_names_and_types()
-            topic_types = {}
-            
-            for name, types in topic_names_and_types:
-                topic_types[name] = types[0] if types else "unknown"
-                
+            topics = await self.get_topics()
+            topic_types = {
+                topic.name: topic.message_type or "unknown"
+                for topic in topics
+            }
             logger.info(f"Found {len(topic_types)} topic types")
             return topic_types
         except Exception as e:

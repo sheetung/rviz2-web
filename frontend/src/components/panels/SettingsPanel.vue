@@ -131,7 +131,8 @@ export default {
       displays: props.displaySnapshot.map(display => ({
         name: display.name,
         messageType: display.messageType,
-        visible: display.visible
+        visible: display.visible,
+        config: display.config || {}
       }))
     })
 

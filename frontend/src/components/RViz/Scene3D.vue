@@ -66,6 +66,7 @@ export default {
     const visualizationObjects = new Map()
     const rosSubscriptions = new Map()
     const plugins = new Map()
+    const displayConfigs = new Map()
 
     const defaultVisualizationTopics = getDefaultVisualizationTopics()
     let defaultVisualizationSubscribed = false
@@ -1086,6 +1087,36 @@ export default {
       }
     }
 
+    const configureDisplay = (topic, config = {}) => {
+      if (!topic) return
+
+      displayConfigs.set(topic, {
+        ...(displayConfigs.get(topic) || {}),
+        ...(config || {})
+      })
+
+      const object = visualizationObjects.get(topic)
+      if (!object) return
+
+      const nextConfig = displayConfigs.get(topic)
+      if (object.userData?.messageType === 'sensor_msgs/msg/PointCloud2' && object.material) {
+        if (nextConfig.pointSize !== undefined) {
+          object.material.size = Number(nextConfig.pointSize) || object.material.size
+          object.material.needsUpdate = true
+        }
+      }
+
+      if (object.userData?.messageType === 'nav_msgs/msg/Path' && object.material) {
+        if (nextConfig.color) {
+          object.material.color = new THREE.Color(nextConfig.color)
+        }
+        if (nextConfig.lineWidth !== undefined) {
+          object.material.linewidth = Number(nextConfig.lineWidth) || object.material.linewidth
+        }
+        object.material.needsUpdate = true
+      }
+    }
+
     const removeVisualization = (topic) => {
       const object = visualizationObjects.get(topic)
       if (object) {
@@ -1349,9 +1380,10 @@ export default {
           const showIntensity = persistentSettings.laser.showIntensity !== undefined
             ? persistentSettings.laser.showIntensity
             : persistentSettings.pointcloud.showIntensity
+          const displayConfig = displayConfigs.get(topic) || {}
 
           const material = new THREE.PointsMaterial({
-            size: persistentSettings.pointcloud.pointSize || Math.max(0.06, size / 300),
+            size: displayConfig.pointSize || persistentSettings.pointcloud.pointSize || Math.max(0.06, size / 300),
             vertexColors: true,
             sizeAttenuation: true,
             opacity: persistentSettings.pointcloud.opacity || 1.0,
@@ -1818,8 +1850,12 @@ export default {
         })
       }
       
+      const displayConfig = displayConfigs.get(topic) || {}
       const geometry = new THREE.BufferGeometry().setFromPoints(points)
-      const material = new THREE.LineBasicMaterial({ color: 0x00ff00 })
+      const material = new THREE.LineBasicMaterial({
+        color: displayConfig.color || 0x00ff00,
+        linewidth: displayConfig.lineWidth || 2
+      })
       const path = new THREE.Line(geometry, material)
       
       path.userData = { topic, messageType: 'nav_msgs/msg/Path' }
@@ -2084,34 +2120,36 @@ export default {
     const startMessageVerification = () => {
       console.log('[Verification] 启动消息验证系统')
 
-      // 验证/goal_pose话题
-      try {
-        const goalPoseVerification = rosbridge.subscribe(ROS_TOPICS.expectedControl, 'geometry_msgs/msg/PoseStamped', (message) => {
-          console.log('[Verification] ✅ 收到/goal_pose消息:', message)
-          ElMessage.success('验证成功：收到发布的目标点消息')
-        })
+      if (ROS_TOPICS.expectedControl) {
+        try {
+          const goalPoseVerification = rosbridge.subscribe(ROS_TOPICS.expectedControl, 'geometry_msgs/msg/PoseStamped', (message) => {
+            console.log(`[Verification] ✅ 收到${ROS_TOPICS.expectedControl}消息:`, message)
+            ElMessage.success('验证成功：收到发布的目标点消息')
+          })
 
-        if (goalPoseVerification) {
-          verificationSubscriptions.set(ROS_TOPICS.expectedControl, goalPoseVerification)
-          console.log('[Verification] ✅ 成功订阅/goal_pose用于验证')
+          if (goalPoseVerification) {
+            verificationSubscriptions.set(ROS_TOPICS.expectedControl, goalPoseVerification)
+            console.log(`[Verification] ✅ 成功订阅${ROS_TOPICS.expectedControl}用于验证`)
+          }
+        } catch (error) {
+          console.error(`[Verification] 订阅${ROS_TOPICS.expectedControl}失败:`, error)
         }
-      } catch (error) {
-        console.error('[Verification] 订阅/goal_pose失败:', error)
       }
 
-      // 验证/initialpose话题
-      try {
-        const initialPoseVerification = rosbridge.subscribe(ROS_TOPICS.initialPose, 'geometry_msgs/msg/PoseWithCovarianceStamped', (message) => {
-          console.log('[Verification] ✅ 收到/initialpose消息:', message)
-          ElMessage.success('验证成功：收到发布的位置估计消息')
-        })
+      if (ROS_TOPICS.initialPose) {
+        try {
+          const initialPoseVerification = rosbridge.subscribe(ROS_TOPICS.initialPose, 'geometry_msgs/msg/PoseWithCovarianceStamped', (message) => {
+            console.log(`[Verification] ✅ 收到${ROS_TOPICS.initialPose}消息:`, message)
+            ElMessage.success('验证成功：收到发布的位置估计消息')
+          })
 
-        if (initialPoseVerification) {
-          verificationSubscriptions.set(ROS_TOPICS.initialPose, initialPoseVerification)
-          console.log('[Verification] ✅ 成功订阅/initialpose用于验证')
+          if (initialPoseVerification) {
+            verificationSubscriptions.set(ROS_TOPICS.initialPose, initialPoseVerification)
+            console.log(`[Verification] ✅ 成功订阅${ROS_TOPICS.initialPose}用于验证`)
+          }
+        } catch (error) {
+          console.error(`[Verification] 订阅${ROS_TOPICS.initialPose}失败:`, error)
         }
-      } catch (error) {
-        console.error('[Verification] 订阅/initialpose失败:', error)
       }
     }
 
@@ -2383,7 +2421,7 @@ export default {
       setNavigationTool('none')
     }
 
-    const publishGoalPose = (position, orientation) => {
+    const publishGoalPose = (position, orientation, topicName = '') => {
       console.log('[Navigation] 开始发布2D目标点')
       console.log('[Navigation] 连接状态检查:', {
         isConnected: rosbridge.isConnected,
@@ -2394,6 +2432,12 @@ export default {
       if (!rosbridge.isConnected) {
         console.error('[Navigation] ❌ ROS Bridge未连接，无法发布消息')
         ElMessage.error('ROS Bridge未连接，请先连接到ROS系统')
+        return false
+      }
+
+      const publishTopic = typeof topicName === 'string' ? topicName.trim() : ''
+      if (!publishTopic) {
+        ElMessage.warning('请先配置期望目标发布话题')
         return false
       }
 
@@ -2424,10 +2468,7 @@ export default {
       console.log('[Navigation] 发布2D目标点消息:', JSON.stringify(goalMsg, null, 2))
 
       try {
-        // 发布到标准的goal_pose话题（RViz兼容）
-        // console.log('[Navigation] 发布到话题: /goal_pose')
-        // console.log('[Navigation] 消息类型: geometry_msgs/msg/PoseStamped')
-        const publishResult = rosbridge.publish(ROS_TOPICS.expectedControl, 'geometry_msgs/msg/PoseStamped', goalMsg)
+        const publishResult = rosbridge.publish(publishTopic, 'geometry_msgs/msg/PoseStamped', goalMsg)
         // console.log('[Navigation] rosbridge.publish返回结果:', publishResult)
 
         if (publishResult) {
@@ -2471,11 +2512,11 @@ export default {
       createPreviewArrow(position, direction, 0xff6b35)
     }
 
-    const publishGoalPoseFromInput = (goal) => {
+    const publishGoalPoseFromInput = (goal, topicName = '') => {
       const nextGoal = normalizeGoalInput(goal)
       const position = new THREE.Vector3(nextGoal.x, nextGoal.y, nextGoal.z)
       previewGoalPoseFromInput(nextGoal)
-      return publishGoalPose(position, getDefaultGoalOrientation())
+      return publishGoalPose(position, getDefaultGoalOrientation(), topicName)
     }
 
     const publishPoseEstimate = (position, orientation) => {
@@ -2489,6 +2530,11 @@ export default {
       if (!rosbridge.isConnected) {
         console.error('[Navigation] ❌ ROS Bridge未连接，无法发布消息')
         ElMessage.error('ROS Bridge未连接，请先连接到ROS系统')
+        return false
+      }
+
+      if (!ROS_TOPICS.initialPose) {
+        ElMessage.warning('请先配置位置估计发布话题')
         return false
       }
 
@@ -2531,9 +2577,6 @@ export default {
       console.log('[Navigation] 发布2D位置估计消息:', JSON.stringify(poseMsg, null, 2))
 
       try {
-        // 发布到标准的initialpose话题（RViz兼容）
-        // console.log('[Navigation] 发布到话题: /initialpose')
-        // console.log('[Navigation] 消息类型: geometry_msgs/msg/PoseWithCovarianceStamped')
         const publishResult = rosbridge.publish(ROS_TOPICS.initialPose, 'geometry_msgs/msg/PoseWithCovarianceStamped', poseMsg)
         // console.log('[Navigation] rosbridge.publish返回结果:', publishResult)
 
@@ -3565,6 +3608,7 @@ export default {
       updateVisualization,
       removeVisualization,
       setVisualizationVisible,
+      configureDisplay,
       getPerformanceStats,
       // 新增控制方法
       setLaserType,

@@ -1,24 +1,17 @@
-const env = import.meta.env || {}
-
-const topic = (key) => {
-  const value = env[key]
-  return typeof value === 'string' ? value.trim() : ''
-}
-
 export const ROS_TOPICS = {
-  laserScan: topic('VITE_ROS_LASER_SCAN_TOPIC'),
-  pointCloud: topic('VITE_ROS_POINTCLOUD_TOPIC'),
-  inflatedMap: topic('VITE_ROS_INFLATED_MAP_TOPIC'),
-  odom: topic('VITE_ROS_ODOM_TOPIC'),
-  pose: topic('VITE_ROS_POSE_TOPIC'),
-  expectedControl: topic('VITE_ROS_EXPECTED_CONTROL_TOPIC'),
-  initialPose: topic('VITE_ROS_INITIAL_POSE_TOPIC'),
-  goalMarker: topic('VITE_ROS_GOAL_MARKER_TOPIC'),
-  expSfc: topic('VITE_ROS_EXP_SFC_TOPIC'),
-  path: topic('VITE_ROS_PATH_TOPIC'),
-  expTraj: topic('VITE_ROS_EXP_TRAJ_TOPIC'),
-  backupTraj: topic('VITE_ROS_BACKUP_TRAJ_TOPIC'),
-  cmdVel: topic('VITE_ROS_CMD_VEL_TOPIC')
+  laserScan: '',
+  pointCloud: '',
+  inflatedMap: '',
+  odom: '',
+  pose: '',
+  expectedControl: '',
+  initialPose: '',
+  goalMarker: '',
+  expSfc: '',
+  path: '',
+  expTraj: '',
+  backupTraj: '',
+  cmdVel: ''
 }
 
 export const getDefaultVisualizationTopics = () => [

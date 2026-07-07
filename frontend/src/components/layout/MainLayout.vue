@@ -94,7 +94,7 @@
 
           <WorkbenchPanel
             id="topics"
-            title="话题控制"
+            title="Displays"
             panel-class="topic-config-mini-panel"
             :style="getSidePanelStyle('topics')"
           >
@@ -262,6 +262,7 @@ export default {
         panelHeights: { ...DEFAULT_SIDE_PANEL_HEIGHTS }
       },
       goal: {
+        topic: '',
         x: 0,
         y: 0,
         z: 0
@@ -613,6 +614,7 @@ export default {
     }
 
     const normalizeGoal = (goal) => ({
+      topic: typeof goal?.topic === 'string' ? goal.topic.trim() : '',
       x: Number(goal?.x) || 0,
       y: Number(goal?.y) || 0,
       z: Number(goal?.z) || 0
@@ -632,7 +634,7 @@ export default {
     const onGoalPublish = (goal) => {
       const nextGoal = normalizeGoal(goal)
       settingsSnapshot.value.goal = nextGoal
-      const published = scene3dRef.value?.publishGoalPoseFromInput?.(nextGoal)
+      const published = scene3dRef.value?.publishGoalPoseFromInput?.(nextGoal, nextGoal.topic)
       if (published === undefined) {
         ElMessage.warning('3D场景未就绪')
       }
@@ -676,7 +678,8 @@ export default {
       const nextDisplay = {
         name: display.name,
         messageType: display.messageType,
-        visible: display.visible !== false
+        visible: display.visible !== false,
+        config: display.config || {}
       }
       if (index >= 0) {
         displaySnapshot.value.splice(index, 1, nextDisplay)
@@ -701,6 +704,7 @@ export default {
       switch (action) {
         case 'add':
           upsertDisplaySnapshot(display)
+          scene.configureDisplay?.(topicName, display.config || {})
           scene.removeVisualization?.(topicName)
           if (display.visible !== false && scene.subscribeToRosTopic) {
             scene.subscribeToRosTopic(topicName, messageType)
@@ -709,6 +713,7 @@ export default {
           break
         case 'show':
           upsertDisplaySnapshot({ ...display, visible: true })
+          scene.configureDisplay?.(topicName, display.config || {})
           scene.removeVisualization?.(topicName)
           if (scene.subscribeToRosTopic) {
             scene.subscribeToRosTopic(topicName, messageType)
@@ -728,6 +733,7 @@ export default {
             displaySnapshot.value = displaySnapshot.value.filter(item => item.name !== previousTopicName)
           }
           upsertDisplaySnapshot(display)
+          scene.configureDisplay?.(topicName, display.config || {})
           unsubscribeDisplayTopic(previousTopicName, messageType)
           if (previousTopicName !== topicName) {
             unsubscribeDisplayTopic(topicName, messageType)
@@ -752,7 +758,8 @@ export default {
         ? displays.map(display => ({
             name: display.name,
             messageType: display.messageType,
-            visible: display.visible !== false
+            visible: display.visible !== false,
+            config: display.config || {}
           })).filter(display => display.name && display.messageType)
         : []
       topicConfigRef.value?.applyDisplays?.(displaySnapshot.value)
