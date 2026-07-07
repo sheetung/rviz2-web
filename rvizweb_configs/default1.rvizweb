@@ -3,6 +3,11 @@
   "version": 1,
   "config": {
     "fixedFrame": "map",
+    "scene": {
+      "showGrid": true,
+      "showAxes": true,
+      "viewPreset": "iso"
+    },
     "position": {
       "odomTopic": "/uav1/prometheus/odom_slam",
       "showTrajectory": true,

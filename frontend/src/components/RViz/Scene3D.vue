@@ -86,7 +86,7 @@ export default {
       map: {
         showMap: true,
         opacity: 0.8,
-        showGrid: false,
+        showGrid: true,
         showOrigin: true
       },
       position: {
@@ -760,6 +760,45 @@ export default {
       if (axesHelper) {
         axesHelper.visible = visible
       }
+    }
+
+    const getCameraState = () => {
+      if (!camera || !controls) return null
+      return {
+        position: {
+          x: camera.position.x,
+          y: camera.position.y,
+          z: camera.position.z
+        },
+        target: {
+          x: controls.target.x,
+          y: controls.target.y,
+          z: controls.target.z
+        },
+        up: {
+          x: camera.up.x,
+          y: camera.up.y,
+          z: camera.up.z
+        }
+      }
+    }
+
+    const applyCameraState = (cameraState) => {
+      if (!camera || !controls || !cameraState?.position || !cameraState?.target) return
+      const up = cameraState.up || { x: 0, y: 0, z: 1 }
+      camera.up.set(up.x, up.y, up.z)
+      camera.position.set(
+        cameraState.position.x,
+        cameraState.position.y,
+        cameraState.position.z
+      )
+      controls.target.set(
+        cameraState.target.x,
+        cameraState.target.y,
+        cameraState.target.z
+      )
+      camera.lookAt(controls.target)
+      controls.update()
     }
     
     const setBackgroundColor = (color) => {
@@ -2592,12 +2631,6 @@ export default {
             mapMesh.value.material.transparent = settings.opacity < 1.0
             mapMesh.value.material.needsUpdate = true
           }
-          if (settings.showGrid !== undefined && gridHelper) {
-            gridHelper.visible = settings.showGrid
-          }
-          if (settings.showOrigin !== undefined && axesHelper) {
-            axesHelper.visible = settings.showOrigin
-          }
           if (settings.action === 'reset') {
             // 重置地图视图
             resetCamera()
@@ -2644,6 +2677,12 @@ export default {
           }
           if (settings.showAxes !== undefined) {
             setAxesVisible(settings.showAxes)
+          }
+          if (settings.viewPreset) {
+            setViewPreset(settings.viewPreset)
+          }
+          if (settings.camera) {
+            applyCameraState(settings.camera)
           }
           break
           
@@ -3485,6 +3524,8 @@ export default {
       resetCamera,
       setGridVisible,
       setAxesVisible,
+      getCameraState,
+      applyCameraState,
       setBackgroundColor,
       updateRenderSettings,
       togglePlugin,

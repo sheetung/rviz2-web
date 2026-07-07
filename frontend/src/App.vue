@@ -5,7 +5,10 @@
       <div class="header-left">
         <div class="app-logo">
           <div class="logo-icon"></div>
-          <h1 class="app-title">RViz2 可视化</h1>
+          <div class="app-identity">
+            <h1 class="app-title">RVizWeb</h1>
+            <span class="app-subtitle">ROS2 Workbench</span>
+          </div>
         </div>
       </div>
       <div class="header-right">
@@ -57,37 +60,21 @@ export default {
 
 html, body {
   font-family: 'Segoe UI', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #101418;
+  background: #0d1117;
   color: #ffffff;
   overflow: auto;
 }
 
 #app {
   height: 100vh;
-  background: #101418;
+  background: #0d1117;
   position: relative;
 }
 
-/* 背景保持安静，突出 3D 场景 */
-#app::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: 
-    radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.05) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.05) 0%, transparent 50%),
-    radial-gradient(circle at 40% 80%, rgba(120, 255, 198, 0.05) 0%, transparent 50%);
-  pointer-events: none;
-  z-index: 1;
-}
-
 .app-header {
-  height: 46px;
-  background: #151b22;
-  border-bottom: 1px solid #28313a;
+  height: 48px;
+  background: #111820;
+  border-bottom: 1px solid #27313d;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -109,12 +96,12 @@ html, body {
 }
 
 .logo-icon {
-  width: 26px;
-  height: 26px;
-  background: linear-gradient(45deg, #00d4ff, #0099cc);
+  width: 28px;
+  height: 28px;
+  background: #172532;
+  border: 1px solid #2f4355;
   border-radius: 6px;
   position: relative;
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.25);
 }
 
 .logo-icon::before {
@@ -124,7 +111,7 @@ html, body {
   left: 5px;
   right: 5px;
   bottom: 5px;
-  border: 2px solid rgba(255, 255, 255, 0.28);
+  border: 2px solid #46bdf0;
   border-radius: 3px;
 }
 
@@ -133,18 +120,30 @@ html, body {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 7px;
-  height: 7px;
-  background: rgba(255, 255, 255, 0.82);
+  width: 6px;
+  height: 6px;
+  background: #9ee7ff;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  animation: pulse 2s infinite ease-in-out;
+}
+
+.app-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .app-title {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
   color: #e5edf5;
+  line-height: 1;
+}
+
+.app-subtitle {
+  color: #8292a3;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .header-right {
@@ -154,22 +153,10 @@ html, body {
 }
 
 .app-content {
-  height: calc(100vh - 46px);
+  height: calc(100vh - 48px);
   position: relative;
   z-index: 2;
   overflow: auto;
-}
-
-/* 脉冲动画 */
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: translate(-50%, -50%) scale(1.2);
-  }
 }
 
 /* 滚动条样式 */

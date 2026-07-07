@@ -95,151 +95,94 @@
           <!-- 下方控制面板区 -->
           <div class="control-panels-area">
             <div class="control-panels-container">
-              <!-- GPS/位置信息面板 -->
-              <div class="mini-panel gps-mini-panel" :class="{ 'fullscreen': fullscreenPanels.gps }">
-                <!-- 全屏模式下的退出按钮 -->
-                <div v-if="fullscreenPanels.gps" class="fullscreen-exit-btn">
-                  <el-button size="large" @click="expandPanel('gps')">
-                    <el-icon><CloseBold /></el-icon>
-                    退出全屏
-                  </el-button>
-                  <div class="esc-hint">按 ESC 键退出</div>
-                </div>
+              <WorkbenchPanel
+                id="gps"
+                title="位置信息"
+                panel-class="gps-mini-panel"
+                :fullscreen="fullscreenPanels.gps"
+                @toggle-fullscreen="expandPanel"
+              >
+                <GpsPanel :compact="true" />
+              </WorkbenchPanel>
 
-                <div class="mini-panel-header">
-                  <h5>位置信息</h5>
-                  <el-button size="small" text @click="expandPanel('gps')">
-                    <el-icon>
-                      <FullScreen v-if="!fullscreenPanels.gps" />
-                      <CloseBold v-else />
-                    </el-icon>
-                  </el-button>
-                </div>
-                <div class="mini-panel-content">
-                  <GpsPanel :compact="true" />
-                </div>
-              </div>
+              <WorkbenchPanel
+                id="topics"
+                title="话题控制"
+                panel-class="topic-config-mini-panel"
+                :fullscreen="fullscreenPanels.topics"
+                @toggle-fullscreen="expandPanel"
+              >
+                <TopicConfigPanel
+                  ref="topicConfigRef"
+                  :displays="displaySnapshot"
+                  @display-topic-change="onDisplayTopicChange"
+                  @fixed-frame-change="onFixedFrameChange"
+                />
+              </WorkbenchPanel>
 
-              <!-- 话题控制/配置文件面板 -->
-              <div class="mini-panel topic-config-mini-panel" :class="{ 'fullscreen': fullscreenPanels.topics }">
-                <div v-if="fullscreenPanels.topics" class="fullscreen-exit-btn">
-                  <el-button size="large" @click="expandPanel('topics')">
-                    <el-icon><CloseBold /></el-icon>
-                    退出全屏
-                  </el-button>
-                  <div class="esc-hint">按 ESC 键退出</div>
-                </div>
+              <WorkbenchPanel
+                id="settings"
+                title="设置"
+                panel-class="settings-mini-panel"
+                :fullscreen="fullscreenPanels.settings"
+                @toggle-fullscreen="expandPanel"
+              >
+                <SettingsPanel
+                  :settings-snapshot="settingsSnapshot"
+                  :display-snapshot="displaySnapshot"
+                  @laser-type-change="onLaserTypeChange"
+                  @laser2d-change="onLaser2DChange"
+                  @pointcloud-change="onPointCloudChange"
+                  @map-topic-change="onMapTopicChange"
+                  @odom-topic-change="onOdomTopicChange"
+                  @settings-update="onSettingsUpdate"
+                  @capture-scene-state="captureSceneState"
+                  @display-config-apply="onDisplayConfigApply"
+                  @fixed-frame-change="onConfigFixedFrameChange"
+                />
+              </WorkbenchPanel>
 
-                <div class="mini-panel-header">
-                  <h5>话题控制</h5>
-                  <el-button size="small" text @click="expandPanel('topics')">
-                    <el-icon>
-                      <FullScreen v-if="!fullscreenPanels.topics" />
-                      <CloseBold v-else />
-                    </el-icon>
-                  </el-button>
-                </div>
-                <div class="mini-panel-content">
-                  <TopicConfigPanel
-                    :settings-snapshot="settingsSnapshot"
-                    @laser-type-change="onLaserTypeChange"
-                    @laser2d-change="onLaser2DChange"
-                    @pointcloud-change="onPointCloudChange"
-                    @map-topic-change="onMapTopicChange"
-                    @odom-topic-change="onOdomTopicChange"
-                    @settings-update="onSettingsUpdate"
-                    @display-topic-change="onDisplayTopicChange"
-                    @fixed-frame-change="onFixedFrameChange"
-                  />
-                </div>
-              </div>
+              <WorkbenchPanel
+                id="controller"
+                title="3D控制"
+                panel-class="controller-mini-panel"
+                :fullscreen="fullscreenPanels.controller"
+                @toggle-fullscreen="expandPanel"
+              >
+                <Scene3DController
+                  :compact="true"
+                  @laser-type-change="onLaserTypeChange"
+                  @laser2d-change="onLaser2DChange"
+                  @pointcloud-change="onPointCloudChange"
+                  @map-topic-change="onMapTopicChange"
+                  @map-file-change="onMapFileChange"
+                  @map-files-change="onMapFilesChange"
+                  @odom-topic-change="onOdomTopicChange"
+                  @settings-update="onSettingsUpdate"
+                  @camera-reset="onCameraReset"
+                  @view-preset="onViewPreset"
+                />
+              </WorkbenchPanel>
 
-              <!-- 3D控制器面板 -->
-              <div class="mini-panel controller-mini-panel" :class="{ 'fullscreen': fullscreenPanels.controller }">
-                <!-- 全屏模式下的退出按钮 -->
-                <div v-if="fullscreenPanels.controller" class="fullscreen-exit-btn">
-                  <el-button size="large" @click="expandPanel('controller')">
-                    <el-icon><CloseBold /></el-icon>
-                    退出全屏
-                  </el-button>
-                  <div class="esc-hint">按 ESC 键退出</div>
-                </div>
+              <WorkbenchPanel
+                id="status"
+                title="状态"
+                panel-class="status-mini-panel"
+                :fullscreen="fullscreenPanels.status"
+                @toggle-fullscreen="expandPanel"
+              >
+                <StatusPanel :compact="true" />
+              </WorkbenchPanel>
 
-                <div class="mini-panel-header">
-                  <h5>3D控制</h5>
-                  <el-button size="small" text @click="expandPanel('controller')">
-                    <el-icon>
-                      <FullScreen v-if="!fullscreenPanels.controller" />
-                      <CloseBold v-else />
-                    </el-icon>
-                  </el-button>
-                </div>
-                <div class="mini-panel-content">
-                  <Scene3DController
-                    :compact="true"
-                    @laser-type-change="onLaserTypeChange"
-                    @laser2d-change="onLaser2DChange"
-                    @pointcloud-change="onPointCloudChange"
-                    @map-topic-change="onMapTopicChange"
-                    @map-file-change="onMapFileChange"
-                    @map-files-change="onMapFilesChange"
-                    @odom-topic-change="onOdomTopicChange"
-                    @settings-update="onSettingsUpdate"
-                    @camera-reset="onCameraReset"
-                    @view-preset="onViewPreset"
-                  />
-                </div>
-              </div>
-
-              <!-- 状态指示面板 -->
-              <div class="mini-panel status-mini-panel" :class="{ 'fullscreen': fullscreenPanels.status }">
-                <!-- 全屏模式下的退出按钮 -->
-                <div v-if="fullscreenPanels.status" class="fullscreen-exit-btn">
-                  <el-button size="large" @click="expandPanel('status')">
-                    <el-icon><CloseBold /></el-icon>
-                    退出全屏
-                  </el-button>
-                  <div class="esc-hint">按 ESC 键退出</div>
-                </div>
-
-                <div class="mini-panel-header">
-                  <h5>状态</h5>
-                  <el-button size="small" text @click="expandPanel('status')">
-                    <el-icon>
-                      <FullScreen v-if="!fullscreenPanels.status" />
-                      <CloseBold v-else />
-                    </el-icon>
-                  </el-button>
-                </div>
-                <div class="mini-panel-content">
-                  <StatusPanel :compact="true" />
-                </div>
-              </div>
-
-              <!-- 数据图表面板 -->
-              <div class="mini-panel chart-mini-panel" :class="{ 'fullscreen': fullscreenPanels.chart }">
-                <!-- 全屏模式下的退出按钮 -->
-                <div v-if="fullscreenPanels.chart" class="fullscreen-exit-btn">
-                  <el-button size="large" @click="expandPanel('chart')">
-                    <el-icon><CloseBold /></el-icon>
-                    退出全屏
-                  </el-button>
-                  <div class="esc-hint">按 ESC 键退出</div>
-                </div>
-
-                <div class="mini-panel-header">
-                  <h5>数据图表</h5>
-                  <el-button size="small" text @click="expandPanel('chart')">
-                    <el-icon>
-                      <FullScreen v-if="!fullscreenPanels.chart" />
-                      <CloseBold v-else />
-                    </el-icon>
-                  </el-button>
-                </div>
-                <div class="mini-panel-content">
-                  <ChartPanel :compact="true" />
-                </div>
-              </div>
+              <WorkbenchPanel
+                id="chart"
+                title="数据图表"
+                panel-class="chart-mini-panel"
+                :fullscreen="fullscreenPanels.chart"
+                @toggle-fullscreen="expandPanel"
+              >
+                <ChartPanel :compact="true" />
+              </WorkbenchPanel>
             </div>
           </div>
         </div>
@@ -300,15 +243,24 @@
               <GpsPanel v-else-if="panel.id === 'gps'" :compact="false" />
               <TopicConfigPanel
                 v-else-if="panel.id === 'topics'"
+                ref="topicConfigRef"
+                :displays="displaySnapshot"
+                @display-topic-change="onDisplayTopicChange"
+                @fixed-frame-change="onFixedFrameChange"
+              />
+              <SettingsPanel
+                v-else-if="panel.id === 'settings'"
                 :settings-snapshot="settingsSnapshot"
+                :display-snapshot="displaySnapshot"
                 @laser-type-change="onLaserTypeChange"
                 @laser2d-change="onLaser2DChange"
                 @pointcloud-change="onPointCloudChange"
                 @map-topic-change="onMapTopicChange"
                 @odom-topic-change="onOdomTopicChange"
                 @settings-update="onSettingsUpdate"
-                @display-topic-change="onDisplayTopicChange"
-                @fixed-frame-change="onFixedFrameChange"
+                @capture-scene-state="captureSceneState"
+                @display-config-apply="onDisplayConfigApply"
+                @fixed-frame-change="onConfigFixedFrameChange"
               />
               <Scene3DController
                 v-else-if="panel.id === 'controller'"
@@ -364,8 +316,16 @@ import GpsPanel from '../panels/GpsPanel.vue'
 import NodeTopicGraph from '../RQT/widgets/NodeTopicGraph.vue'
 import Scene3DController from '../RViz/Scene3DController.vue'
 import TopicConfigPanel from '../RViz/TopicConfigPanel.vue'
+import WorkbenchPanel from './WorkbenchPanel.vue'
 import ChartPanel from '../panels/ChartPanel.vue'
 import StatusPanel from '../panels/StatusPanel.vue'
+import SettingsPanel from '../panels/SettingsPanel.vue'
+import {
+  WORKBENCH_PANEL_ORDER,
+  WORKBENCH_PANEL_TITLES,
+  createDragPanels,
+  createFullscreenState
+} from '../../config/workbenchPanels'
 
 export default {
   name: 'MainLayout',
@@ -388,11 +348,14 @@ export default {
     NodeTopicGraph,
     Scene3DController,
     TopicConfigPanel,
+    WorkbenchPanel,
     ChartPanel,
-    StatusPanel
+    StatusPanel,
+    SettingsPanel
   },
   setup() {
     const scene3dRef = ref(null)
+    const topicConfigRef = ref(null)
     const nodeTopicGraphRef = ref(null)
     const dragContainer = ref(null)
 
@@ -408,17 +371,16 @@ export default {
     const startWidth = ref(0)
 
     // 全屏状态管理
-    const fullscreenPanels = ref({
-      topology: false,
-      gps: false,
-      topics: false,
-      controller: false,
-      status: false,
-      chart: false
-    })
+    const fullscreenPanels = ref(createFullscreenState())
 
     const settingsSnapshot = ref({
       fixedFrame: 'map',
+      scene: {
+        showGrid: true,
+        showAxes: true,
+        viewPreset: 'iso',
+        camera: null
+      },
       position: {
         odomTopic: '',
         showTrajectory: true,
@@ -443,6 +405,7 @@ export default {
         mapOpacity: 0.8
       }
     })
+    const displaySnapshot = ref([])
 
     // 拖拽模式状态
     const draggingPanel = ref(null)
@@ -457,92 +420,7 @@ export default {
     })
 
     // 拖拽面板配置
-    const dragPanels = ref([
-      {
-        id: 'scene',
-        title: '3D 可视化',
-        x: 20,
-        y: 20,
-        width: 800,
-        height: 600,
-        minimized: false,
-        fullscreen: false,
-        zoomLevel: 1.0,
-        originalWidth: 800,
-        originalHeight: 600,
-        dragOrder: 0
-      },
-      {
-        id: 'gps',
-        title: '位置信息',
-        x: 860,
-        y: 20,
-        width: 300,
-        height: 220,
-        minimized: false,
-        fullscreen: false,
-        zoomLevel: 1.0,
-        originalWidth: 300,
-        originalHeight: 220,
-        dragOrder: 0
-      },
-      {
-        id: 'controller',
-        title: '3D 控制器',
-        x: 1180,
-        y: 300,
-        width: 240,
-        height: 180,
-        minimized: false,
-        fullscreen: false,
-        zoomLevel: 1.0,
-        originalWidth: 240,
-        originalHeight: 180,
-        dragOrder: 0
-      },
-      {
-        id: 'topics',
-        title: '话题控制',
-        x: 860,
-        y: 260,
-        width: 420,
-        height: 340,
-        minimized: false,
-        fullscreen: false,
-        zoomLevel: 1.0,
-        originalWidth: 420,
-        originalHeight: 340,
-        dragOrder: 0
-      },
-      {
-        id: 'status',
-        title: '状态面板',
-        x: 20,
-        y: 640,
-        width: 200,
-        height: 160,
-        minimized: false,
-        fullscreen: false,
-        zoomLevel: 1.0,
-        originalWidth: 200,
-        originalHeight: 160,
-        dragOrder: 0
-      },
-      {
-        id: 'chart',
-        title: '数据图表',
-        x: 240,
-        y: 640,
-        width: 200,
-        height: 160,
-        minimized: false,
-        fullscreen: false,
-        zoomLevel: 1.0,
-        originalWidth: 200,
-        originalHeight: 160,
-        dragOrder: 0
-      }
-    ])
+    const dragPanels = ref(createDragPanels())
 
     // 用于跟踪拖拽顺序
     let dragOrderCounter = 0
@@ -849,9 +727,8 @@ export default {
       const containerHeight = dragContainer.value?.clientHeight || 800
 
       // 按重要性排序（3D场景和拓扑图优先）
-      const priorityOrder = ['scene', 'gps', 'topics', 'controller', 'status', 'chart']
       const sortedPanels = [...dragPanels.value].sort((a, b) => {
-        return priorityOrder.indexOf(a.id) - priorityOrder.indexOf(b.id)
+        return WORKBENCH_PANEL_ORDER.indexOf(a.id) - WORKBENCH_PANEL_ORDER.indexOf(b.id)
       })
 
       let currentX = 20
@@ -939,6 +816,7 @@ export default {
     
     const toggleGrid = () => {
       sceneShowGrid.value = !sceneShowGrid.value
+      settingsSnapshot.value.scene.showGrid = sceneShowGrid.value
       if (scene3dRef.value?.setGridVisible) {
         scene3dRef.value.setGridVisible(sceneShowGrid.value)
       }
@@ -946,12 +824,15 @@ export default {
     
     const toggleAxes = () => {
       sceneShowAxes.value = !sceneShowAxes.value
+      settingsSnapshot.value.scene.showAxes = sceneShowAxes.value
       if (scene3dRef.value?.setAxesVisible) {
         scene3dRef.value.setAxesVisible(sceneShowAxes.value)
       }
     }
 
     const setSceneViewPreset = (preset) => {
+      settingsSnapshot.value.scene.viewPreset = preset
+      settingsSnapshot.value.scene.camera = null
       if (scene3dRef.value?.setViewPreset) {
         scene3dRef.value.setViewPreset(preset)
       }
@@ -1075,6 +956,21 @@ export default {
         settingsSnapshot.value.position.trajectoryLength = settings.trajectoryLength
       } else if (settings.type === 'trajectory') {
         settingsSnapshot.value.position.trajectoryLength = settings.trajectoryLength
+      } else if (settings.type === 'scene') {
+        if (settings.showGrid !== undefined) {
+          sceneShowGrid.value = settings.showGrid
+          settingsSnapshot.value.scene.showGrid = settings.showGrid
+        }
+        if (settings.showAxes !== undefined) {
+          sceneShowAxes.value = settings.showAxes
+          settingsSnapshot.value.scene.showAxes = settings.showAxes
+        }
+        if (settings.viewPreset) {
+          settingsSnapshot.value.scene.viewPreset = settings.viewPreset
+        }
+        if (Object.prototype.hasOwnProperty.call(settings, 'camera')) {
+          settingsSnapshot.value.scene.camera = settings.camera
+        }
       }
       if (scene3dRef.value && scene3dRef.value.updateSettings) {
         scene3dRef.value.updateSettings(settings)
@@ -1088,6 +984,8 @@ export default {
 
     const onViewPreset = (preset) => {
       console.log(`视角预设: ${preset}`)
+      settingsSnapshot.value.scene.viewPreset = preset
+      settingsSnapshot.value.scene.camera = null
       if (scene3dRef.value && scene3dRef.value.setViewPreset) {
         scene3dRef.value.setViewPreset(preset)
       }
@@ -1106,6 +1004,20 @@ export default {
       }
     }
 
+    const upsertDisplaySnapshot = (display) => {
+      const index = displaySnapshot.value.findIndex(item => item.name === display.name)
+      const nextDisplay = {
+        name: display.name,
+        messageType: display.messageType,
+        visible: display.visible !== false
+      }
+      if (index >= 0) {
+        displaySnapshot.value.splice(index, 1, nextDisplay)
+      } else {
+        displaySnapshot.value.push(nextDisplay)
+      }
+    }
+
     const onDisplayTopicChange = ({ action, display, oldName }) => {
       if (!display?.name) return
 
@@ -1121,41 +1033,70 @@ export default {
 
       switch (action) {
         case 'add':
+          upsertDisplaySnapshot(display)
+          scene.removeVisualization?.(topicName)
           if (display.visible !== false && scene.subscribeToRosTopic) {
             scene.subscribeToRosTopic(topicName, messageType)
           }
           setDisplayTopicVisible(topicName, display.visible !== false)
           break
         case 'show':
+          upsertDisplaySnapshot({ ...display, visible: true })
+          scene.removeVisualization?.(topicName)
           if (scene.subscribeToRosTopic) {
             scene.subscribeToRosTopic(topicName, messageType)
           }
           setDisplayTopicVisible(topicName, true)
           break
         case 'hide':
-          setDisplayTopicVisible(topicName, false)
+          upsertDisplaySnapshot({ ...display, visible: false })
+          if (scene.unsubscribeFromRosTopic) {
+            scene.unsubscribeFromRosTopic(topicName)
+          } else {
+            scene.removeVisualization?.(topicName)
+          }
           break
         case 'remove':
+          displaySnapshot.value = displaySnapshot.value.filter(item => item.name !== topicName)
           if (scene.unsubscribeFromRosTopic) {
             scene.unsubscribeFromRosTopic(topicName)
           }
           break
         case 'update':
+          if (previousTopicName !== topicName) {
+            displaySnapshot.value = displaySnapshot.value.filter(item => item.name !== previousTopicName)
+          }
+          upsertDisplaySnapshot(display)
           if (scene.unsubscribeFromRosTopic) {
             scene.unsubscribeFromRosTopic(previousTopicName)
             if (previousTopicName !== topicName) {
               scene.unsubscribeFromRosTopic(topicName)
             }
           }
+          scene.removeVisualization?.(previousTopicName)
+          if (previousTopicName !== topicName) {
+            scene.removeVisualization?.(topicName)
+          }
           if (display.visible !== false && scene.subscribeToRosTopic) {
             scene.subscribeToRosTopic(topicName, messageType)
           } else {
-            setDisplayTopicVisible(topicName, false)
+            scene.removeVisualization?.(topicName)
           }
           break
         default:
           console.warn('未知话题控制动作:', action, display)
       }
+    }
+
+    const onDisplayConfigApply = (displays) => {
+      displaySnapshot.value = Array.isArray(displays)
+        ? displays.map(display => ({
+            name: display.name,
+            messageType: display.messageType,
+            visible: display.visible !== false
+          })).filter(display => display.name && display.messageType)
+        : []
+      topicConfigRef.value?.applyDisplays?.(displaySnapshot.value)
     }
 
     const onFixedFrameChange = (frameId) => {
@@ -1164,6 +1105,19 @@ export default {
       settingsSnapshot.value.fixedFrame = nextFrameId
       if (scene3dRef.value?.setFixedFrame) {
         scene3dRef.value.setFixedFrame(nextFrameId)
+      }
+    }
+
+    const onConfigFixedFrameChange = (frameId) => {
+      const nextFrameId = frameId || 'map'
+      topicConfigRef.value?.setFixedFrameSilently?.(nextFrameId)
+      onFixedFrameChange(nextFrameId)
+    }
+
+    const captureSceneState = () => {
+      const camera = scene3dRef.value?.getCameraState?.()
+      if (camera) {
+        settingsSnapshot.value.scene.camera = camera
       }
     }
 
@@ -1188,15 +1142,7 @@ export default {
     }
 
     const getPanelName = (panelType) => {
-      const names = {
-        topology: 'ROS通信拓扑图',
-        gps: 'GPS位置信息',
-        topics: '话题控制',
-        controller: '3D控制器',
-        status: '状态面板',
-        chart: '数据图表'
-      }
-      return names[panelType] || panelType
+      return WORKBENCH_PANEL_TITLES[panelType] || panelType
     }
 
     // ESC键退出全屏功能
@@ -1239,6 +1185,7 @@ export default {
     return {
       // DOM引用
       scene3dRef,
+      topicConfigRef,
       nodeTopicGraphRef,
       dragContainer,
 
@@ -1246,6 +1193,7 @@ export default {
       isDragMode,
       toggleDragMode,
       settingsSnapshot,
+      displaySnapshot,
 
       // 拖拽模式
       dragPanels,
@@ -1296,7 +1244,10 @@ export default {
       onViewPreset,
       onNavigationToolChange,
       onDisplayTopicChange,
-      onFixedFrameChange
+      onDisplayConfigApply,
+      onFixedFrameChange,
+      onConfigFixedFrameChange,
+      captureSceneState
     }
   }
 }
@@ -1307,7 +1258,7 @@ export default {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: transparent;
+  background: #0d1117;
 }
 
 .main-content {
@@ -1315,13 +1266,14 @@ export default {
   display: flex;
   min-height: 100%;
   height: auto;
+  gap: 0;
 }
 
 .scene-section {
   display: flex;
   flex-direction: column;
   min-width: 300px;
-  padding: 10px;
+  padding: 12px;
   transition: width 0.1s ease-out;
 }
 
@@ -1329,7 +1281,7 @@ export default {
   display: flex;
   flex-direction: column;
   min-width: 400px;
-  padding: 10px;
+  padding: 12px 12px 12px 4px;
   transition: width 0.1s ease-out;
   min-height: calc(100vh - 50px);
   height: auto;
@@ -1339,8 +1291,8 @@ export default {
 
 /* 分割器样式 */
 .resize-handle {
-  width: 8px;
-  background: linear-gradient(180deg, rgba(148, 163, 184, 0.3), rgba(148, 163, 184, 0.6));
+  width: 6px;
+  background: #111820;
   cursor: col-resize;
   display: flex;
   align-items: center;
@@ -1348,16 +1300,16 @@ export default {
   position: relative;
   transition: background-color 0.2s;
   user-select: none;
-  border-left: 1px solid rgba(148, 163, 184, 0.2);
-  border-right: 1px solid rgba(148, 163, 184, 0.2);
+  border-left: 1px solid #202a35;
+  border-right: 1px solid #202a35;
 }
 
 .resize-handle:hover {
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.3), rgba(59, 130, 246, 0.6));
+  background: #162331;
 }
 
 .resize-handle:active {
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.5), rgba(59, 130, 246, 0.8));
+  background: #1b3042;
 }
 
 .resize-line {
@@ -1377,37 +1329,27 @@ export default {
 
 .scene-panel {
   flex: 1;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 12px;
+  background: #05080c;
+  border: 1px solid #27313d;
+  border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
   position: relative;
 }
 
 .scene-panel::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.02) 0%, rgba(0, 153, 204, 0.02) 100%);
-  pointer-events: none;
-  z-index: 1;
+  content: none;
 }
 
 .scene-header {
   height: 40px;
-  background: rgba(15, 23, 42, 0.9);
-  backdrop-filter: blur(10px);
+  background: #111820;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 15px;
   color: #e2e8f0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  border-bottom: 1px solid #27313d;
   position: relative;
   z-index: 2;
 }
@@ -1432,12 +1374,11 @@ export default {
 
 /* 拓扑图主面板样式 */
 .topology-main-panel {
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 12px;
+  background: #0f151d;
+  border: 1px solid #27313d;
+  border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.24);
   position: relative;
   flex: 1;
   min-height: 400px;
@@ -1447,15 +1388,7 @@ export default {
 }
 
 .topology-main-panel::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.02) 0%, rgba(0, 153, 204, 0.02) 100%);
-  pointer-events: none;
-  z-index: 1;
+  content: none;
 }
 
 .topology-main-panel.fullscreen {
@@ -1471,14 +1404,13 @@ export default {
 
 .topology-header {
   height: 40px;
-  background: rgba(15, 23, 42, 0.9);
-  backdrop-filter: blur(10px);
+  background: #111820;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 15px;
   color: #e2e8f0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  border-bottom: 1px solid #27313d;
   position: relative;
   z-index: 2;
 }
@@ -1498,79 +1430,20 @@ export default {
 
 /* 控制面板区域 */
 .control-panels-area {
-  min-height: 160px;
+  min-height: 220px;
   height: auto;
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: auto;
   flex-shrink: 0;
-  max-height: 200px;
+  max-height: 360px;
 }
 
 .control-panels-container {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 10px;
-  height: 100%;
-  padding: 5px;
-  min-width: calc(4 * 220px + 3 * 10px); /* 确保需要水平滚动 */
-}
-
-/* 迷你面板样式 */
-.mini-panel {
-  min-width: 200px;
-  background: rgba(15, 23, 42, 0.8);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  transition: all 0.3s ease;
-  position: relative;
-}
-
-.mini-panel::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.03) 0%, transparent 50%);
-  pointer-events: none;
-  z-index: 1;
-}
-
-.mini-panel:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  border-color: rgba(0, 212, 255, 0.3);
-}
-
-.mini-panel-header {
-  height: 28px;
-  background: rgba(15, 23, 42, 0.9);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 10px;
-  position: relative;
-  z-index: 2;
-}
-
-.mini-panel-header h5 {
-  font-size: 12px;
-  font-weight: 500;
-  color: #e2e8f0;
-  margin: 0;
-}
-
-.mini-panel-content {
-  height: calc(100% - 28px);
-  overflow: hidden;
-  position: relative;
-  z-index: 2;
-  padding: 8px;
+  height: auto;
+  padding: 0;
+  min-width: 0;
 }
 
 /* 特定迷你面板样式 */
@@ -1584,6 +1457,10 @@ export default {
 
 .topic-config-mini-panel {
   min-width: 260px;
+}
+
+.settings-mini-panel {
+  min-width: 240px;
 }
 
 .status-mini-panel {
@@ -1970,9 +1847,8 @@ export default {
   padding: 0 !important;
 }
 
-/* 传统模式全屏面板样式 */
-.topology-main-panel.fullscreen,
-.mini-panel.fullscreen {
+/* 传统模式拓扑面板全屏样式 */
+.topology-main-panel.fullscreen {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
@@ -1987,35 +1863,25 @@ export default {
 }
 
 /* 全屏面板内容适配 */
-.topology-main-panel.fullscreen .topology-content,
-.mini-panel.fullscreen .mini-panel-content {
+.topology-main-panel.fullscreen .topology-content {
   height: calc(100vh - 40px) !important;
   overflow: auto !important;
 }
 
 /* 全屏面板头部样式 */
-.topology-main-panel.fullscreen .topology-header,
-.mini-panel.fullscreen .mini-panel-header {
+.topology-main-panel.fullscreen .topology-header {
   background: rgba(15, 23, 42, 0.95) !important;
   backdrop-filter: blur(20px) !important;
   border-bottom: 1px solid rgba(148, 163, 184, 0.3) !important;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3) !important;
 }
 
-/* 确保全屏面板内容完全可见 */
-.mini-panel.fullscreen .mini-panel-content {
-  padding: 20px !important;
-  height: calc(100vh - 40px) !important;
-}
-
 /* 全屏时的动画效果 */
-.topology-main-panel,
-.mini-panel {
+.topology-main-panel {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.topology-main-panel.fullscreen,
-.mini-panel.fullscreen {
+.topology-main-panel.fullscreen {
   animation: fullscreen-enter 0.3s ease-out;
 }
 
@@ -2031,15 +1897,13 @@ export default {
 }
 
 /* 全屏面板关闭按钮增强 */
-.topology-main-panel.fullscreen .topology-controls .el-button,
-.mini-panel.fullscreen .mini-panel-header .el-button {
+.topology-main-panel.fullscreen .topology-controls .el-button {
   background: rgba(255, 59, 48, 0.1) !important;
   border-color: rgba(255, 59, 48, 0.3) !important;
   color: #ff3b30 !important;
 }
 
-.topology-main-panel.fullscreen .topology-controls .el-button:hover,
-.mini-panel.fullscreen .mini-panel-header .el-button:hover {
+.topology-main-panel.fullscreen .topology-controls .el-button:hover {
   background: rgba(255, 59, 48, 0.2) !important;
   border-color: rgba(255, 59, 48, 0.5) !important;
 }
@@ -2050,7 +1914,7 @@ export default {
 
 .main-layout {
 
-  background: #101418;
+  background: #0d1117;
 
 }
 
@@ -2072,7 +1936,7 @@ export default {
 
   min-height: calc(100vh - 44px);
 
-  background: #101418;
+  background: #0d1117;
 
 }
 
@@ -2090,9 +1954,7 @@ export default {
 
 
 
-.scene-panel,
-
-.mini-panel {
+.scene-panel {
 
   background: #171e25;
 
@@ -2109,9 +1971,6 @@ export default {
 
 
 .scene-panel::before,
-
-.mini-panel::before,
-
 .topology-main-panel::before {
 
   display: none;
@@ -2120,9 +1979,7 @@ export default {
 
 
 
-.scene-header,
-
-.mini-panel-header {
+.scene-header {
 
   background: #1c242d;
 
@@ -2226,69 +2083,11 @@ export default {
 
 
 
-.mini-panel {
-
-  min-width: 0;
-
-  min-height: 0;
-
-  transform: none !important;
-
-}
-
-
-
-.mini-panel:hover {
-
-  transform: none !important;
-
-  border-color: #3b4a57;
-
-  box-shadow: none;
-
-}
-
-
-
-.mini-panel-header {
-
-  height: 30px;
-
-  padding: 0 10px;
-
-}
-
-
-
-.mini-panel-header h5 {
-
-  color: #dbe7f3;
-
-  font-size: 12px;
-
-  font-weight: 600;
-
-}
-
-
-
-.mini-panel-content {
-
-  height: auto;
-
-  max-height: 280px;
-
-  overflow: auto;
-
-  padding: 8px;
-
-}
-
-
-
 .gps-mini-panel,
 
 .topic-config-mini-panel,
+
+.settings-mini-panel,
 
 .controller-mini-panel,
 

@@ -3,6 +3,11 @@
   "version": 1,
   "config": {
     "fixedFrame": "map",
+    "scene": {
+      "showGrid": true,
+      "showAxes": true,
+      "viewPreset": "iso"
+    },
     "position": {
       "odomTopic": "/uav1/prometheus/odom_slam",
       "showTrajectory": true,
@@ -35,22 +40,22 @@
       {
         "name": "/uav1/prometheus/odom_slam",
         "messageType": "nav_msgs/msg/Odometry",
-        "visible": true
+        "visible": false
       },
       {
         "name": "/visualization/goal",
         "messageType": "visualization_msgs/msg/MarkerArray",
-        "visible": true
+        "visible": false
       },
       {
         "name": "/fsm/path",
         "messageType": "nav_msgs/msg/Path",
-        "visible": true
+        "visible": false
       },
       {
         "name": "/rog_map/inf_occ",
         "messageType": "sensor_msgs/msg/PointCloud2",
-        "visible": true
+        "visible": false
       }
     ]
   }

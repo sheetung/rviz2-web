@@ -117,13 +117,20 @@ RVIZ-RQT-VISUAL/
 │   └── src/
 │       ├── components/RViz  # 3D 场景、目标工具、话题订阅
 │       ├── components/RQT   # RQT 风格节点/主题工具
-│       └── config           # ROS 话题环境变量配置
+│       ├── components/layout # 工作台布局与通用面板容器
+│       └── config           # ROS 话题、工作台面板等配置
 ├── img/                     # README 图片
 ├── logs/                    # 运行日志
 ├── .env                     # Vite 与 ROS 话题配置
 ├── start.sh                 # 启动脚本
 └── README.md
 ```
+
+## 前端扩展
+
+- 新增右侧工作台面板：先在 `frontend/src/config/workbenchPanels.js` 增加面板元信息，再在 `MainLayout.vue` 接入对应组件。
+- 新增可视化/控制模块：优先放在 `frontend/src/components/RViz/`，复用 `WorkbenchPanel.vue` 作为面板外壳。
+- 新增后端接口：统一在 `frontend/src/services/api.js` 增加 API 封装，组件侧不要直接拼接请求逻辑。
 
 ## 致谢
 

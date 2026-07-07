@@ -51,9 +51,18 @@
         <div class="control-item">
           <label>显示设置:</label>
           <div class="display-options">
-            <el-checkbox v-model="showLaserPoints" @change="updateLaserSettings">显示激光点</el-checkbox>
-            <el-checkbox v-model="showLaserLines" v-if="laserType === '2d'" @change="updateLaserSettings">显示连线</el-checkbox>
-            <el-checkbox v-model="showIntensity" v-if="laserType === '3d'" @change="updateLaserSettings">显示强度</el-checkbox>
+            <div class="setting-toggle">
+              <span>激光点</span>
+              <el-switch v-model="showLaserPoints" size="small" @change="updateLaserSettings" />
+            </div>
+            <div class="setting-toggle" v-if="laserType === '2d'">
+              <span>连线</span>
+              <el-switch v-model="showLaserLines" size="small" @change="updateLaserSettings" />
+            </div>
+            <div class="setting-toggle" v-if="laserType === '3d'">
+              <span>强度</span>
+              <el-switch v-model="showIntensity" size="small" @change="updateLaserSettings" />
+            </div>
           </div>
         </div>
 
@@ -136,9 +145,18 @@
         <div class="control-item">
           <label>显示设置:</label>
           <div class="map-display-options">
-            <el-checkbox v-model="showMap" @change="updateMapSettings">显示地图</el-checkbox>
-            <el-checkbox v-model="showMapGrid" @change="updateMapSettings">显示网格</el-checkbox>
-            <el-checkbox v-model="showMapOrigin" @change="updateMapSettings">显示原点</el-checkbox>
+            <div class="setting-toggle">
+              <span>地图</span>
+              <el-switch v-model="showMap" size="small" @change="updateMapSettings" />
+            </div>
+            <div class="setting-toggle">
+              <span>网格</span>
+              <el-switch v-model="showMapGrid" size="small" @change="updateMapSettings" />
+            </div>
+            <div class="setting-toggle">
+              <span>原点</span>
+              <el-switch v-model="showMapOrigin" size="small" @change="updateMapSettings" />
+            </div>
           </div>
         </div>
         
@@ -193,7 +211,10 @@
         <div class="control-item">
           <label>显示设置:</label>
           <div class="position-display-options">
-            <el-checkbox v-model="showTrajectory" @change="updatePositionSettings">显示轨迹</el-checkbox>
+            <div class="setting-toggle">
+              <span>轨迹</span>
+              <el-switch v-model="showTrajectory" size="small" @change="updatePositionSettings" />
+            </div>
           </div>
         </div>
         
@@ -650,6 +671,20 @@ export default {
   gap: 8px;
 }
 
+.setting-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+  padding: 6px 8px;
+  background: #0d141c;
+  border: 1px solid #22303d;
+  border-radius: 6px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
 .laser-settings,
 .pointcloud-settings {
   background: rgba(15, 23, 42, 0.3);
@@ -712,11 +747,6 @@ export default {
 }
 
 :deep(.el-radio) {
-  color: #cbd5e1 !important;
-  margin-right: 0;
-}
-
-:deep(.el-checkbox) {
   color: #cbd5e1 !important;
   margin-right: 0;
 }
