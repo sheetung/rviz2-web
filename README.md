@@ -107,28 +107,6 @@ npm run dev -- --host 0.0.0.0 --port 3000
 
 进入 2D 期望目标选择时，`X` 会临时变为“取消本次目标点”，不会清除全部对象。
 
-## GitHub 推送建议
-
-当前 remote 使用 HTTPS：
-
-```bash
-git remote set-url origin https://github.com/sheetung/rviz2-web.git
-```
-
-不建议在非本人设备上配置长期 SSH key，也不要保存 GitHub 密码。
-
-GitHub 已不支持使用账号密码直接 `git push`。如果必须从这台设备推送，请使用 GitHub Personal Access Token，并避免保存凭据：
-
-```bash
-git -c credential.helper= push origin main
-```
-
-提示输入时：
-
-- Username：`sheetung`
-- Password：粘贴 GitHub Personal Access Token，不要输入 GitHub 登录密码。
-
-更安全的方式是在你自己的设备上配置 SSH key 或 GitHub CLI，然后从自己的设备推送。
 
 ## 目录结构
 
@@ -146,12 +124,6 @@ RVIZ-RQT-VISUAL/
 ├── start.sh                 # 启动脚本
 └── README.md
 ```
-
-## 备注
-
-- 后端运行时可能产生 `backend/app/**/__pycache__` 文件，不应提交到 git。
-- 大点云场景会增加浏览器渲染压力，可适当调节点大小或减少订阅内容。
-- 3D 期望目标可以在当前“期望目标”菜单基础上继续扩展。
 
 ## 致谢
 
