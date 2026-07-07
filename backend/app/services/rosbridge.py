@@ -125,6 +125,8 @@ class RosbridgeService:
 
         # 异步消息处理队列
         self.message_queue = None
+        self._pending_latest_messages = {}
+        self._queued_topics = set()
         self.message_processor_task = None
         self._loop = None
         
@@ -146,6 +148,8 @@ class RosbridgeService:
 
             # 初始化异步消息队列
             self.message_queue = asyncio.Queue(maxsize=1000)
+            self._pending_latest_messages = {}
+            self._queued_topics = set()
 
             # 初始化 ROS2
             if not rclpy.ok():
@@ -566,13 +570,21 @@ class RosbridgeService:
         """将消息放入异步队列 - 在事件循环中调用"""
         try:
             if self.message_queue:
+                self._pending_latest_messages[topic] = (msg, time.time())
+
+                if topic in self._queued_topics:
+                    logger.debug(f"📥 Coalesced latest message for {topic}, queue size: {self.message_queue.qsize()}")
+                    return
+
                 try:
-                    # 非阻塞方式放入队列
-                    self.message_queue.put_nowait((topic, msg, time.time()))
+                    # 队列只保存 topic 名，同一 topic 的高频消息在 _pending_latest_messages 中合并为最新帧
+                    self._queued_topics.add(topic)
+                    self.message_queue.put_nowait(topic)
                     logger.debug(f"📥 Enqueued message for {topic}, queue size: {self.message_queue.qsize()}")
                 except asyncio.QueueFull:
+                    self._queued_topics.discard(topic)
                     logger.warning(f"⚠️ Message queue full (size: {self.message_queue.maxsize}), dropping message for {topic}")
-                    logger.warning(f"   Consider increasing queue size or processing messages faster")
+                    logger.warning(f"   Latest-message coalescing is enabled; consider reducing subscribed topic rates")
             else:
                 logger.error(f"❌ Message queue not initialized for {topic}")
         except Exception as e:
@@ -589,8 +601,16 @@ class RosbridgeService:
         try:
             while True:
                 try:
-                    # 从队列中获取消息
-                    topic, msg, timestamp = await self.message_queue.get()
+                    # 从队列中获取 topic，再取该 topic 最新消息
+                    topic = await self.message_queue.get()
+                    pending = self._pending_latest_messages.pop(topic, None)
+                    self._queued_topics.discard(topic)
+
+                    if pending is None:
+                        self.message_queue.task_done()
+                        continue
+
+                    msg, timestamp = pending
 
                     # 记录消息接收
                     if topic not in self._message_counts:

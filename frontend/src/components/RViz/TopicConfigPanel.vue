@@ -1,14 +1,6 @@
 <template>
   <div class="topic-config-panel rviz-displays">
     <section class="displays-tree">
-      <div class="panel-caption">
-        <div>
-          <span>Displays</span>
-          <span class="caption-subtitle">RViz Web</span>
-        </div>
-        <span class="caption-count">{{ enabledDisplayCount }}/{{ displayTopics.length }}</span>
-      </div>
-
       <div class="tree-list">
         <div
           class="tree-row global-row"
@@ -307,9 +299,6 @@ export default {
     const selectedDisplay = computed(() =>
       displayTopics.value.find(display => display.id === selectedDisplayId.value) || null
     )
-    const enabledDisplayCount = computed(() =>
-      displayTopics.value.filter(display => display.visible).length
-    )
 
     const loadAvailableTopics = async () => {
       try {
@@ -495,7 +484,6 @@ export default {
       displayTopics,
       selectedDisplay,
       selectedDisplayId,
-      enabledDisplayCount,
       isCreateOpen,
       createMode,
       newDisplayTopic,
@@ -525,45 +513,26 @@ export default {
 <style scoped>
 .rviz-displays {
   height: 100%;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 0;
-  background: #181818;
+  background: transparent;
   color: #d7d7d7;
 }
 
 .displays-tree {
-  border: 1px solid #3a3a3a;
-  background: #202020;
-  min-height: 100%;
-}
-
-.panel-caption {
-  height: 32px;
-  padding: 0 9px;
+  height: 100%;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: linear-gradient(#303030, #262626);
-  border-bottom: 1px solid #404040;
-  color: #eeeeee;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.caption-subtitle {
-  color: #8f98a3;
-  font-size: 10px;
-  font-weight: 400;
-  margin-left: 8px;
-}
-
-.caption-count {
-  color: #9a9a9a;
-  font-size: 11px;
-  font-weight: 400;
+  flex-direction: column;
+  border: 0;
+  background: transparent;
 }
 
 .tree-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 4px 0;
 }
 
@@ -674,6 +643,7 @@ export default {
 }
 
 .display-actions {
+  flex: 0 0 auto;
   display: flex;
   gap: 6px;
   justify-content: flex-start;

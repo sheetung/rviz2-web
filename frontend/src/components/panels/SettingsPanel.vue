@@ -56,6 +56,10 @@
           <span class="summary-label">View</span>
           <span class="summary-value">{{ configSummary.viewPreset }}</span>
         </div>
+        <div class="summary-item">
+          <span class="summary-label">Layout</span>
+          <span class="summary-value">{{ layoutSummary }}</span>
+        </div>
       </div>
     </section>
   </div>
@@ -108,6 +112,12 @@ export default {
       return `${grid} / ${axes}`
     })
 
+    const layoutSummary = computed(() => {
+      const sceneWidth = props.settingsSnapshot.layout?.sceneWidth || 68
+      const panelCount = Object.keys(props.settingsSnapshot.layout?.panelHeights || {}).length
+      return `点云 ${Math.round(sceneWidth)}% / 高度 ${panelCount || 5} 项`
+    })
+
     const displayCount = computed(() => props.displaySnapshot.length)
 
     const normalizeConfigName = (name) => {
@@ -143,6 +153,17 @@ export default {
         showAxes: cfg.scene?.showAxes !== false,
         viewPreset: cfg.scene?.viewPreset || 'iso',
         camera: cfg.scene?.camera || null
+      })
+
+      emit('settings-update', {
+        type: 'layout',
+        sceneWidth: cfg.layout?.sceneWidth || 68,
+        panelHeights: cfg.layout?.panelHeights || null
+      })
+
+      emit('settings-update', {
+        type: 'goal',
+        goal: cfg.goal || { x: 0, y: 0, z: 0 }
       })
 
       if (cfg.position) {
@@ -235,6 +256,7 @@ export default {
       configFiles,
       configSummary,
       sceneSummary,
+      layoutSummary,
       displayCount,
       saveConfig,
       loadSelectedConfig,

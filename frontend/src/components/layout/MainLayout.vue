@@ -1,311 +1,191 @@
 <template>
   <div class="main-layout">
-    <div class="main-content" :class="{ 'drag-mode': isDragMode }">
-      <!-- 传统布局模式 -->
-      <template v-if="!isDragMode">
-        <!-- 左侧 3D 场景区域 -->
-        <div class="scene-section" :style="{ width: `${sceneWidth}%` }">
-          <div class="scene-panel">
-            <div class="scene-header">
-              <h3>点云视图</h3>
-              <div class="scene-controls">
-                <el-button-group size="small">
-                  <el-button @click="resetView">重置视角</el-button>
-                  <el-button @click="toggleGrid" :type="sceneShowGrid ? 'primary' : 'default'">网格</el-button>
-                  <el-button @click="toggleAxes" :type="sceneShowAxes ? 'primary' : 'default'">坐标轴</el-button>
-                </el-button-group>
-                <el-dropdown trigger="click" @command="setSceneViewPreset">
-                  <el-button size="small">
-                    视角预设
-                    <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-                  </el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="top">俯视图</el-dropdown-item>
-                      <el-dropdown-item command="side">侧视图</el-dropdown-item>
-                      <el-dropdown-item command="iso">等距图</el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-                <el-dropdown trigger="click" @command="setExpectedTargetTool">
-                  <el-button size="small" type="primary">
-                    期望目标
-                    <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-                  </el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="2d_goal">2D期望</el-dropdown-item>
-                      <el-dropdown-item command="3d_goal" disabled>3D期望</el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-              </div>
-            </div>
-            <div class="scene-content">
-              <Scene3D ref="scene3dRef" />
+    <div class="main-content" :style="{ gridTemplateColumns: `${sceneWidth}% 10px minmax(320px, ${100 - sceneWidth}%)` }">
+      <section class="scene-section">
+        <div class="scene-panel">
+          <div class="scene-header">
+            <h3>点云视图</h3>
+            <div class="scene-controls">
+              <el-button-group size="small">
+                <el-button @click="resetView">重置视角</el-button>
+                <el-button @click="toggleGrid" :type="sceneShowGrid ? 'primary' : 'default'">网格</el-button>
+                <el-button @click="toggleAxes" :type="sceneShowAxes ? 'primary' : 'default'">坐标轴</el-button>
+              </el-button-group>
+              <el-dropdown trigger="click" @command="setSceneViewPreset">
+                <el-button size="small">
+                  视角
+                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="top">俯视图</el-dropdown-item>
+                    <el-dropdown-item command="side">侧视图</el-dropdown-item>
+                    <el-dropdown-item command="iso">等距图</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-dropdown trigger="click" @command="setExpectedTargetTool">
+                <el-button size="small" type="primary">
+                  期望目标
+                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="2d_goal">2D期望</el-dropdown-item>
+                    <el-dropdown-item command="3d_goal" disabled>3D期望</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </div>
-        </div>
-
-        <!-- 可拖拽的分割器 -->
-        <div
-          class="resize-handle"
-          @mousedown="startSplitterResize"
-          @touchstart="startSplitterResize"
-        >
-          <div class="resize-line"></div>
-        </div>
-
-        <!-- 右侧 ROS 拓扑图区域 -->
-        <div class="topology-section" :style="{ width: `${100 - sceneWidth}%` }">
-          <div class="topology-main-panel" :class="{ 'fullscreen': fullscreenPanels.topology }">
-            <!-- 全屏模式下的退出按钮 -->
-            <div v-if="fullscreenPanels.topology" class="fullscreen-exit-btn">
-              <el-button size="large" @click="toggleTopologyFullscreen">
-                <el-icon><CloseBold /></el-icon>
-                退出全屏
-              </el-button>
-              <div class="esc-hint">按 ESC 键退出</div>
-            </div>
-
-            <div class="topology-header">
-              <h3>ROS 通信拓扑图</h3>
-              <div class="topology-controls">
-                <el-button-group size="small">
-                  <el-button @click="toggleTopologyFullscreen">
-                    <el-icon>
-                      <FullScreen v-if="!fullscreenPanels.topology" />
-                      <CloseBold v-else />
-                    </el-icon>
-                    {{ fullscreenPanels.topology ? '退出全屏' : '全屏' }}
-                  </el-button>
-                </el-button-group>
-              </div>
-            </div>
-            <div class="topology-content">
-              <NodeTopicGraph
-                ref="nodeTopicGraphRef"
-                @topic-subscribe="onTopicSubscribe"
-                @topic-unsubscribe="onTopicUnsubscribe"
-                @topic-visualize="onTopicVisualize"
-              />
-            </div>
-          </div>
-
-          <!-- 下方控制面板区 -->
-          <div class="control-panels-area">
-            <div class="control-panels-container">
-              <WorkbenchPanel
-                id="gps"
-                title="位置信息"
-                panel-class="gps-mini-panel"
-                :fullscreen="fullscreenPanels.gps"
-                @toggle-fullscreen="expandPanel"
-              >
-                <GpsPanel :compact="true" />
-              </WorkbenchPanel>
-
-              <WorkbenchPanel
-                id="topics"
-                title="话题控制"
-                panel-class="topic-config-mini-panel"
-                :fullscreen="fullscreenPanels.topics"
-                @toggle-fullscreen="expandPanel"
-              >
-                <TopicConfigPanel
-                  ref="topicConfigRef"
-                  :displays="displaySnapshot"
-                  @display-topic-change="onDisplayTopicChange"
-                  @fixed-frame-change="onFixedFrameChange"
-                />
-              </WorkbenchPanel>
-
-              <WorkbenchPanel
-                id="settings"
-                title="设置"
-                panel-class="settings-mini-panel"
-                :fullscreen="fullscreenPanels.settings"
-                @toggle-fullscreen="expandPanel"
-              >
-                <SettingsPanel
-                  :settings-snapshot="settingsSnapshot"
-                  :display-snapshot="displaySnapshot"
-                  @laser-type-change="onLaserTypeChange"
-                  @laser2d-change="onLaser2DChange"
-                  @pointcloud-change="onPointCloudChange"
-                  @map-topic-change="onMapTopicChange"
-                  @odom-topic-change="onOdomTopicChange"
-                  @settings-update="onSettingsUpdate"
-                  @capture-scene-state="captureSceneState"
-                  @display-config-apply="onDisplayConfigApply"
-                  @fixed-frame-change="onConfigFixedFrameChange"
-                />
-              </WorkbenchPanel>
-
-              <WorkbenchPanel
-                id="controller"
-                title="3D控制"
-                panel-class="controller-mini-panel"
-                :fullscreen="fullscreenPanels.controller"
-                @toggle-fullscreen="expandPanel"
-              >
-                <Scene3DController
-                  :compact="true"
-                  @laser-type-change="onLaserTypeChange"
-                  @laser2d-change="onLaser2DChange"
-                  @pointcloud-change="onPointCloudChange"
-                  @map-topic-change="onMapTopicChange"
-                  @map-file-change="onMapFileChange"
-                  @map-files-change="onMapFilesChange"
-                  @odom-topic-change="onOdomTopicChange"
-                  @settings-update="onSettingsUpdate"
-                  @camera-reset="onCameraReset"
-                  @view-preset="onViewPreset"
-                />
-              </WorkbenchPanel>
-
-              <WorkbenchPanel
-                id="status"
-                title="状态"
-                panel-class="status-mini-panel"
-                :fullscreen="fullscreenPanels.status"
-                @toggle-fullscreen="expandPanel"
-              >
-                <StatusPanel :compact="true" />
-              </WorkbenchPanel>
-
-              <WorkbenchPanel
-                id="chart"
-                title="数据图表"
-                panel-class="chart-mini-panel"
-                :fullscreen="fullscreenPanels.chart"
-                @toggle-fullscreen="expandPanel"
-              >
-                <ChartPanel :compact="true" />
-              </WorkbenchPanel>
-            </div>
+          <div class="scene-content">
+            <Scene3D ref="scene3dRef" />
           </div>
         </div>
-      </template>
+      </section>
 
-      <!-- 拖拽模式 -->
-      <template v-else>
-        <div class="drag-container" ref="dragContainer">
-          <!-- 网格背景 -->
-          <div class="grid-background"></div>
+      <div
+        class="resize-handle"
+        @mousedown="startSplitterResize"
+        @touchstart="startSplitterResize"
+      >
+        <div class="resize-line"></div>
+      </div>
 
-          <!-- 可拖拽的面板 -->
-          <div
-            v-for="panel in dragPanels"
-            :key="panel.id"
-            class="draggable-panel"
-            :class="{ 'dragging': draggingPanel === panel.id, 'fullscreen': panel.fullscreen }"
-            :style="getPanelStyle(panel)"
-            :data-panel="panel.id"
-            @mousedown="startDrag($event, panel.id)"
-            @touchstart="startDrag($event, panel.id)"
+      <aside class="side-section">
+        <div class="side-panels-container">
+          <WorkbenchPanel
+            id="gps"
+            title="位置信息"
+            panel-class="gps-mini-panel"
+            :style="getSidePanelStyle('gps')"
           >
-            <!-- 全屏模式下的退出按钮 -->
-            <div v-if="panel.fullscreen" class="fullscreen-exit-btn">
-              <el-button size="large" @click="togglePanelFullscreen(panel.id)">
-                <el-icon><CloseBold /></el-icon>
-                退出全屏
-              </el-button>
-              <div class="esc-hint">按 ESC 键退出</div>
-            </div>
-
-            <div class="panel-header" @mousedown.stop="startDragFromHeader($event, panel.id)">
-              <h4>{{ panel.title }}</h4>
-              <div class="panel-controls">
-                <el-button size="small" text @click="zoomOutPanel(panel.id)" :disabled="panel.zoomLevel <= 0.5 || panel.fullscreen">
-                  <el-icon><ZoomOut /></el-icon>
-                </el-button>
-                <el-button size="small" text @click="zoomInPanel(panel.id)" :disabled="panel.zoomLevel >= 2.0 || panel.fullscreen">
-                  <el-icon><ZoomIn /></el-icon>
-                </el-button>
-                <el-button size="small" text @click="togglePanelFullscreen(panel.id)">
-                  <el-icon><FullScreen v-if="!panel.fullscreen" /><CloseBold v-else /></el-icon>
-                </el-button>
-                <el-button size="small" text @click="minimizePanel(panel.id)" :disabled="panel.fullscreen">
-                  <el-icon><Minus v-if="!panel.minimized" /><Plus v-else /></el-icon>
-                </el-button>
-              </div>
-            </div>
-            <div class="panel-body" v-show="!panel.minimized">
-              <Scene3D v-if="panel.id === 'scene'" ref="scene3dRef" />
-              <NodeTopicGraph
-                v-else-if="panel.id === 'topology'"
-                ref="nodeTopicGraphRef"
-                @topic-subscribe="onTopicSubscribe"
-                @topic-unsubscribe="onTopicUnsubscribe"
-                @topic-visualize="onTopicVisualize"
-              />
-              <GpsPanel v-else-if="panel.id === 'gps'" :compact="false" />
-              <TopicConfigPanel
-                v-else-if="panel.id === 'topics'"
-                ref="topicConfigRef"
-                :displays="displaySnapshot"
-                @display-topic-change="onDisplayTopicChange"
-                @fixed-frame-change="onFixedFrameChange"
-              />
-              <SettingsPanel
-                v-else-if="panel.id === 'settings'"
-                :settings-snapshot="settingsSnapshot"
-                :display-snapshot="displaySnapshot"
-                @laser-type-change="onLaserTypeChange"
-                @laser2d-change="onLaser2DChange"
-                @pointcloud-change="onPointCloudChange"
-                @map-topic-change="onMapTopicChange"
-                @odom-topic-change="onOdomTopicChange"
-                @settings-update="onSettingsUpdate"
-                @capture-scene-state="captureSceneState"
-                @display-config-apply="onDisplayConfigApply"
-                @fixed-frame-change="onConfigFixedFrameChange"
-              />
-              <Scene3DController
-                v-else-if="panel.id === 'controller'"
-                :compact="false"
-                @laser-type-change="onLaserTypeChange"
-                @laser2d-change="onLaser2DChange"
-                @pointcloud-change="onPointCloudChange"
-                @map-topic-change="onMapTopicChange"
-                @map-file-change="onMapFileChange"
-                @map-files-change="onMapFilesChange"
-                @odom-topic-change="onOdomTopicChange"
-                @settings-update="onSettingsUpdate"
-                @camera-reset="onCameraReset"
-                @view-preset="onViewPreset"
-              />
-              <StatusPanel v-else-if="panel.id === 'status'" :compact="false" />
-              <ChartPanel v-else-if="panel.id === 'chart'" :compact="false" />
-            </div>
-
-            <!-- 调整大小句柄 -->
-            <div class="resize-handles" v-if="!panel.minimized">
-              <div class="resize-handle resize-se" @mousedown.stop="startResize($event, panel.id)"></div>
-            </div>
+            <GpsPanel :compact="true" />
+          </WorkbenchPanel>
+          <div
+            class="side-panel-resize-handle"
+            @mousedown="startSidePanelResize($event, 'gps')"
+            @touchstart="startSidePanelResize($event, 'gps')"
+          >
+            <span></span>
           </div>
+
+          <WorkbenchPanel
+            id="goal"
+            title="期望目标"
+            panel-class="goal-mini-panel"
+            :style="getSidePanelStyle('goal')"
+          >
+            <ExpectedGoalPanel
+              :goal="settingsSnapshot.goal"
+              :fixed-frame="settingsSnapshot.fixedFrame"
+              @goal-update="onGoalUpdate"
+              @goal-preview="onGoalPreview"
+              @goal-publish="onGoalPublish"
+            />
+          </WorkbenchPanel>
+          <div
+            class="side-panel-resize-handle"
+            @mousedown="startSidePanelResize($event, 'goal')"
+            @touchstart="startSidePanelResize($event, 'goal')"
+          >
+            <span></span>
+          </div>
+
+          <WorkbenchPanel
+            id="topics"
+            title="话题控制"
+            panel-class="topic-config-mini-panel"
+            :style="getSidePanelStyle('topics')"
+          >
+            <TopicConfigPanel
+              ref="topicConfigRef"
+              :displays="displaySnapshot"
+              @display-topic-change="onDisplayTopicChange"
+              @fixed-frame-change="onFixedFrameChange"
+            />
+          </WorkbenchPanel>
+          <div
+            class="side-panel-resize-handle"
+            @mousedown="startSidePanelResize($event, 'topics')"
+            @touchstart="startSidePanelResize($event, 'topics')"
+          >
+            <span></span>
+          </div>
+
+          <WorkbenchPanel
+            id="settings"
+            title="设置"
+            panel-class="settings-mini-panel"
+            :style="getSidePanelStyle('settings')"
+          >
+            <SettingsPanel
+              :settings-snapshot="settingsSnapshot"
+              :display-snapshot="displaySnapshot"
+              @laser-type-change="onLaserTypeChange"
+              @laser2d-change="onLaser2DChange"
+              @pointcloud-change="onPointCloudChange"
+              @map-topic-change="onMapTopicChange"
+              @odom-topic-change="onOdomTopicChange"
+              @settings-update="onSettingsUpdate"
+              @capture-scene-state="captureSceneState"
+              @display-config-apply="onDisplayConfigApply"
+              @fixed-frame-change="onConfigFixedFrameChange"
+            />
+          </WorkbenchPanel>
+          <div
+            class="side-panel-resize-handle"
+            @mousedown="startSidePanelResize($event, 'settings')"
+            @touchstart="startSidePanelResize($event, 'settings')"
+          >
+            <span></span>
+          </div>
+
+          <WorkbenchPanel
+            id="controller"
+            title="3D控制"
+            panel-class="controller-mini-panel"
+            :style="getSidePanelStyle('controller')"
+          >
+            <Scene3DController
+              :compact="true"
+              @laser-type-change="onLaserTypeChange"
+              @laser2d-change="onLaser2DChange"
+              @pointcloud-change="onPointCloudChange"
+              @map-topic-change="onMapTopicChange"
+              @map-file-change="onMapFileChange"
+              @map-files-change="onMapFilesChange"
+              @odom-topic-change="onOdomTopicChange"
+              @settings-update="onSettingsUpdate"
+              @camera-reset="onCameraReset"
+              @view-preset="onViewPreset"
+            />
+          </WorkbenchPanel>
+          <div
+            class="side-panel-resize-handle"
+            @mousedown="startSidePanelResize($event, 'controller')"
+            @touchstart="startSidePanelResize($event, 'controller')"
+          >
+            <span></span>
+          </div>
+
+          <WorkbenchPanel
+            id="chart"
+            title="数据图表"
+            panel-class="chart-mini-panel"
+            :style="getSidePanelStyle('chart')"
+          >
+            <ChartPanel :compact="true" />
+          </WorkbenchPanel>
         </div>
-      </template>
+      </aside>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, nextTick } from 'vue'
 import {
-  Aim,
-  Grid,
-  Coordinate,
-  Setting,
-  FullScreen,
-  Expand,
-  Refresh,
-  Minus,
-  Plus,
-  ZoomIn,
-  ZoomOut,
-  CloseBold,
   ArrowDown
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -313,65 +193,61 @@ import { ElMessage } from 'element-plus'
 // 引入面板组件
 import Scene3D from '../RViz/Scene3D.vue'
 import GpsPanel from '../panels/GpsPanel.vue'
-import NodeTopicGraph from '../RQT/widgets/NodeTopicGraph.vue'
 import Scene3DController from '../RViz/Scene3DController.vue'
 import TopicConfigPanel from '../RViz/TopicConfigPanel.vue'
 import WorkbenchPanel from './WorkbenchPanel.vue'
 import ChartPanel from '../panels/ChartPanel.vue'
-import StatusPanel from '../panels/StatusPanel.vue'
 import SettingsPanel from '../panels/SettingsPanel.vue'
-import {
-  WORKBENCH_PANEL_ORDER,
-  WORKBENCH_PANEL_TITLES,
-  createDragPanels,
-  createFullscreenState
-} from '../../config/workbenchPanels'
+import ExpectedGoalPanel from '../panels/ExpectedGoalPanel.vue'
+
+const DEFAULT_SIDE_PANEL_HEIGHTS = {
+  gps: 220,
+  goal: 220,
+  topics: 560,
+  settings: 360,
+  controller: 520,
+  chart: 420
+}
+
+const SIDE_PANEL_MIN_HEIGHTS = {
+  gps: 160,
+  goal: 180,
+  topics: 320,
+  settings: 260,
+  controller: 320,
+  chart: 240
+}
 
 export default {
   name: 'MainLayout',
   components: {
-    Aim,
-    Grid,
-    Coordinate,
-    Setting,
-    FullScreen,
-    Expand,
-    Refresh,
-    Minus,
-    Plus,
-    ZoomIn,
-    ZoomOut,
-    CloseBold,
     ArrowDown,
     Scene3D,
     GpsPanel,
-    NodeTopicGraph,
     Scene3DController,
     TopicConfigPanel,
     WorkbenchPanel,
     ChartPanel,
-    StatusPanel,
-    SettingsPanel
+    SettingsPanel,
+    ExpectedGoalPanel
   },
   setup() {
     const scene3dRef = ref(null)
     const topicConfigRef = ref(null)
-    const nodeTopicGraphRef = ref(null)
-    const dragContainer = ref(null)
-
-    // 模式控制
-    const isDragMode = ref(false)
 
     // 传统布局控制状态
-    const sceneWidth = ref(74) // 默认以 3D 场景为主
+    const sceneWidth = ref(68)
     const sceneShowGrid = ref(true)
     const sceneShowAxes = ref(true)
     const isResizing = ref(false)
     const startX = ref(0)
     const startWidth = ref(0)
-
-    // 全屏状态管理
-    const fullscreenPanels = ref(createFullscreenState())
+    const sidePanelHeights = ref({ ...DEFAULT_SIDE_PANEL_HEIGHTS })
+    const sidePanelResizeState = ref({
+      panelId: '',
+      startY: 0,
+      startHeight: 0
+    })
 
     const settingsSnapshot = ref({
       fixedFrame: 'map',
@@ -380,6 +256,15 @@ export default {
         showAxes: true,
         viewPreset: 'iso',
         camera: null
+      },
+      layout: {
+        sceneWidth: 68,
+        panelHeights: { ...DEFAULT_SIDE_PANEL_HEIGHTS }
+      },
+      goal: {
+        x: 0,
+        y: 0,
+        z: 0
       },
       position: {
         odomTopic: '',
@@ -407,366 +292,76 @@ export default {
     })
     const displaySnapshot = ref([])
 
-    // 拖拽模式状态
-    const draggingPanel = ref(null)
-    const resizingPanel = ref(null)
-    const dragState = ref({
-      startX: 0,
-      startY: 0,
-      startLeft: 0,
-      startTop: 0,
-      startWidth: 0,
-      startHeight: 0
+    const normalizeSidePanelHeights = (panelHeights = {}) => {
+      return Object.keys(DEFAULT_SIDE_PANEL_HEIGHTS).reduce((heights, panelId) => {
+        const value = Number(panelHeights[panelId])
+        const fallback = DEFAULT_SIDE_PANEL_HEIGHTS[panelId]
+        const minHeight = SIDE_PANEL_MIN_HEIGHTS[panelId] || 120
+        heights[panelId] = Math.max(minHeight, Number.isFinite(value) ? value : fallback)
+        return heights
+      }, {})
+    }
+
+    const syncSidePanelHeightsToSettings = () => {
+      settingsSnapshot.value.layout.panelHeights = normalizeSidePanelHeights(sidePanelHeights.value)
+    }
+
+    const getSidePanelStyle = (panelId) => ({
+      height: `${sidePanelHeights.value[panelId] || DEFAULT_SIDE_PANEL_HEIGHTS[panelId]}px`
     })
 
-    // 拖拽面板配置
-    const dragPanels = ref(createDragPanels())
-
-    // 用于跟踪拖拽顺序
-    let dragOrderCounter = 0
-
-    // 拖拽模式相关方法
-    const toggleDragMode = () => {
-      if (isDragMode.value) {
-        // 退出拖拽模式，按拖拽顺序重新排布
-        exitDragModeWithArrangement()
-      } else {
-        // 进入拖拽模式
-        isDragMode.value = true
-        ElMessage.success('已进入拖拽模式，您可以拖动每个面板到任意位置')
-      }
-    }
-
-    // 退出拖拽模式并按拖拽顺序排布
-    const exitDragModeWithArrangement = () => {
-      // 按拖拽顺序排序面板（dragOrder越大表示越后拖拽，排在越后面）
-      const sortedPanels = [...dragPanels.value].sort((a, b) => b.dragOrder - a.dragOrder)
-
-      // 重新排布面板位置
-      const containerWidth = dragContainer.value?.clientWidth || 1400
-      const containerHeight = dragContainer.value?.clientHeight || 800
-
-      let currentX = 20
-      let currentY = 20
-      let rowHeight = 0
-
-      sortedPanels.forEach(panel => {
-        // 重置缩放和全屏状态
-        panel.zoomLevel = 1.0
-        panel.fullscreen = false
-        panel.minimized = false
-
-        // 使用原始尺寸
-        const width = panel.originalWidth
-        const height = panel.originalHeight
-
-        // 检查是否需要换行
-        if (currentX + width > containerWidth - 20) {
-          currentX = 20
-          currentY += rowHeight + 20
-          rowHeight = 0
-        }
-
-        panel.x = currentX
-        panel.y = currentY
-        panel.width = width
-        panel.height = height
-
-        currentX += width + 20
-        rowHeight = Math.max(rowHeight, height)
-      })
-
-      isDragMode.value = false
-      ElMessage.success('已退出拖拽模式，面板已按拖拽顺序重新排列')
-
-      // 触发3D场景重新调整大小
-      nextTick(() => {
-        if (scene3dRef.value) {
-          scene3dRef.value.handleResize?.()
-        }
-      })
-    }
-
-    const getPanelStyle = (panel) => {
-      if (panel.fullscreen) {
-        return {
-          left: '0px',
-          top: '0px',
-          width: '100%',
-          height: '100%',
-          zIndex: 10000,
-          position: 'fixed'
-        }
-      }
-
-      const scaledWidth = panel.width * panel.zoomLevel
-      const scaledHeight = panel.minimized ? 40 : panel.height * panel.zoomLevel
-
-      return {
-        left: `${panel.x}px`,
-        top: `${panel.y}px`,
-        width: `${scaledWidth}px`,
-        height: `${scaledHeight}px`,
-        zIndex: draggingPanel.value === panel.id ? 1000 : (10 + panel.dragOrder),
-        transform: `scale(1)`, // 保持变换原点
-        transformOrigin: 'top left'
-      }
-    }
-
-    const startDrag = (event, panelId) => {
-      if (event.target.closest('.panel-header')) return
-      startDragFromHeader(event, panelId)
-    }
-
-    const startDragFromHeader = (event, panelId) => {
+    const startSidePanelResize = (event, panelId) => {
       event.preventDefault()
-      draggingPanel.value = panelId
+      const clientY = event.type === 'mousedown' ? event.clientY : event.touches[0].clientY
+      sidePanelResizeState.value = {
+        panelId,
+        startY: clientY,
+        startHeight: sidePanelHeights.value[panelId] || DEFAULT_SIDE_PANEL_HEIGHTS[panelId]
+      }
 
-      const panel = dragPanels.value.find(p => p.id === panelId)
-      if (panel.fullscreen) return // 全屏模式下不允许拖拽
-
-      // 更新拖拽顺序
-      panel.dragOrder = ++dragOrderCounter
-
-      const clientX = event.touches ? event.touches[0].clientX : event.clientX
-      const clientY = event.touches ? event.touches[0].clientY : event.clientY
-
-      dragState.value.startX = clientX
-      dragState.value.startY = clientY
-      dragState.value.startLeft = panel.x
-      dragState.value.startTop = panel.y
-
-      document.addEventListener('mousemove', handleDragMove)
-      document.addEventListener('mouseup', handleDragEnd)
-      document.addEventListener('touchmove', handleDragMove, { passive: false })
-      document.addEventListener('touchend', handleDragEnd)
+      document.addEventListener('mousemove', handleSidePanelResize)
+      document.addEventListener('mouseup', stopSidePanelResize)
+      document.addEventListener('touchmove', handleSidePanelResize, { passive: false })
+      document.addEventListener('touchend', stopSidePanelResize)
 
       document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'move'
+      document.body.style.cursor = 'row-resize'
     }
 
-    const handleDragMove = (event) => {
-      if (!draggingPanel.value) return
+    const handleSidePanelResize = (event) => {
+      const { panelId, startY, startHeight } = sidePanelResizeState.value
+      if (!panelId) return
 
       event.preventDefault()
-      const clientX = event.touches ? event.touches[0].clientX : event.clientX
-      const clientY = event.touches ? event.touches[0].clientY : event.clientY
+      const clientY = event.type === 'mousemove' ? event.clientY : event.touches[0].clientY
+      const minHeight = SIDE_PANEL_MIN_HEIGHTS[panelId] || 120
+      const nextHeight = Math.max(minHeight, startHeight + clientY - startY)
 
-      const deltaX = clientX - dragState.value.startX
-      const deltaY = clientY - dragState.value.startY
-
-      const panel = dragPanels.value.find(p => p.id === draggingPanel.value)
-      if (panel) {
-        let newX = dragState.value.startLeft + deltaX
-        let newY = dragState.value.startTop + deltaY
-
-        // 边界限制
-        if (dragContainer.value) {
-          const containerRect = dragContainer.value.getBoundingClientRect()
-          newX = Math.max(0, Math.min(newX, containerRect.width - panel.width))
-          newY = Math.max(0, Math.min(newY, containerRect.height - panel.height))
-        }
-
-        // 网格吸附
-        const gridSize = 20
-        newX = Math.round(newX / gridSize) * gridSize
-        newY = Math.round(newY / gridSize) * gridSize
-
-        panel.x = newX
-        panel.y = newY
+      sidePanelHeights.value = {
+        ...sidePanelHeights.value,
+        [panelId]: Math.round(nextHeight)
       }
+      syncSidePanelHeightsToSettings()
     }
 
-    const handleDragEnd = () => {
-      draggingPanel.value = null
+    const stopSidePanelResize = () => {
+      sidePanelResizeState.value = {
+        panelId: '',
+        startY: 0,
+        startHeight: 0
+      }
 
-      document.removeEventListener('mousemove', handleDragMove)
-      document.removeEventListener('mouseup', handleDragEnd)
-      document.removeEventListener('touchmove', handleDragMove)
-      document.removeEventListener('touchend', handleDragEnd)
+      document.removeEventListener('mousemove', handleSidePanelResize)
+      document.removeEventListener('mouseup', stopSidePanelResize)
+      document.removeEventListener('touchmove', handleSidePanelResize)
+      document.removeEventListener('touchend', stopSidePanelResize)
 
       document.body.style.userSelect = ''
       document.body.style.cursor = ''
-    }
-
-    const startResize = (event, panelId) => {
-      event.preventDefault()
-      event.stopPropagation()
-
-      resizingPanel.value = panelId
-      const panel = dragPanels.value.find(p => p.id === panelId)
-
-      const clientX = event.touches ? event.touches[0].clientX : event.clientX
-      const clientY = event.touches ? event.touches[0].clientY : event.clientY
-
-      dragState.value.startX = clientX
-      dragState.value.startY = clientY
-      dragState.value.startWidth = panel.width
-      dragState.value.startHeight = panel.height
-
-      document.addEventListener('mousemove', handleResizeMove)
-      document.addEventListener('mouseup', handleResizeEnd)
-      document.addEventListener('touchmove', handleResizeMove, { passive: false })
-      document.addEventListener('touchend', handleResizeEnd)
-
-      document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'se-resize'
-    }
-
-    const handleResizeMove = (event) => {
-      if (!resizingPanel.value) return
-
-      event.preventDefault()
-      const clientX = event.touches ? event.touches[0].clientX : event.clientX
-      const clientY = event.touches ? event.touches[0].clientY : event.clientY
-
-      const deltaX = clientX - dragState.value.startX
-      const deltaY = clientY - dragState.value.startY
-
-      const panel = dragPanels.value.find(p => p.id === resizingPanel.value)
-      if (panel) {
-        let newWidth = dragState.value.startWidth + deltaX
-        let newHeight = dragState.value.startHeight + deltaY
-
-        // 最小尺寸限制
-        newWidth = Math.max(200, newWidth)
-        newHeight = Math.max(150, newHeight)
-
-        // 网格吸附
-        const gridSize = 20
-        newWidth = Math.round(newWidth / gridSize) * gridSize
-        newHeight = Math.round(newHeight / gridSize) * gridSize
-
-        panel.width = newWidth
-        panel.height = newHeight
-      }
-    }
-
-    const handleResizeEnd = () => {
-      resizingPanel.value = null
-
-      document.removeEventListener('mousemove', handleResizeMove)
-      document.removeEventListener('mouseup', handleResizeEnd)
-      document.removeEventListener('touchmove', handleResizeMove)
-      document.removeEventListener('touchend', handleResizeEnd)
-
-      document.body.style.userSelect = ''
-      document.body.style.cursor = ''
-    }
-
-    // 缩放功能
-    const zoomInPanel = (panelId) => {
-      const panel = dragPanels.value.find(p => p.id === panelId)
-      if (panel && panel.zoomLevel < 2.0) {
-        panel.zoomLevel = Math.min(2.0, panel.zoomLevel + 0.25)
-
-        // 3D场景特殊处理，触发resize事件
-        if (panel.id === 'scene' && scene3dRef.value) {
-          nextTick(() => {
-            scene3dRef.value.handleResize?.()
-          })
-        }
-        ElMessage.success(`${panel.title} 已放大至 ${Math.round(panel.zoomLevel * 100)}%`)
-      }
-    }
-
-    const zoomOutPanel = (panelId) => {
-      const panel = dragPanels.value.find(p => p.id === panelId)
-      if (panel && panel.zoomLevel > 0.5) {
-        panel.zoomLevel = Math.max(0.5, panel.zoomLevel - 0.25)
-
-        // 3D场景特殊处理，触发resize事件
-        if (panel.id === 'scene' && scene3dRef.value) {
-          nextTick(() => {
-            scene3dRef.value.handleResize?.()
-          })
-        }
-        ElMessage.success(`${panel.title} 已缩小至 ${Math.round(panel.zoomLevel * 100)}%`)
-      }
-    }
-
-    // 全屏功能
-    const togglePanelFullscreen = (panelId) => {
-      const panel = dragPanels.value.find(p => p.id === panelId)
-      if (panel) {
-        panel.fullscreen = !panel.fullscreen
-
-        if (panel.fullscreen) {
-          // 进入全屏
-          ElMessage.success(`${panel.title} 已进入全屏模式`)
-
-          // 3D场景特殊处理
-          if (panel.id === 'scene' && scene3dRef.value) {
-            nextTick(() => {
-              scene3dRef.value.handleResize?.()
-            })
-          }
-        } else {
-          // 退出全屏
-          ElMessage.info(`${panel.title} 已退出全屏模式`)
-
-          // 3D场景特殊处理
-          if (panel.id === 'scene' && scene3dRef.value) {
-            nextTick(() => {
-              scene3dRef.value.handleResize?.()
-            })
-          }
-        }
-      }
-    }
-
-    const minimizePanel = (panelId) => {
-      const panel = dragPanels.value.find(p => p.id === panelId)
-      if (panel) {
-        panel.minimized = !panel.minimized
-      }
-    }
-
-    const autoArrange = () => {
-      const containerWidth = dragContainer.value?.clientWidth || 1400
-      const containerHeight = dragContainer.value?.clientHeight || 800
-
-      // 按重要性排序（3D场景和拓扑图优先）
-      const sortedPanels = [...dragPanels.value].sort((a, b) => {
-        return WORKBENCH_PANEL_ORDER.indexOf(a.id) - WORKBENCH_PANEL_ORDER.indexOf(b.id)
-      })
-
-      let currentX = 20
-      let currentY = 20
-      let rowHeight = 0
-
-      sortedPanels.forEach(panel => {
-        // 重置大小
-        if (panel.id === 'scene') {
-          panel.width = 600
-          panel.height = 400
-        } else {
-          panel.width = 200
-          panel.height = 150
-        }
-
-        // 检查是否需要换行
-        if (currentX + panel.width > containerWidth - 20) {
-          currentX = 20
-          currentY += rowHeight + 20
-          rowHeight = 0
-        }
-
-        panel.x = currentX
-        panel.y = currentY
-        panel.minimized = false
-
-        currentX += panel.width + 20
-        rowHeight = Math.max(rowHeight, panel.height)
-      })
-
-      ElMessage.success('面板已自动排列')
     }
 
     // 传统布局分割器拖拽功能
     const startSplitterResize = (event) => {
-      if (isDragMode.value) return
-
       isResizing.value = true
       startX.value = event.type === 'mousedown' ? event.clientX : event.touches[0].clientX
       startWidth.value = sceneWidth.value
@@ -789,9 +384,9 @@ export default {
       const containerWidth = window.innerWidth
       const deltaPercent = (deltaX / containerWidth) * 100
       
-      // 限制分割范围在30%-80%之间
-      const newWidth = Math.max(30, Math.min(80, startWidth.value + deltaPercent))
+      const newWidth = Math.max(42, Math.min(78, startWidth.value + deltaPercent))
       sceneWidth.value = newWidth
+      settingsSnapshot.value.layout.sceneWidth = Number(newWidth.toFixed(2))
     }
     
     const stopResize = () => {
@@ -804,6 +399,10 @@ export default {
       
       document.body.style.userSelect = ''
       document.body.style.cursor = ''
+
+      nextTick(() => {
+        scene3dRef.value?.handleResize?.()
+      })
     }
     
     // 3D场景控制方法
@@ -971,6 +570,21 @@ export default {
         if (Object.prototype.hasOwnProperty.call(settings, 'camera')) {
           settingsSnapshot.value.scene.camera = settings.camera
         }
+      } else if (settings.type === 'layout') {
+        if (typeof settings.sceneWidth === 'number') {
+          const nextWidth = Math.max(42, Math.min(78, settings.sceneWidth))
+          sceneWidth.value = nextWidth
+          settingsSnapshot.value.layout.sceneWidth = Number(nextWidth.toFixed(2))
+          nextTick(() => {
+            scene3dRef.value?.handleResize?.()
+          })
+        }
+        if (settings.panelHeights) {
+          sidePanelHeights.value = normalizeSidePanelHeights(settings.panelHeights)
+          syncSidePanelHeightsToSettings()
+        }
+      } else if (settings.type === 'goal') {
+        onGoalUpdate(settings.goal || settings)
       }
       if (scene3dRef.value && scene3dRef.value.updateSettings) {
         scene3dRef.value.updateSettings(settings)
@@ -998,9 +612,62 @@ export default {
       }
     }
 
+    const normalizeGoal = (goal) => ({
+      x: Number(goal?.x) || 0,
+      y: Number(goal?.y) || 0,
+      z: Number(goal?.z) || 0
+    })
+
+    const onGoalUpdate = (goal) => {
+      const nextGoal = normalizeGoal(goal)
+      settingsSnapshot.value.goal = nextGoal
+    }
+
+    const onGoalPreview = (goal) => {
+      const nextGoal = normalizeGoal(goal)
+      settingsSnapshot.value.goal = nextGoal
+      scene3dRef.value?.previewGoalPoseFromInput?.(nextGoal)
+    }
+
+    const onGoalPublish = (goal) => {
+      const nextGoal = normalizeGoal(goal)
+      settingsSnapshot.value.goal = nextGoal
+      const published = scene3dRef.value?.publishGoalPoseFromInput?.(nextGoal)
+      if (published === undefined) {
+        ElMessage.warning('3D场景未就绪')
+      }
+    }
+
     const setDisplayTopicVisible = (topicName, visible) => {
       if (scene3dRef.value?.setVisualizationVisible) {
         scene3dRef.value.setVisualizationVisible(topicName, visible)
+      }
+    }
+
+    const isPositionOdomTopic = (topicName, messageType = '') => {
+      return !!topicName &&
+        topicName === settingsSnapshot.value.position.odomTopic &&
+        (messageType.includes('Odometry') || !messageType || messageType === 'unknown')
+    }
+
+    const ensurePositionOdomSubscription = () => {
+      const odomTopic = settingsSnapshot.value.position.odomTopic
+      if (odomTopic && scene3dRef.value?.subscribeToRosTopic) {
+        scene3dRef.value.subscribeToRosTopic(odomTopic, 'nav_msgs/msg/Odometry')
+      }
+    }
+
+    const removeDisplayVisualization = (topicName, messageType) => {
+      if (isPositionOdomTopic(topicName, messageType)) return
+      scene3dRef.value?.removeVisualization?.(topicName)
+    }
+
+    const unsubscribeDisplayTopic = (topicName, messageType) => {
+      if (isPositionOdomTopic(topicName, messageType)) return
+      if (scene3dRef.value?.unsubscribeFromRosTopic) {
+        scene3dRef.value.unsubscribeFromRosTopic(topicName)
+      } else {
+        scene3dRef.value?.removeVisualization?.(topicName)
       }
     }
 
@@ -1050,37 +717,29 @@ export default {
           break
         case 'hide':
           upsertDisplaySnapshot({ ...display, visible: false })
-          if (scene.unsubscribeFromRosTopic) {
-            scene.unsubscribeFromRosTopic(topicName)
-          } else {
-            scene.removeVisualization?.(topicName)
-          }
+          unsubscribeDisplayTopic(topicName, messageType)
           break
         case 'remove':
           displaySnapshot.value = displaySnapshot.value.filter(item => item.name !== topicName)
-          if (scene.unsubscribeFromRosTopic) {
-            scene.unsubscribeFromRosTopic(topicName)
-          }
+          unsubscribeDisplayTopic(topicName, messageType)
           break
         case 'update':
           if (previousTopicName !== topicName) {
             displaySnapshot.value = displaySnapshot.value.filter(item => item.name !== previousTopicName)
           }
           upsertDisplaySnapshot(display)
-          if (scene.unsubscribeFromRosTopic) {
-            scene.unsubscribeFromRosTopic(previousTopicName)
-            if (previousTopicName !== topicName) {
-              scene.unsubscribeFromRosTopic(topicName)
-            }
-          }
-          scene.removeVisualization?.(previousTopicName)
+          unsubscribeDisplayTopic(previousTopicName, messageType)
           if (previousTopicName !== topicName) {
-            scene.removeVisualization?.(topicName)
+            unsubscribeDisplayTopic(topicName, messageType)
+          }
+          removeDisplayVisualization(previousTopicName, messageType)
+          if (previousTopicName !== topicName) {
+            removeDisplayVisualization(topicName, messageType)
           }
           if (display.visible !== false && scene.subscribeToRosTopic) {
             scene.subscribeToRosTopic(topicName, messageType)
           } else {
-            scene.removeVisualization?.(topicName)
+            removeDisplayVisualization(topicName, messageType)
           }
           break
         default:
@@ -1097,6 +756,7 @@ export default {
           })).filter(display => display.name && display.messageType)
         : []
       topicConfigRef.value?.applyDisplays?.(displaySnapshot.value)
+      ensurePositionOdomSubscription()
     }
 
     const onFixedFrameChange = (frameId) => {
@@ -1119,106 +779,20 @@ export default {
       if (camera) {
         settingsSnapshot.value.scene.camera = camera
       }
+      settingsSnapshot.value.layout.sceneWidth = Number(sceneWidth.value.toFixed(2))
+      syncSidePanelHeightsToSettings()
     }
 
-    // 全屏控制方法
-    const toggleTopologyFullscreen = () => {
-      toggleTraditionalPanelFullscreen('topology')
-    }
-
-    const toggleTraditionalPanelFullscreen = (panelType) => {
-      fullscreenPanels.value[panelType] = !fullscreenPanels.value[panelType]
-
-      if (fullscreenPanels.value[panelType]) {
-        ElMessage.success(`${getPanelName(panelType)}已全屏`)
-      } else {
-        ElMessage.info(`${getPanelName(panelType)}已退出全屏`)
-      }
-    }
-
-    const expandPanel = (panelType) => {
-      console.log(`展开面板: ${panelType}`)
-      toggleTraditionalPanelFullscreen(panelType)
-    }
-
-    const getPanelName = (panelType) => {
-      return WORKBENCH_PANEL_TITLES[panelType] || panelType
-    }
-
-    // ESC键退出全屏功能
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        // 检查拖拽模式下是否有全屏面板
-        if (isDragMode.value) {
-          const fullscreenPanel = dragPanels.value.find(p => p.fullscreen)
-          if (fullscreenPanel) {
-            togglePanelFullscreen(fullscreenPanel.id)
-            event.preventDefault()
-            return
-          }
-        }
-
-        // 检查传统模式下是否有全屏面板
-        const hasFullscreenPanel = Object.values(fullscreenPanels.value).some(Boolean)
-        if (hasFullscreenPanel) {
-          // 退出所有全屏面板
-          Object.keys(fullscreenPanels.value).forEach(panelType => {
-            if (fullscreenPanels.value[panelType]) {
-              toggleTraditionalPanelFullscreen(panelType)
-            }
-          })
-          event.preventDefault()
-        }
-      }
-    }
-
-    // 组件挂载时添加键盘监听器
-    onMounted(() => {
-      document.addEventListener('keydown', handleKeyDown)
-    })
-
-    // 组件卸载时移除键盘监听器
-    onUnmounted(() => {
-      document.removeEventListener('keydown', handleKeyDown)
-    })
-    
     return {
-      // DOM引用
       scene3dRef,
       topicConfigRef,
-      nodeTopicGraphRef,
-      dragContainer,
-
-      // 模式控制
-      isDragMode,
-      toggleDragMode,
       settingsSnapshot,
       displaySnapshot,
-
-      // 拖拽模式
-      dragPanels,
-      draggingPanel,
-      getPanelStyle,
-      startDrag,
-      startDragFromHeader,
-      startResize,
-      minimizePanel,
-      autoArrange,
-      exitDragModeWithArrangement,
-      zoomInPanel,
-      zoomOutPanel,
-      togglePanelFullscreen,
-
-      // 传统布局控制
       sceneWidth,
+      sidePanelHeights,
       startSplitterResize,
-      fullscreenPanels,
-      toggleTopologyFullscreen,
-      toggleTraditionalPanelFullscreen,
-      expandPanel,
-      getPanelName,
-
-      // 3D场景控制
+      getSidePanelStyle,
+      startSidePanelResize,
       resetView,
       toggleGrid,
       toggleAxes,
@@ -1226,8 +800,6 @@ export default {
       setExpectedTargetTool,
       sceneShowGrid,
       sceneShowAxes,
-
-      // 事件处理
       onTopicSubscribe,
       onTopicUnsubscribe,
       onNodeSelected,
@@ -1243,6 +815,9 @@ export default {
       onCameraReset,
       onViewPreset,
       onNavigationToolChange,
+      onGoalUpdate,
+      onGoalPreview,
+      onGoalPublish,
       onDisplayTopicChange,
       onDisplayConfigApply,
       onFixedFrameChange,
@@ -1256,886 +831,176 @@ export default {
 <style scoped>
 .main-layout {
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #0d1117;
+  min-height: 0;
+  background: #0f141a;
 }
 
 .main-content {
-  flex: 1;
-  display: flex;
-  min-height: 100%;
-  height: auto;
+  height: 100%;
+  min-height: 0;
+  display: grid;
   gap: 0;
+  padding: 10px;
+  background: #0f141a;
 }
 
-.scene-section {
-  display: flex;
-  flex-direction: column;
-  min-width: 300px;
-  padding: 12px;
-  transition: width 0.1s ease-out;
-}
-
-.topology-section {
-  display: flex;
-  flex-direction: column;
-  min-width: 400px;
-  padding: 12px 12px 12px 4px;
-  transition: width 0.1s ease-out;
-  min-height: calc(100vh - 50px);
-  height: auto;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-/* 分割器样式 */
-.resize-handle {
-  width: 6px;
-  background: #111820;
-  cursor: col-resize;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  transition: background-color 0.2s;
-  user-select: none;
-  border-left: 1px solid #202a35;
-  border-right: 1px solid #202a35;
-}
-
-.resize-handle:hover {
-  background: #162331;
-}
-
-.resize-handle:active {
-  background: #1b3042;
-}
-
-.resize-line {
-  width: 2px;
-  height: 40px;
-  background: rgba(255, 255, 255, 0.6);
-  border-radius: 1px;
-  transition: all 0.2s;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.resize-handle:hover .resize-line {
-  background: rgba(59, 130, 246, 0.8);
-  height: 60px;
-  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+.scene-section,
+.side-section {
+  min-width: 0;
+  min-height: 0;
 }
 
 .scene-panel {
-  flex: 1;
-  background: #05080c;
-  border: 1px solid #27313d;
-  border-radius: 8px;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
-  position: relative;
-}
-
-.scene-panel::before {
-  content: none;
+  background: #151b22;
+  border: 1px solid #2d3742;
+  border-radius: 6px;
 }
 
 .scene-header {
-  height: 40px;
-  background: #111820;
+  height: 36px;
+  flex: 0 0 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 15px;
-  color: #e2e8f0;
-  border-bottom: 1px solid #27313d;
-  position: relative;
-  z-index: 2;
+  gap: 12px;
+  padding: 0 10px 0 12px;
+  background: #1c232b;
+  border-bottom: 1px solid #2d3742;
+  color: #dce7f3;
 }
 
 .scene-header h3 {
-  font-size: 14px;
-  font-weight: 500;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .scene-controls {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.scene-content {
-  height: calc(100% - 40px);
-  position: relative;
-  z-index: 2;
-  min-height: 400px;
-}
-
-/* 拓扑图主面板样式 */
-.topology-main-panel {
-  background: #0f151d;
-  border: 1px solid #27313d;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.24);
-  position: relative;
-  flex: 1;
-  min-height: 400px;
-  margin-bottom: 10px;
-  display: flex;
-  flex-direction: column;
-}
-
-.topology-main-panel::before {
-  content: none;
-}
-
-.topology-main-panel.fullscreen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 9999;
-  border-radius: 0;
-  margin: 0;
-}
-
-.topology-header {
-  height: 40px;
-  background: #111820;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 15px;
-  color: #e2e8f0;
-  border-bottom: 1px solid #27313d;
-  position: relative;
-  z-index: 2;
-}
-
-.topology-header h3 {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.topology-content {
-  flex: 1;
-  position: relative;
-  z-index: 2;
-  min-height: 0;
-  overflow: auto;
-}
-
-/* 控制面板区域 */
-.control-panels-area {
-  min-height: 220px;
-  height: auto;
-  overflow: auto;
-  flex-shrink: 0;
-  max-height: 360px;
-}
-
-.control-panels-container {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-  height: auto;
-  padding: 0;
   min-width: 0;
 }
 
-/* 特定迷你面板样式 */
-.gps-mini-panel {
-  min-width: 180px;
-}
-
-.controller-mini-panel {
-  min-width: 220px;
-}
-
-.topic-config-mini-panel {
-  min-width: 260px;
-}
-
-.settings-mini-panel {
-  min-width: 240px;
-}
-
-.status-mini-panel {
-  min-width: 160px;
-}
-
-.chart-mini-panel {
-  min-width: 200px;
-}
-
-/* 滚动条样式优化 - 确保可见 */
-.topology-section {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(59, 130, 246, 0.6) rgba(148, 163, 184, 0.2);
-}
-
-.topology-section::-webkit-scrollbar {
-  width: 14px;
-}
-
-.topology-section::-webkit-scrollbar-track {
-  background: rgba(148, 163, 184, 0.2);
-  border-radius: 7px;
-  margin: 4px;
-}
-
-.topology-section::-webkit-scrollbar-thumb {
-  background: rgba(59, 130, 246, 0.6);
-  border-radius: 7px;
-  transition: background 0.3s;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  min-height: 30px;
-}
-
-.topology-section::-webkit-scrollbar-thumb:hover {
-  background: rgba(59, 130, 246, 0.8);
-  background-clip: content-box;
-}
-
-.topology-section::-webkit-scrollbar-thumb:active {
-  background: rgba(59, 130, 246, 1.0);
-  background-clip: content-box;
-}
-
-.control-panels-area {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.3) rgba(148, 163, 184, 0.1);
-}
-
-.control-panels-area::-webkit-scrollbar {
-  height: 8px;
-  width: 8px;
-}
-
-.control-panels-area::-webkit-scrollbar-track {
-  background: rgba(148, 163, 184, 0.1);
-  border-radius: 4px;
-  margin: 2px;
-}
-
-.control-panels-area::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
-  border-radius: 4px;
-  transition: background 0.3s;
-}
-
-.control-panels-area::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.6);
-}
-
-/* 确保控制面板区域可以滚动 */
-.control-panels-area {
-  overflow-y: auto;
-  overflow-x: auto;
-}
-
-/* 工具栏中央按钮组 */
-/* 拖拽模式样式 */
-.main-content.drag-mode {
+.scene-content {
+  flex: 1;
+  min-height: 0;
   position: relative;
-  overflow: hidden;
 }
 
-.drag-container {
-  position: relative;
-  width: 100%;
+.resize-handle {
+  width: 10px;
+  min-width: 10px;
   height: 100%;
-  background: transparent;
-  overflow: hidden;
-}
-
-/* 网格背景 */
-.grid-background {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0.1;
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
-  background-size: 20px 20px;
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* 可拖拽面板 */
-.draggable-panel {
-  position: absolute;
-  background: rgba(15, 23, 42, 0.95);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  transition: all 0.2s ease;
-  overflow: hidden;
-  min-width: 200px;
-  min-height: 150px;
-  z-index: 10;
-}
-
-.draggable-panel:hover {
-  border-color: rgba(59, 130, 246, 0.4);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-}
-
-.draggable-panel.dragging {
-  transform: rotate(2deg);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-  z-index: 1000;
-  border-color: rgba(59, 130, 246, 0.6);
-}
-
-/* 面板头部 */
-.panel-header {
-  height: 36px;
-  background: rgba(15, 23, 42, 0.9);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  cursor: move;
+  justify-content: center;
+  cursor: col-resize;
   user-select: none;
 }
 
-.panel-header h4 {
-  margin: 0;
-  color: #e2e8f0;
-  font-size: 14px;
-  font-weight: 500;
+.resize-line {
+  width: 4px;
+  height: 54px;
+  border-radius: 999px;
+  background: #33404c;
+  transition: background-color 0.16s ease, height 0.16s ease;
 }
 
-.panel-controls {
-  display: flex;
-  gap: 4px;
+.resize-handle:hover .resize-line,
+.resize-handle:active .resize-line {
+  height: 84px;
+  background: #5c7a95;
 }
 
-/* 面板内容 */
-.panel-body {
-  height: calc(100% - 36px);
-  padding: 8px;
-  overflow: auto;
-  position: relative;
-}
-
-/* 3D场景面板特殊处理，无padding避免黑边 */
-.draggable-panel .panel-body:has(.scene3d-container) {
-  padding: 0;
-}
-
-/* 对于不支持:has()选择器的浏览器，使用ID选择器 */
-.draggable-panel[data-panel="scene"] .panel-body {
-  padding: 0;
-}
-
-/* 调整大小句柄 */
-.resize-handles {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
+.side-section {
   height: 100%;
-  pointer-events: none;
-}
-
-.resize-handle.resize-se {
-  position: absolute;
-  bottom: -3px;
-  right: -3px;
-  width: 12px;
-  height: 12px;
-  cursor: se-resize;
-  pointer-events: all;
-  background: linear-gradient(-45deg, transparent 0%, transparent 40%, rgba(59, 130, 246, 0.6) 60%);
-  border-radius: 0 0 8px 0;
-}
-
-.resize-handle.resize-se:hover {
-  background: linear-gradient(-45deg, transparent 0%, transparent 30%, rgba(59, 130, 246, 0.8) 50%);
-}
-
-/* 面板内容滚动条 */
-.panel-body::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.panel-body::-webkit-scrollbar-track {
-  background: rgba(148, 163, 184, 0.1);
-  border-radius: 3px;
-}
-
-.panel-body::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
-  border-radius: 3px;
-  transition: background 0.3s;
-}
-
-.panel-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.6);
-}
-
-/* 全屏模式样式 */
-.draggable-panel.fullscreen {
-  border-radius: 0;
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  z-index: 10000 !important;
-}
-
-.fullscreen-exit-btn {
-  position: fixed !important;
-  top: 30px !important;
-  right: 30px !important;
-  z-index: 10002 !important;
-  background: rgba(15, 23, 42, 0.95) !important;
-  backdrop-filter: blur(20px) !important;
-  border-radius: 16px !important;
-  padding: 16px !important;
-  border: 3px solid rgba(255, 59, 48, 0.5) !important;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 59, 48, 0.3) !important;
-  animation: fade-in 0.3s ease-out, pulse-glow 2s infinite !important;
-  pointer-events: all !important;
-}
-
-.fullscreen-exit-btn .el-button {
-  background: linear-gradient(45deg, rgba(255, 59, 48, 0.9), rgba(220, 38, 38, 1)) !important;
-  border: none !important;
-  color: white !important;
-  font-weight: 700 !important;
-  font-size: 18px !important;
-  padding: 16px 32px !important;
-  border-radius: 12px !important;
-  box-shadow: 0 6px 16px rgba(255, 59, 48, 0.4) !important;
-  transition: all 0.2s ease !important;
-  min-width: auto !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 8px !important;
-}
-
-.fullscreen-exit-btn .el-button:hover {
-  background: linear-gradient(45deg, rgba(255, 59, 48, 1), rgba(220, 38, 38, 1)) !important;
-  transform: scale(1.1) translateY(-3px) !important;
-  box-shadow: 0 12px 24px rgba(255, 59, 48, 0.5) !important;
-}
-
-.fullscreen-exit-btn .el-button:active {
-  transform: scale(1.05) translateY(-1px) !important;
-}
-
-.esc-hint {
-  margin-top: 8px !important;
-  font-size: 14px !important;
-  color: rgba(255, 255, 255, 0.8) !important;
-  text-align: center !important;
-  font-weight: 500 !important;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
-  animation: gentle-fade 3s infinite !important;
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 59, 48, 0.3);
-  }
-  50% {
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(255, 59, 48, 0.5);
-  }
-}
-
-@keyframes gentle-fade {
-  0%, 100% {
-    opacity: 0.8;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* 全屏模式下的面板头部样式 */
-.draggable-panel.fullscreen .panel-header {
-  background: rgba(15, 23, 42, 0.98) !important;
-  backdrop-filter: blur(20px) !important;
-  border-bottom: 2px solid rgba(148, 163, 184, 0.4) !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
-  height: 56px !important;
-  padding: 0 30px !important;
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  z-index: 10001 !important;
-  width: 100vw !important;
-}
-
-.draggable-panel.fullscreen .panel-header h4 {
-  font-size: 20px !important;
-  font-weight: 700 !important;
-  color: #ffffff !important;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
-}
-
-/* 全屏时显示控制按钮 */
-.draggable-panel.fullscreen .panel-controls {
-  display: flex !important;
-  gap: 12px !important;
-  align-items: center !important;
-}
-
-/* 全屏时的退出按钮特殊样式 */
-.draggable-panel.fullscreen .panel-controls .el-button {
-  min-width: auto !important;
-  padding: 10px 16px !important;
-  font-size: 16px !important;
-  font-weight: 600 !important;
-  border-radius: 8px !important;
-  transition: all 0.2s ease !important;
-}
-
-/* 突出显示全屏切换按钮 */
-.draggable-panel.fullscreen .panel-controls .el-button:has(.CloseBold),
-.draggable-panel.fullscreen .panel-controls .el-button:last-child {
-  background: rgba(255, 59, 48, 0.2) !important;
-  border: 2px solid rgba(255, 59, 48, 0.5) !important;
-  color: #ffffff !important;
-  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3) !important;
-}
-
-.draggable-panel.fullscreen .panel-controls .el-button:has(.CloseBold):hover,
-.draggable-panel.fullscreen .panel-controls .el-button:last-child:hover {
-  background: rgba(255, 59, 48, 0.35) !important;
-  border-color: rgba(255, 59, 48, 0.7) !important;
-  transform: scale(1.08) translateY(-2px) !important;
-  box-shadow: 0 6px 16px rgba(255, 59, 48, 0.4) !important;
-}
-
-/* 全屏面板内容区域调整 */
-.draggable-panel.fullscreen .panel-body {
-  margin-top: 56px !important;
-  height: calc(100vh - 56px) !important;
-  padding: 20px !important;
-  overflow: auto !important;
-}
-
-/* 3D场景全屏时特殊处理，无padding避免黑边 */
-.draggable-panel.fullscreen[data-panel="scene"] .panel-body {
-  padding: 0 !important;
-}
-
-/* 传统模式拓扑面板全屏样式 */
-.topology-main-panel.fullscreen {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  z-index: 9999 !important;
-  border-radius: 0 !important;
-  margin: 0 !important;
-  max-width: none !important;
-  max-height: none !important;
-  transform: none !important;
-}
-
-/* 全屏面板内容适配 */
-.topology-main-panel.fullscreen .topology-content {
-  height: calc(100vh - 40px) !important;
-  overflow: auto !important;
-}
-
-/* 全屏面板头部样式 */
-.topology-main-panel.fullscreen .topology-header {
-  background: rgba(15, 23, 42, 0.95) !important;
-  backdrop-filter: blur(20px) !important;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.3) !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3) !important;
-}
-
-/* 全屏时的动画效果 */
-.topology-main-panel {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.topology-main-panel.fullscreen {
-  animation: fullscreen-enter 0.3s ease-out;
-}
-
-@keyframes fullscreen-enter {
-  from {
-    transform: scale(0.9);
-    opacity: 0.8;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-/* 全屏面板关闭按钮增强 */
-.topology-main-panel.fullscreen .topology-controls .el-button {
-  background: rgba(255, 59, 48, 0.1) !important;
-  border-color: rgba(255, 59, 48, 0.3) !important;
-  color: #ff3b30 !important;
-}
-
-.topology-main-panel.fullscreen .topology-controls .el-button:hover {
-  background: rgba(255, 59, 48, 0.2) !important;
-  border-color: rgba(255, 59, 48, 0.5) !important;
-}
-
-
-
-/* RViz2 monitoring layout override */
-
-.main-layout {
-
-  background: #0d1117;
-
-}
-
-
-
-
-
-
-
-.main-content:not(.drag-mode) {
-
-  display: grid;
-
-  grid-template-columns: minmax(0, 1fr) 340px;
-
-  gap: 12px;
-
-  padding: 12px;
-
-  min-height: calc(100vh - 44px);
-
-  background: #0d1117;
-
-}
-
-
-
-.scene-section {
-
-  width: auto !important;
-
-  min-width: 0;
-
-  padding: 0;
-
-}
-
-
-
-.scene-panel {
-
-  background: #171e25;
-
-  border: 1px solid #2a3540;
-
-  border-radius: 6px;
-
-  box-shadow: none;
-
-  backdrop-filter: none;
-
-}
-
-
-
-.scene-panel::before,
-.topology-main-panel::before {
-
-  display: none;
-
-}
-
-
-
-.scene-header {
-
-  background: #1c242d;
-
-  border-bottom: 1px solid #2a3540;
-
-  color: #dbe7f3;
-
-  backdrop-filter: none;
-
-}
-
-
-
-.scene-header {
-
-  height: 36px;
-
-  padding: 0 12px;
-
-}
-
-
-
-.scene-header h3 {
-
-  font-size: 13px;
-
-  font-weight: 600;
-
-}
-
-
-
-.scene-content {
-
-  height: calc(100% - 36px);
-
-  min-height: calc(100vh - 104px);
-
-}
-
-
-
-.resize-handle,
-
-.topology-main-panel {
-
-  display: none !important;
-
-}
-
-
-
-.topology-section {
-
-  width: auto !important;
-
-  min-width: 0;
-
-  padding: 0;
-
-  min-height: 0;
-
   overflow: hidden;
-
 }
 
-
-
-.control-panels-area {
-
+.side-panels-container {
   height: 100%;
-
   min-height: 0;
-
-  max-height: none;
-
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   overflow-y: auto;
-
-  overflow-x: hidden;
-
+  padding-right: 2px;
 }
-
-
-
-.control-panels-container {
-
-  display: grid;
-
-  grid-template-columns: 1fr;
-
-  gap: 10px;
-
-  min-width: 0;
-
-  height: auto;
-
-  padding: 0;
-
-}
-
-
 
 .gps-mini-panel,
-
 .topic-config-mini-panel,
-
+.goal-mini-panel,
 .settings-mini-panel,
-
 .controller-mini-panel,
-
-.status-mini-panel {
-
-  min-width: 0;
-
-}
-
-
-
-.status-mini-panel,
-
 .chart-mini-panel {
-
-  display: none;
-
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
+.side-panel-resize-handle {
+  flex: 0 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  user-select: none;
+}
 
+.side-panel-resize-handle span {
+  width: 56px;
+  height: 4px;
+  border-radius: 999px;
+  background: #33404c;
+  transition: width 0.16s ease, background-color 0.16s ease;
+}
 
+.side-panel-resize-handle:hover span,
+.side-panel-resize-handle:active span {
+  width: 88px;
+  background: #5c7a95;
+}
 
+.side-panels-container::-webkit-scrollbar,
+:deep(.workbench-panel-content::-webkit-scrollbar) {
+  width: 8px;
+  height: 8px;
+}
+
+.side-panels-container::-webkit-scrollbar-track,
+:deep(.workbench-panel-content::-webkit-scrollbar-track) {
+  background: #111820;
+}
+
+.side-panels-container::-webkit-scrollbar-thumb,
+:deep(.workbench-panel-content::-webkit-scrollbar-thumb) {
+  background: #3a4652;
+  border-radius: 999px;
+}
+
+:deep(.el-button) {
+  border-color: #35414d;
+}
 
 @media (max-width: 1100px) {
-
-  .main-content:not(.drag-mode) {
-
-    grid-template-columns: 1fr;
-
+  .main-content {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: minmax(55vh, 1fr) auto;
+    gap: 8px;
+    overflow: auto;
   }
 
-
-
-  .topology-section {
-
-    overflow: visible;
-
+  .resize-handle {
+    display: none;
   }
 
-
-
-  .scene-content {
-
-    min-height: 60vh;
-
+  .side-panels-container {
+    height: auto;
   }
-
 }
-
-
 </style>

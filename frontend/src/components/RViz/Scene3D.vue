@@ -2327,11 +2327,11 @@ export default {
       }
     }
 
-    const createPreviewArrow = (position, direction) => {
+    const createPreviewArrow = (position, direction, color = null) => {
       clearPreviewArrow()
 
       const arrowMaterial = new THREE.MeshBasicMaterial({
-        color: currentNavigationTool === '2d_goal' ? 0xff6b35 : 0x4dabf7,
+        color: color || (currentNavigationTool === '2d_goal' ? 0xff6b35 : 0x4dabf7),
         transparent: true,
         opacity: 0.85,
         depthTest: false
@@ -2410,7 +2410,7 @@ export default {
           position: {
             x: position.x,
             y: position.y,
-            z: 0.0  // 2D导航，z固定为0
+            z: Number.isFinite(position.z) ? position.z : 0.0
           },
           orientation: {
             x: orientation.x,
@@ -2448,6 +2448,34 @@ export default {
         ElMessage.error(`发布目标点失败: ${error.message}`)
         return false
       }
+    }
+
+    const normalizeGoalInput = (goal) => ({
+      x: Number(goal?.x) || 0,
+      y: Number(goal?.y) || 0,
+      z: Number(goal?.z) || 0
+    })
+
+    const getDefaultGoalOrientation = () => ({
+      x: 0,
+      y: 0,
+      z: 0,
+      w: 1
+    })
+
+    const previewGoalPoseFromInput = (goal) => {
+      if (!scene) return
+      const nextGoal = normalizeGoalInput(goal)
+      const position = new THREE.Vector3(nextGoal.x, nextGoal.y, nextGoal.z)
+      const direction = new THREE.Vector3(1, 0, 0)
+      createPreviewArrow(position, direction, 0xff6b35)
+    }
+
+    const publishGoalPoseFromInput = (goal) => {
+      const nextGoal = normalizeGoalInput(goal)
+      const position = new THREE.Vector3(nextGoal.x, nextGoal.y, nextGoal.z)
+      previewGoalPoseFromInput(nextGoal)
+      return publishGoalPose(position, getDefaultGoalOrientation())
     }
 
     const publishPoseEstimate = (position, orientation) => {
@@ -3543,6 +3571,8 @@ export default {
       updateSettings,
       setViewPreset,
       setNavigationTool,
+      previewGoalPoseFromInput,
+      publishGoalPoseFromInput,
       setFixedFrame,
       loadMapFile,
       loadMapFiles,
