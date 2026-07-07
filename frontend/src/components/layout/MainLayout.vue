@@ -120,6 +120,40 @@
                 </div>
               </div>
 
+              <!-- 话题控制/配置文件面板 -->
+              <div class="mini-panel topic-config-mini-panel" :class="{ 'fullscreen': fullscreenPanels.topics }">
+                <div v-if="fullscreenPanels.topics" class="fullscreen-exit-btn">
+                  <el-button size="large" @click="expandPanel('topics')">
+                    <el-icon><CloseBold /></el-icon>
+                    退出全屏
+                  </el-button>
+                  <div class="esc-hint">按 ESC 键退出</div>
+                </div>
+
+                <div class="mini-panel-header">
+                  <h5>话题控制</h5>
+                  <el-button size="small" text @click="expandPanel('topics')">
+                    <el-icon>
+                      <FullScreen v-if="!fullscreenPanels.topics" />
+                      <CloseBold v-else />
+                    </el-icon>
+                  </el-button>
+                </div>
+                <div class="mini-panel-content">
+                  <TopicConfigPanel
+                    :settings-snapshot="settingsSnapshot"
+                    @laser-type-change="onLaserTypeChange"
+                    @laser2d-change="onLaser2DChange"
+                    @pointcloud-change="onPointCloudChange"
+                    @map-topic-change="onMapTopicChange"
+                    @odom-topic-change="onOdomTopicChange"
+                    @settings-update="onSettingsUpdate"
+                    @display-topic-change="onDisplayTopicChange"
+                    @fixed-frame-change="onFixedFrameChange"
+                  />
+                </div>
+              </div>
+
               <!-- 3D控制器面板 -->
               <div class="mini-panel controller-mini-panel" :class="{ 'fullscreen': fullscreenPanels.controller }">
                 <!-- 全屏模式下的退出按钮 -->
@@ -265,6 +299,18 @@
                 @topic-visualize="onTopicVisualize"
               />
               <GpsPanel v-else-if="panel.id === 'gps'" :compact="false" />
+              <TopicConfigPanel
+                v-else-if="panel.id === 'topics'"
+                :settings-snapshot="settingsSnapshot"
+                @laser-type-change="onLaserTypeChange"
+                @laser2d-change="onLaser2DChange"
+                @pointcloud-change="onPointCloudChange"
+                @map-topic-change="onMapTopicChange"
+                @odom-topic-change="onOdomTopicChange"
+                @settings-update="onSettingsUpdate"
+                @display-topic-change="onDisplayTopicChange"
+                @fixed-frame-change="onFixedFrameChange"
+              />
               <Scene3DController
                 v-else-if="panel.id === 'controller'"
                 :compact="false"
@@ -312,12 +358,14 @@ import {
   CloseBold,
   ArrowDown
 } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 
 // 引入面板组件
 import Scene3D from '../RViz/Scene3D.vue'
 import GpsPanel from '../panels/GpsPanel.vue'
 import NodeTopicGraph from '../RQT/widgets/NodeTopicGraph.vue'
 import Scene3DController from '../RViz/Scene3DController.vue'
+import TopicConfigPanel from '../RViz/TopicConfigPanel.vue'
 import ChartPanel from '../panels/ChartPanel.vue'
 import StatusPanel from '../panels/StatusPanel.vue'
 
@@ -341,6 +389,7 @@ export default {
     GpsPanel,
     NodeTopicGraph,
     Scene3DController,
+    TopicConfigPanel,
     ChartPanel,
     StatusPanel
   },
@@ -364,9 +413,37 @@ export default {
     const fullscreenPanels = ref({
       topology: false,
       gps: false,
+      topics: false,
       controller: false,
       status: false,
       chart: false
+    })
+
+    const settingsSnapshot = ref({
+      fixedFrame: 'map',
+      position: {
+        odomTopic: '',
+        showTrajectory: true,
+        trajectoryLength: 100
+      },
+      laser: {
+        laserType: '3d',
+        laserScanTopic: '',
+        pointCloudTopic: '',
+        showLaserPoints: true,
+        showLaserLines: true,
+        showIntensity: false,
+        laserPointSize: 0.15,
+        pointSize: 0.03,
+        pointOpacity: 0.8
+      },
+      map: {
+        mapTopic: '',
+        showMap: true,
+        showMapGrid: false,
+        showMapOrigin: true,
+        mapOpacity: 0.8
+      }
     })
 
     // 拖拽模式状态
@@ -414,8 +491,8 @@ export default {
       {
         id: 'controller',
         title: '3D 控制器',
-        x: 1100,
-        y: 440,
+        x: 1180,
+        y: 300,
         width: 240,
         height: 180,
         minimized: false,
@@ -423,6 +500,20 @@ export default {
         zoomLevel: 1.0,
         originalWidth: 240,
         originalHeight: 180,
+        dragOrder: 0
+      },
+      {
+        id: 'topics',
+        title: '话题控制',
+        x: 860,
+        y: 260,
+        width: 420,
+        height: 340,
+        minimized: false,
+        fullscreen: false,
+        zoomLevel: 1.0,
+        originalWidth: 420,
+        originalHeight: 340,
         dragOrder: 0
       },
       {
@@ -760,7 +851,7 @@ export default {
       const containerHeight = dragContainer.value?.clientHeight || 800
 
       // 按重要性排序（3D场景和拓扑图优先）
-      const priorityOrder = ['scene', 'controller', 'gps', 'status', 'chart']
+      const priorityOrder = ['scene', 'gps', 'topics', 'controller', 'status', 'chart']
       const sortedPanels = [...dragPanels.value].sort((a, b) => {
         return priorityOrder.indexOf(a.id) - priorityOrder.indexOf(b.id)
       })
@@ -917,6 +1008,7 @@ export default {
     // 3D控制器事件处理
     const onLaserTypeChange = (laserType) => {
       console.log(`激光类型切换: ${laserType}`)
+      settingsSnapshot.value.laser.laserType = laserType
       if (scene3dRef.value && scene3dRef.value.setLaserType) {
         scene3dRef.value.setLaserType(laserType)
       }
@@ -924,16 +1016,19 @@ export default {
 
     const onLaser2DChange = (topicName) => {
       console.log(`2D激光主题切换: ${topicName}`)
+      settingsSnapshot.value.laser.laserScanTopic = topicName
       onTopicSubscribe(topicName, 'sensor_msgs/msg/LaserScan')
     }
 
     const onPointCloudChange = (topicName) => {
       console.log(`点云主题切换: ${topicName}`)
+      settingsSnapshot.value.laser.pointCloudTopic = topicName
       onTopicSubscribe(topicName, 'sensor_msgs/msg/PointCloud2')
     }
 
     const onMapTopicChange = (topicName) => {
       console.log(`地图主题切换: ${topicName}`)
+      settingsSnapshot.value.map.mapTopic = topicName
       onTopicSubscribe(topicName, 'nav_msgs/msg/OccupancyGrid')
     }
 
@@ -957,11 +1052,32 @@ export default {
 
     const onOdomTopicChange = (topicName) => {
       console.log(`里程计主题切换: ${topicName}`)
+      settingsSnapshot.value.position.odomTopic = topicName
       onTopicSubscribe(topicName, 'nav_msgs/msg/Odometry')
     }
 
     const onSettingsUpdate = (settings) => {
       console.log('设置更新:', settings)
+      if (settings.type === 'laser') {
+        settingsSnapshot.value.laser.showLaserPoints = settings.showLaserPoints
+        settingsSnapshot.value.laser.showLaserLines = settings.showLaserLines
+        settingsSnapshot.value.laser.showIntensity = settings.showIntensity
+        settingsSnapshot.value.laser.laserPointSize = settings.pointSize
+      } else if (settings.type === 'pointcloud') {
+        settingsSnapshot.value.laser.pointSize = settings.pointSize
+        settingsSnapshot.value.laser.pointOpacity = settings.opacity
+        settingsSnapshot.value.laser.showIntensity = settings.showIntensity
+      } else if (settings.type === 'map') {
+        if (settings.showMap !== undefined) settingsSnapshot.value.map.showMap = settings.showMap
+        if (settings.opacity !== undefined) settingsSnapshot.value.map.mapOpacity = settings.opacity
+        if (settings.showGrid !== undefined) settingsSnapshot.value.map.showMapGrid = settings.showGrid
+        if (settings.showOrigin !== undefined) settingsSnapshot.value.map.showMapOrigin = settings.showOrigin
+      } else if (settings.type === 'position') {
+        settingsSnapshot.value.position.showTrajectory = settings.showTrajectory
+        settingsSnapshot.value.position.trajectoryLength = settings.trajectoryLength
+      } else if (settings.type === 'trajectory') {
+        settingsSnapshot.value.position.trajectoryLength = settings.trajectoryLength
+      }
       if (scene3dRef.value && scene3dRef.value.updateSettings) {
         scene3dRef.value.updateSettings(settings)
       }
@@ -983,6 +1099,73 @@ export default {
       console.log('导航工具切换:', tool)
       if (scene3dRef.value && scene3dRef.value.setNavigationTool) {
         scene3dRef.value.setNavigationTool(tool)
+      }
+    }
+
+    const setDisplayTopicVisible = (topicName, visible) => {
+      if (scene3dRef.value?.setVisualizationVisible) {
+        scene3dRef.value.setVisualizationVisible(topicName, visible)
+      }
+    }
+
+    const onDisplayTopicChange = ({ action, display, oldName }) => {
+      if (!display?.name) return
+
+      const scene = scene3dRef.value
+      if (!scene) {
+        ElMessage.warning('3D场景未就绪')
+        return
+      }
+
+      const topicName = display.name
+      const messageType = display.messageType || 'unknown'
+      const previousTopicName = oldName || topicName
+
+      switch (action) {
+        case 'add':
+          if (display.visible !== false && scene.subscribeToRosTopic) {
+            scene.subscribeToRosTopic(topicName, messageType)
+          }
+          setDisplayTopicVisible(topicName, display.visible !== false)
+          break
+        case 'show':
+          if (scene.subscribeToRosTopic) {
+            scene.subscribeToRosTopic(topicName, messageType)
+          }
+          setDisplayTopicVisible(topicName, true)
+          break
+        case 'hide':
+          setDisplayTopicVisible(topicName, false)
+          break
+        case 'remove':
+          if (scene.unsubscribeFromRosTopic) {
+            scene.unsubscribeFromRosTopic(topicName)
+          }
+          break
+        case 'update':
+          if (scene.unsubscribeFromRosTopic) {
+            scene.unsubscribeFromRosTopic(previousTopicName)
+            if (previousTopicName !== topicName) {
+              scene.unsubscribeFromRosTopic(topicName)
+            }
+          }
+          if (display.visible !== false && scene.subscribeToRosTopic) {
+            scene.subscribeToRosTopic(topicName, messageType)
+          } else {
+            setDisplayTopicVisible(topicName, false)
+          }
+          break
+        default:
+          console.warn('未知话题控制动作:', action, display)
+      }
+    }
+
+    const onFixedFrameChange = (frameId) => {
+      const nextFrameId = frameId || 'map'
+      console.log(`Fixed Frame切换: ${nextFrameId}`)
+      settingsSnapshot.value.fixedFrame = nextFrameId
+      if (scene3dRef.value?.setFixedFrame) {
+        scene3dRef.value.setFixedFrame(nextFrameId)
       }
     }
 
@@ -1010,6 +1193,7 @@ export default {
       const names = {
         topology: 'ROS通信拓扑图',
         gps: 'GPS位置信息',
+        topics: '话题控制',
         controller: '3D控制器',
         status: '状态面板',
         chart: '数据图表'
@@ -1063,6 +1247,7 @@ export default {
       // 模式控制
       isDragMode,
       toggleDragMode,
+      settingsSnapshot,
 
       // 拖拽模式
       dragPanels,
@@ -1111,7 +1296,9 @@ export default {
       onSettingsUpdate,
       onCameraReset,
       onViewPreset,
-      onNavigationToolChange
+      onNavigationToolChange,
+      onDisplayTopicChange,
+      onFixedFrameChange
     }
   }
 }
@@ -1395,6 +1582,10 @@ export default {
 
 .controller-mini-panel {
   min-width: 220px;
+}
+
+.topic-config-mini-panel {
+  min-width: 260px;
 }
 
 .status-mini-panel {
@@ -2098,6 +2289,8 @@ export default {
 
 
 .gps-mini-panel,
+
+.topic-config-mini-panel,
 
 .controller-mini-panel,
 

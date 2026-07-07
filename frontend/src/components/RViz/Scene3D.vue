@@ -104,6 +104,7 @@ export default {
 
     // 导航工具状态
     let currentNavigationTool = 'none'
+    let fixedFrameId = 'map'
     let isDragging = false
     let dragStartPosition = null
     let dragCurrentPosition = null
@@ -1034,6 +1035,18 @@ export default {
       }
     }
     
+    const setVisualizationVisible = (topic, visible) => {
+      const object = visualizationObjects.get(topic)
+      if (object) {
+        object.visible = visible
+      }
+
+      const linesObject = visualizationObjects.get(topic + '_lines')
+      if (linesObject) {
+        linesObject.visible = visible
+      }
+    }
+
     const removeVisualization = (topic) => {
       const object = visualizationObjects.get(topic)
       if (object) {
@@ -2205,6 +2218,10 @@ export default {
     }
 
     // 导航工具相关方法
+    const setFixedFrame = (frameId) => {
+      fixedFrameId = frameId || 'map'
+    }
+
     const setNavigationTool = (tool) => {
       currentNavigationTool = tool
       console.log('set navigation tool:', tool)
@@ -2348,7 +2365,7 @@ export default {
             sec: Math.floor(Date.now() / 1000),
             nanosec: (Date.now() % 1000) * 1000000
           },
-          frame_id: 'map'  // RViz标准使用map坐标系
+          frame_id: fixedFrameId
         },
         pose: {
           position: {
@@ -2415,7 +2432,7 @@ export default {
             sec: Math.floor(Date.now() / 1000),
             nanosec: (Date.now() % 1000) * 1000000
           },
-          frame_id: 'map'  // RViz标准使用map坐标系
+          frame_id: fixedFrameId
         },
         pose: {
           pose: {
@@ -3478,12 +3495,14 @@ export default {
       unsubscribeFromRosTopic,
       updateVisualization,
       removeVisualization,
+      setVisualizationVisible,
       getPerformanceStats,
       // 新增控制方法
       setLaserType,
       updateSettings,
       setViewPreset,
       setNavigationTool,
+      setFixedFrame,
       loadMapFile,
       loadMapFiles,
       fitCameraToPointCloud,

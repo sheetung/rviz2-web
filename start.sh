@@ -9,7 +9,7 @@ echo "================================"
 check_dependencies() {
     echo "📋 检查依赖..."
     
-    if ! command -v docker &> /dev/null; then
+    if [ "$1" = "docker" ] && ! command -v docker &> /dev/null; then
         echo "❌ Docker 未安装，请先安装 Docker"
         exit 1
     fi
@@ -51,7 +51,7 @@ start_local() {
     pip install -r requirements.txt
 
     echo "🚀 启动 FastAPI 服务 (端口 8000)..."
-    ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0} python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
+    ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0} python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
     BACKEND_PID=$!
     
     cd ..
@@ -66,7 +66,7 @@ start_local() {
     fi
     
     echo "🚀 启动 Vue.js 开发服务器 (端口 3000)..."
-    npm run dev -- --host 0.0.0.0 --port 3000 &
+    CHOKIDAR_USEPOLLING=true npm run dev -- --host 0.0.0.0 --port 3000 &
     FRONTEND_PID=$!
     
     cd ..

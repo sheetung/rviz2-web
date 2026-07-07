@@ -10,7 +10,7 @@ import logging
 import os
 
 from .core.config import get_settings
-from .api.v1 import ros, viz
+from .api.v1 import ros, viz, configs
 from .services.dependencies import get_rosbridge_service
 
 # 配置日志
@@ -41,6 +41,7 @@ app.add_middleware(
 # 注册 API 路由
 app.include_router(ros.router, prefix="/api/v1", tags=["ROS"])
 app.include_router(viz.router, prefix="/api/v1", tags=["Visualization"])
+app.include_router(configs.router, prefix="/api/v1", tags=["Configs"])
 
 # 静态文件服务 (用于单一容器部署)
 if os.path.exists("./static"):

@@ -112,7 +112,7 @@ npm run dev -- --host 0.0.0.0 --port 3000
 当前 remote 使用 HTTPS：
 
 ```bash
-git remote set-url origin https://github.com/sheetung/RVIZ-RQT-VISUAL.git
+git remote set-url origin https://github.com/sheetung/rviz2-web.git
 ```
 
 不建议在非本人设备上配置长期 SSH key，也不要保存 GitHub 密码。
@@ -152,3 +152,7 @@ RVIZ-RQT-VISUAL/
 - 后端运行时可能产生 `backend/app/**/__pycache__` 文件，不应提交到 git。
 - 大点云场景会增加浏览器渲染压力，可适当调节点大小或减少订阅内容。
 - 3D 期望目标可以在当前“期望目标”菜单基础上继续扩展。
+
+## 致谢
+
+感谢 [lovelyyoshino/RVIZ-RQT-VISUAL](https://github.com/lovelyyoshino/RVIZ-RQT-VISUAL) 项目提供的基础与参考。

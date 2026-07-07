@@ -118,4 +118,15 @@ export const vizApi = {
 /**
  * 默认导出 API 实例
  */
+
+/**
+ * RVizWeb config file API
+ */
+export const configApi = {
+  listConfigs: () => api.get('/configs'),
+  getConfig: (name) => api.get(`/configs/${encodeURIComponent(name)}`),
+  saveConfig: (name, config) => api.post(`/configs/${encodeURIComponent(name)}`, { name, config }),
+  deleteConfig: (name) => api.delete(`/configs/${encodeURIComponent(name)}`)
+}
+
 export default api

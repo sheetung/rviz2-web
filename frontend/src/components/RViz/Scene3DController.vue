@@ -728,8 +728,6 @@ export default {
   margin-top: 12px;
 }
 
-
-
 .tool-hint {
   margin-top: 8px;
   padding: 6px 8px;
