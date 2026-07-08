@@ -66,7 +66,7 @@
 </template>
 
 <script>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { configApi } from '../../services/api'
 
@@ -217,6 +217,7 @@ export default {
 
     const saveConfig = async () => {
       emit('capture-scene-state')
+      await nextTick()
       const name = normalizeConfigName(configName.value)
       await configApi.saveConfig(name, buildConfig())
       configName.value = name

@@ -73,6 +73,21 @@ export default {
       return messageType.includes('Path') || messageType.includes('PositionCommand')
     }
 
+    const isPositionCommandMessage = (topic = '', messageType = '', message = null) => {
+      if ((messageType || '').includes('PositionCommand')) return true
+      if (topic === '/planning/pos_cmd') return true
+      return !!(
+        message &&
+        (message.position || message._position || message.pos || message._pos) &&
+        (
+          Object.prototype.hasOwnProperty.call(message, 'trajectory_flag') ||
+          Object.prototype.hasOwnProperty.call(message, '_trajectory_flag') ||
+          Object.prototype.hasOwnProperty.call(message, 'trajectory_id') ||
+          Object.prototype.hasOwnProperty.call(message, '_trajectory_id')
+        )
+      )
+    }
+
     const defaultVisualizationTopics = getDefaultVisualizationTopics()
     let defaultVisualizationSubscribed = false
 
@@ -785,7 +800,8 @@ export default {
           x: camera.up.x,
           y: camera.up.y,
           z: camera.up.z
-        }
+        },
+        zoom: camera.zoom
       }
     }
 
@@ -803,6 +819,10 @@ export default {
         cameraState.target.y,
         cameraState.target.z
       )
+      if (Number.isFinite(cameraState.zoom)) {
+        camera.zoom = cameraState.zoom
+        camera.updateProjectionMatrix()
+      }
       camera.lookAt(controls.target)
       controls.update()
     }
@@ -1014,6 +1034,12 @@ export default {
       const beforeCount = visualizationObjects.size
       
       try {
+        if (isPositionCommandMessage(topic, messageType, message)) {
+          console.log(`[Scene3D] 🔄 处理位置指令轨迹消息...`)
+          updatePositionCommandPath(topic, message, messageType || 'mars_quadrotor_msgs/msg/PositionCommand')
+          return
+        }
+
         // 根据消息类型更新可视化
         switch (messageType) {
           case 'sensor_msgs/msg/PointCloud2':
@@ -1124,14 +1150,21 @@ export default {
         }
       }
 
-      if (isPathLikeMessageType(object.userData?.messageType || '') && object.material) {
-        if (nextConfig.color) {
-          object.material.color = new THREE.Color(nextConfig.color)
+      if (isPathLikeMessageType(object.userData?.messageType || '')) {
+        const pathColor = nextConfig.color ? new THREE.Color(nextConfig.color) : null
+        const applyPathMaterialConfig = (material) => {
+          if (!material) return
+          if (pathColor && material.color) {
+            material.color = pathColor
+          }
+          if (nextConfig.lineWidth !== undefined && material.linewidth !== undefined) {
+            material.linewidth = Number(nextConfig.lineWidth) || material.linewidth
+          }
+          material.needsUpdate = true
         }
-        if (nextConfig.lineWidth !== undefined) {
-          object.material.linewidth = Number(nextConfig.lineWidth) || object.material.linewidth
-        }
-        object.material.needsUpdate = true
+
+        applyPathMaterialConfig(object.material)
+        object.traverse?.((child) => applyPathMaterialConfig(child.material))
       }
     }
 
@@ -1270,11 +1303,18 @@ export default {
                 dataArray = []
               }
             }
+
+            if (!(dataArray instanceof Uint8Array)) {
+              dataArray = new Uint8Array(dataArray)
+            }
             
             const width = message.width || 1
             const height = message.height || 1
             const pointStep = message.point_step || 16
+            const rowStep = message.row_step || width * pointStep
             const totalPoints = width * height
+            const littleEndian = message.is_bigendian !== true
+            const dataView = new DataView(dataArray.buffer, dataArray.byteOffset, dataArray.byteLength)
             
             if (shouldLog) console.log(`Processing ${totalPoints} points with step ${pointStep}`)
 
@@ -1291,28 +1331,23 @@ export default {
 
             if (shouldLog) console.log(`Using offsets - X: ${xOffset}, Y: ${yOffset}, Z: ${zOffset}`)
             
-            // 解析点云数据
-            const maxPoints = Math.min(totalPoints, 10000) // 限制最大点数
-            for (let i = 0; i < maxPoints; i++) {
-              const byteIndex = i * pointStep
+            // 解析完整点云。不要只取开头一段，否则地图会像被截断。
+            const sampleStep = 1
+            const hasUsableRowStep = !message.sampled && height > 1 && rowStep >= width * pointStep
+
+            for (let i = 0; i < totalPoints; i += sampleStep) {
+              const row = Math.floor(i / width)
+              const col = i % width
+              const byteIndex = hasUsableRowStep
+                ? row * rowStep + col * pointStep
+                : i * pointStep
               
               if (byteIndex + Math.max(xOffset, yOffset, zOffset) + 4 <= dataArray.length) {
                 try {
-                  // 创建DataView来正确读取浮点数
-                  const buffer = new ArrayBuffer(pointStep)
-                  const view = new Uint8Array(buffer)
-                  
-                  // 复制数据
-                  for (let j = 0; j < Math.min(pointStep, dataArray.length - byteIndex); j++) {
-                    view[j] = dataArray[byteIndex + j]
-                  }
-                  
-                  const dataView = new DataView(buffer)
-                  
-                  // 读取XYZ坐标（假设为32位浮点数，小端序）
-                  const x = dataView.getFloat32(xOffset, true)
-                  const y = dataView.getFloat32(yOffset, true)
-                  const z = dataView.getFloat32(zOffset, true)
+                  // 读取XYZ坐标（PointCloud2 常见为32位浮点数）
+                  const x = dataView.getFloat32(byteIndex + xOffset, littleEndian)
+                  const y = dataView.getFloat32(byteIndex + yOffset, littleEndian)
+                  const z = dataView.getFloat32(byteIndex + zOffset, littleEndian)
                   
                   // 验证坐标值
                   if (!isNaN(x) && !isNaN(y) && !isNaN(z) &&
@@ -1337,7 +1372,7 @@ export default {
               }
             }
             
-            if (shouldLog) console.log(`Successfully processed ${pointsProcessed} points out of ${maxPoints}`)
+            if (shouldLog) console.log(`Successfully processed ${pointsProcessed} points out of ${totalPoints} (sample step: ${sampleStep})`)
           }
           // 如果是简单的点数组格式
           else if (Array.isArray(message.points)) {
@@ -1917,17 +1952,27 @@ export default {
       removeVisualization(topic)
 
       const displayConfig = displayConfigs.get(topic) || {}
+      const color = displayConfig.color || 0x00ff00
       const geometry = new THREE.BufferGeometry().setFromPoints(points)
       const material = new THREE.LineBasicMaterial({
-        color: displayConfig.color || 0x00ff00,
-        linewidth: displayConfig.lineWidth || 2
+        color,
+        linewidth: displayConfig.lineWidth || 2,
+        depthTest: false
       })
       const path = new THREE.Line(geometry, material)
+      const currentPointGeometry = new THREE.SphereGeometry(displayConfig.pointSize || 0.12, 12, 12)
+      const currentPointMaterial = new THREE.MeshBasicMaterial({ color, depthTest: false })
+      const currentPoint = new THREE.Mesh(currentPointGeometry, currentPointMaterial)
+      currentPoint.position.copy(point)
 
-      path.userData = { topic, messageType }
+      const group = new THREE.Group()
+      group.add(path)
+      group.add(currentPoint)
+      group.userData = { topic, messageType }
+      group.renderOrder = 10
 
-      scene.add(path)
-      visualizationObjects.set(topic, path)
+      scene.add(group)
+      visualizationObjects.set(topic, group)
     }
     
 

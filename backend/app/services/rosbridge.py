@@ -226,6 +226,7 @@ class RosbridgeService:
         except Exception as e:
             logger.error(f"WebSocket error for {client_id}: {e}")
         finally:
+            await self._cleanup_client_subscriptions(client_id)
             self.connection_manager.disconnect(client_id)
             
     async def _handle_message(self, client_id: str, message: dict):
@@ -316,6 +317,26 @@ class RosbridgeService:
         logger.info(f"🔍 Verification - All connection subscriptions:")
         for cid, cinfo in self.connection_manager.connection_info.items():
             logger.info(f"   - {cid}: {cinfo.subscribed_topics}")
+
+    def _topic_client_subscription_count(self, topic: str) -> int:
+        return sum(
+            1 for info in self.connection_manager.connection_info.values()
+            if topic in info.subscribed_topics
+        )
+
+    async def _stop_ros_subscription_if_unused(self, topic: str):
+        if self._topic_client_subscription_count(topic) == 0:
+            await self.unsubscribe_topic(topic)
+
+    async def _cleanup_client_subscriptions(self, client_id: str):
+        info = self.connection_manager.connection_info.get(client_id)
+        if not info:
+            return
+
+        topics = list(info.subscribed_topics)
+        info.subscribed_topics.clear()
+        for topic in topics:
+            await self._stop_ros_subscription_if_unused(topic)
             
     def _get_message_class(self, msg_type: str):
         """获取消息类型对应的类"""
@@ -488,6 +509,8 @@ class RosbridgeService:
                 'sensor_msgs/LaserScan',
                 'sensor_msgs/msg/Image',
                 'sensor_msgs/Image',
+                'mars_quadrotor_msgs/msg/PositionCommand',
+                'mars_quadrotor_msgs/PositionCommand',
             }
 
             reliability = QoSReliabilityPolicy.BEST_EFFORT if msg_type in sensor_like_types else QoSReliabilityPolicy.RELIABLE
@@ -691,6 +714,11 @@ class RosbridgeService:
         try:
             logger.debug(f"📨 Processing message on topic {topic}, type: {type(msg).__name__}")
 
+            active_subscribers = self._topic_client_subscription_count(topic)
+            if active_subscribers == 0:
+                logger.debug(f"📭 Dropping {topic}: no active frontend subscribers")
+                return
+
             # 转换消息为字典格式
             msg_dict = self._message_to_dict(msg)
 
@@ -712,10 +740,6 @@ class RosbridgeService:
                 'msg': msg_dict
             }
 
-            # 检查是否有客户端订阅这个主题
-            active_subscribers = sum(1 for info in self.connection_manager.connection_info.values()
-                                   if topic in info.subscribed_topics)
-
             # 🔍 调试：详细打印连接信息
             logger.debug(f"🔍 Debug subscription check for {topic}:")
             logger.debug(f"   - Total active connections: {len(self.connection_manager.connection_info)}")
@@ -733,19 +757,6 @@ class RosbridgeService:
                     logger.debug(f"📤 Successfully broadcast {topic} to {active_subscribers} clients")
                 else:
                     logger.warning(f"⚠️ Failed to broadcast {topic} to clients")
-            else:
-                # 减少缓存消息的日志输出频率
-                if topic not in self._cache_warning_counts:
-                    self._cache_warning_counts[topic] = 0
-
-                self._cache_warning_counts[topic] += 1
-
-                # 只在第一次和每100次时输出警告
-                if self._cache_warning_counts[topic] == 1 or self._cache_warning_counts[topic] % 100 == 0:
-                    logger.warning(f"📭 No active subscribers for {topic}, message cached only ({self._cache_warning_counts[topic]} times)")
-                    if self._cache_warning_counts[topic] == 1:
-                        logger.warning(f"💡 Tip: Frontend needs to subscribe to {topic} to receive messages")
-
             # 缓存消息
             self.message_cache.append({
                 'topic': topic,
@@ -757,7 +768,7 @@ class RosbridgeService:
             logger.error(f"❌ Error processing message from {topic}: {e}", exc_info=True)
             
     def _process_pointcloud_data(self, pointcloud_msg) -> dict:
-        """处理点云数据，进行压缩和采样优化"""
+        """处理点云数据，保留完整 PointCloud2 二进制数据"""
         try:
             import struct
             import numpy as np
@@ -789,51 +800,24 @@ class RosbridgeService:
             if len(pointcloud_msg.data) > 0:
                 logger.debug(f"Processing pointcloud data - Total bytes: {len(pointcloud_msg.data)}, Point step: {pointcloud_msg.point_step}")
                 
-                # 检查是否需要采样（如果点数过多）
                 total_points = pointcloud_msg.width * pointcloud_msg.height
-                max_points = 50000  # 增加最大传输点数
                 
                 logger.debug(f"Pointcloud info - Width: {pointcloud_msg.width}, Height: {pointcloud_msg.height}, Total points: {total_points}")
-                
-                if total_points > max_points and total_points > 0:
-                    # 采样数据 - 修复采样逻辑
-                    sample_step = max(1, total_points // max_points)
-                    logger.info(f"Sampling pointcloud: {total_points} -> ~{total_points//sample_step} points (step: {sample_step})")
-                    
-                    sampled_data = []
-                    point_step = pointcloud_msg.point_step
-                    
-                    # 按照点为单位进行采样
-                    for i in range(0, total_points, sample_step):
-                        byte_start = i * point_step
-                        byte_end = byte_start + point_step
-                        if byte_end <= len(pointcloud_msg.data):
-                            sampled_data.extend(pointcloud_msg.data[byte_start:byte_end])
-                    
-                    # 使用Base64编码传输采样后的数据
+
+                # 对于大型数据使用Base64编码，小型数据直接传输。这里不做点采样，避免地图在前端显示成被截断/抽稀。
+                if len(pointcloud_msg.data) > 10000:  # 大于10KB使用Base64
                     import base64
-                    result['data'] = base64.b64encode(bytes(sampled_data)).decode('ascii')
+                    result['data'] = base64.b64encode(pointcloud_msg.data).decode('ascii')
                     result['data_encoding'] = 'base64'
-                    result['width'] = len(sampled_data) // point_step
-                    result['height'] = 1
-                    result['sampled'] = True
-                    result['original_points'] = total_points
-                    result['sample_step'] = sample_step
-
-                    logger.info(f"Sampled pointcloud - New size: {len(sampled_data)} bytes, Points: {result['width']}, Base64 encoded")
+                    logger.debug(f"Full pointcloud transmission - {len(pointcloud_msg.data)} bytes, {total_points} points, Base64 encoded")
                 else:
-                    # 对于大型数据使用Base64编码，小型数据直接传输
-                    if len(pointcloud_msg.data) > 10000:  # 大于10KB使用Base64
-                        import base64
-                        result['data'] = base64.b64encode(pointcloud_msg.data).decode('ascii')
-                        result['data_encoding'] = 'base64'
-                        logger.debug(f"Direct pointcloud transmission - {len(pointcloud_msg.data)} bytes, {total_points} points, Base64 encoded")
-                    else:
-                        result['data'] = list(pointcloud_msg.data)
-                        result['data_encoding'] = 'array'
-                        logger.debug(f"Direct pointcloud transmission - {len(pointcloud_msg.data)} bytes, {total_points} points, as array")
+                    result['data'] = list(pointcloud_msg.data)
+                    result['data_encoding'] = 'array'
+                    logger.debug(f"Full pointcloud transmission - {len(pointcloud_msg.data)} bytes, {total_points} points, as array")
 
-                    result['sampled'] = False
+                result['sampled'] = False
+                result['original_points'] = total_points
+                result['sample_step'] = 1
             else:
                 result['data'] = []
                 result['data_encoding'] = 'array'
@@ -1527,6 +1511,7 @@ class RosbridgeService:
         info = self.connection_manager.connection_info.get(client_id)
         if info and topic in info.subscribed_topics:
             info.subscribed_topics.remove(topic)
+            await self._stop_ros_subscription_if_unused(topic)
     
     async def _handle_advertise(self, message: dict):
         """处理前端声明发布者"""
