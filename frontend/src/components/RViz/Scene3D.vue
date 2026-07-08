@@ -67,6 +67,11 @@ export default {
     const rosSubscriptions = new Map()
     const plugins = new Map()
     const displayConfigs = new Map()
+    const positionCommandPaths = new Map()
+
+    const isPathLikeMessageType = (messageType = '') => {
+      return messageType.includes('Path') || messageType.includes('PositionCommand')
+    }
 
     const defaultVisualizationTopics = getDefaultVisualizationTopics()
     let defaultVisualizationSubscribed = false
@@ -1036,6 +1041,11 @@ export default {
             console.log(`[Scene3D] 🔄 处理路径消息...`)
             updatePath(topic, message)
             break
+          case 'mars_quadrotor_msgs/msg/PositionCommand':
+          case 'mars_quadrotor_msgs/PositionCommand':
+            console.log(`[Scene3D] 🔄 处理位置指令轨迹消息...`)
+            updatePositionCommandPath(topic, message, messageType)
+            break
           case 'nav_msgs/msg/Odometry':
           case 'nav_msgs/Odometry':
             {
@@ -1114,7 +1124,7 @@ export default {
         }
       }
 
-      if (object.userData?.messageType === 'nav_msgs/msg/Path' && object.material) {
+      if (isPathLikeMessageType(object.userData?.messageType || '') && object.material) {
         if (nextConfig.color) {
           object.material.color = new THREE.Color(nextConfig.color)
         }
@@ -1868,6 +1878,54 @@ export default {
       
       path.userData = { topic, messageType: 'nav_msgs/msg/Path' }
       
+      scene.add(path)
+      visualizationObjects.set(topic, path)
+    }
+
+    const getPositionCommandPoint = (message) => {
+      const position = message?.position || message?._position || message?.pos || message?._pos
+      if (!position) return null
+
+      const x = Number(position.x ?? position._x ?? 0)
+      const y = Number(position.y ?? position._y ?? 0)
+      const z = Number(position.z ?? position._z ?? 0)
+
+      if (![x, y, z].every(Number.isFinite)) return null
+      return new THREE.Vector3(x, y, z)
+    }
+
+    const updatePositionCommandPath = (topic, message, messageType = 'mars_quadrotor_msgs/msg/PositionCommand') => {
+      const point = getPositionCommandPoint(message)
+      if (!point) {
+        console.warn('[Scene3D] Invalid PositionCommand message format:', {
+          topic,
+          keys: message ? Object.keys(message) : []
+        })
+        return
+      }
+
+      const points = positionCommandPaths.get(topic) || []
+      const lastPoint = points[points.length - 1]
+      if (!lastPoint || lastPoint.distanceTo(point) > 0.001) {
+        points.push(point)
+      }
+      if (points.length > 1000) {
+        points.splice(0, points.length - 1000)
+      }
+      positionCommandPaths.set(topic, points)
+
+      removeVisualization(topic)
+
+      const displayConfig = displayConfigs.get(topic) || {}
+      const geometry = new THREE.BufferGeometry().setFromPoints(points)
+      const material = new THREE.LineBasicMaterial({
+        color: displayConfig.color || 0x00ff00,
+        linewidth: displayConfig.lineWidth || 2
+      })
+      const path = new THREE.Line(geometry, material)
+
+      path.userData = { topic, messageType }
+
       scene.add(path)
       visualizationObjects.set(topic, path)
     }

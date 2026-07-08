@@ -336,13 +336,17 @@ export default {
     ]
 
     let displayIdCounter = 0
+    const isPathMessageType = (messageType = '') => {
+      return messageType.includes('Path') || messageType.includes('PositionCommand')
+    }
+
     const createDefaultDisplayConfig = (messageType) => {
       if ((messageType || '').includes('PointCloud2')) {
         return {
           pointSize: 0.03
         }
       }
-      if ((messageType || '').includes('Path')) {
+      if (isPathMessageType(messageType || '')) {
         return {
           lineWidth: 2,
           color: '#00ff00'
@@ -543,7 +547,7 @@ export default {
 
     const isPointCloudDisplay = (display) => (display.messageType || '').includes('PointCloud2')
 
-    const isPathDisplay = (display) => (display.messageType || '').includes('Path')
+    const isPathDisplay = (display) => isPathMessageType(display.messageType || '')
 
     const applyDisplayTopics = () => {
       displayTopics.value.forEach(display => {

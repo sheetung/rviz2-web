@@ -9,9 +9,9 @@
       "viewPreset": "iso",
       "camera": {
         "position": {
-          "x": -0.3972593666861049,
-          "y": -4.006963835939913,
-          "z": 3.8431118784019187
+          "x": -3.7070493723204634,
+          "y": -1.2429545800044786,
+          "z": 3.9614951755921197
         },
         "target": {
           "x": 0.00013710924082511693,
@@ -106,7 +106,7 @@
       {
         "name": "/rog_map/occ",
         "messageType": "sensor_msgs/msg/PointCloud2",
-        "visible": false,
+        "visible": true,
         "config": {
           "pointSize": 0.15
         }
@@ -115,7 +115,10 @@
         "name": "/planning/pos_cmd",
         "messageType": "mars_quadrotor_msgs/msg/PositionCommand",
         "visible": true,
-        "config": {}
+        "config": {
+          "lineWidth": 5,
+          "color": "#00ff00"
+        }
       }
     ]
   }
