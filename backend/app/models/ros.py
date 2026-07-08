@@ -122,6 +122,7 @@ class SystemStatus(BaseModel):
     uptime: float = Field(..., description="运行时间 (秒)")
     memory_usage: float = Field(..., description="内存使用率")
     cpu_usage: float = Field(..., description="CPU 使用率")
+    cpu_temperature: Optional[float] = Field(None, description="CPU 温度")
     
     class Config:
         json_encoders = {

@@ -7,6 +7,7 @@ import asyncio
 import importlib
 import json
 import logging
+import os
 import subprocess
 from typing import Dict, List, Optional, Any
 from collections import defaultdict, deque
@@ -24,6 +25,11 @@ from ..models.ros import TopicInfo, NodeInfo, SystemStatus, ConnectionInfo
 from ..models.viz import VisualizationState, PluginInfo, CameraSettings, RenderSettings
 
 logger = logging.getLogger(__name__)
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 class ConnectionManager:
     """WebSocket 连接管理器"""
@@ -1370,6 +1376,14 @@ class RosbridgeService:
         """获取系统状态"""
         topics = await self.get_topics()
         nodes = await self.get_nodes()
+        cpu_usage = 0.0
+        memory_usage = 0.0
+        cpu_temperature = None
+
+        if psutil:
+            cpu_usage = psutil.cpu_percent(interval=None)
+            memory_usage = psutil.virtual_memory().percent
+            cpu_temperature = self._get_cpu_temperature()
         
         return SystemStatus(
             ros_domain_id=self.settings.ros_domain_id,
@@ -1378,9 +1392,45 @@ class RosbridgeService:
             active_connections=len(self.connection_manager.active_connections),
             system_time=datetime.now(),
             uptime=time.time() - self.start_time,
-            memory_usage=0.0,  # 实际实现需要获取真实数据
-            cpu_usage=0.0
+            memory_usage=memory_usage,
+            cpu_usage=cpu_usage,
+            cpu_temperature=cpu_temperature
         )
+
+    def _get_cpu_temperature(self) -> Optional[float]:
+        """读取 CPU 温度，优先使用 psutil，失败时尝试 Linux thermal zone。"""
+        if psutil and hasattr(psutil, 'sensors_temperatures'):
+            try:
+                temperatures = psutil.sensors_temperatures() or {}
+                preferred_keys = ('coretemp', 'k10temp', 'cpu_thermal', 'soc_thermal')
+                for key in preferred_keys:
+                    entries = temperatures.get(key)
+                    if entries:
+                        values = [entry.current for entry in entries if entry.current is not None]
+                        if values:
+                            return round(max(values), 1)
+                for entries in temperatures.values():
+                    values = [entry.current for entry in entries if entry.current is not None]
+                    if values:
+                        return round(max(values), 1)
+            except Exception as e:
+                logger.debug(f"Could not read CPU temperature from psutil: {e}")
+
+        thermal_root = '/sys/class/thermal'
+        try:
+            for name in os.listdir(thermal_root):
+                if not name.startswith('thermal_zone'):
+                    continue
+                temp_path = os.path.join(thermal_root, name, 'temp')
+                with open(temp_path, 'r', encoding='utf-8') as temp_file:
+                    raw_value = temp_file.read().strip()
+                if raw_value:
+                    value = float(raw_value)
+                    return round(value / 1000.0 if value > 1000 else value, 1)
+        except Exception as e:
+            logger.debug(f"Could not read CPU temperature from thermal zone: {e}")
+
+        return None
     
     # 可视化相关方法
     async def get_visualization_state(self) -> VisualizationState:

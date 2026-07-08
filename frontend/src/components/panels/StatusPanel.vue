@@ -24,8 +24,10 @@
         </div>
         <div class="status-content">
           <div class="status-label">系统</div>
-          <div class="status-value">{{ systemData.status }}</div>
-          <div class="status-extra">{{ systemData.uptime }}</div>
+          <div class="status-value">CPU {{ formatPercent(systemData.cpuUsage) }}</div>
+          <div class="status-extra">
+            内存 {{ formatPercent(systemData.memUsage) }} · 温度 {{ formatTemperature(systemData.temperature) }}
+          </div>
         </div>
       </div>
       
@@ -57,20 +59,6 @@
         </div>
       </div>
     </div>
-    
-    <!-- 详细状态指示器 -->
-    <div class="indicator-bar">
-      <div 
-        v-for="indicator in indicators" 
-        :key="indicator.name"
-        class="indicator-item" 
-        :class="indicator.status"
-        :title="indicator.tooltip"
-      >
-        <div class="indicator-dot"></div>
-        <span class="indicator-label">{{ indicator.name }}</span>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -80,13 +68,11 @@ import {
   Monitor, 
   Setting,
   Link,
-  CircleCheck,
-  Warning,
-  CircleClose,
   Connection
 } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { useConnectionStore } from '../../composables/useConnectionStore'
+import { rosApi } from '../../services/api'
 
 export default {
   name: 'StatusPanel',
@@ -94,9 +80,6 @@ export default {
     Monitor,
     Setting,
     Link,
-    CircleCheck,
-    Warning,
-    CircleClose,
     Connection
   },
 
@@ -152,16 +135,6 @@ export default {
       signal: 85,
       bandwidth: '100 Mbps'
     })
-    
-    // 详细指示器
-    const indicators = ref([
-      { name: 'ROS', status: 'active', tooltip: 'ROS2系统正常' },
-      { name: '3D', status: 'active', tooltip: '3D渲染正常' },
-      { name: 'WS', status: 'active', tooltip: 'WebSocket连接正常' },
-      { name: 'Data', status: 'warning', tooltip: '数据流较少' },
-      { name: 'GPU', status: 'active', tooltip: 'GPU渲染正常' },
-      { name: 'API', status: 'active', tooltip: 'API服务正常' }
-    ])
     
     // 连接相关计算属性
     const connectionStatusClass = computed(() => {
@@ -239,24 +212,53 @@ export default {
     
     // 订阅状态相关主题
     let subscriptions = []
+    let systemStatusTimer = null
+
+    const toNumber = (value, fallback = 0) => {
+      const number = Number(value)
+      return Number.isFinite(number) ? number : fallback
+    }
+
+    const updateSystemMetrics = (statusData = {}) => {
+      if (statusData.cpu_usage !== undefined) {
+        systemData.value.cpuUsage = toNumber(statusData.cpu_usage)
+      }
+      if (statusData.memory_usage !== undefined) {
+        systemData.value.memUsage = toNumber(statusData.memory_usage)
+      }
+      if (statusData.mem_usage !== undefined) {
+        systemData.value.memUsage = toNumber(statusData.mem_usage)
+      }
+      if (statusData.cpu_temperature !== undefined) {
+        systemData.value.temperature = statusData.cpu_temperature === null
+          ? null
+          : toNumber(statusData.cpu_temperature, null)
+      }
+      if (statusData.temperature !== undefined) {
+        systemData.value.temperature = statusData.temperature === null
+          ? null
+          : toNumber(statusData.temperature, null)
+      }
+    }
+
+    const fetchSystemStatus = async () => {
+      try {
+        const statusData = await rosApi.getSystemStatus()
+        updateSystemMetrics(statusData)
+      } catch (error) {
+        console.warn('Failed to fetch system status:', error)
+      }
+    }
     
     const subscribeToStatus = () => {
       // 诊断信息
       subscriptions.push(rosbridge.subscribe('/diagnostics', 'diagnostic_msgs/msg/DiagnosticArray', (message) => {
         if (message.status && message.status.length > 0) {
           message.status.forEach(status => {
-            const indicator = indicators.value.find(ind => 
-              status.name.toLowerCase().includes(ind.name.toLowerCase())
-            )
-            
-            if (indicator) {
-              switch (status.level) {
-                case 0: indicator.status = 'active'; break  // OK
-                case 1: indicator.status = 'warning'; break // WARN
-                case 2: indicator.status = 'inactive'; break // ERROR
-                case 3: indicator.status = 'inactive'; break // STALE
-              }
-              indicator.tooltip = status.message || indicator.tooltip
+            if (status.level >= 2) {
+              systemData.value.status = '异常'
+            } else if (status.level === 1 && systemData.value.status !== '异常') {
+              systemData.value.status = '警告'
             }
           })
         }
@@ -266,15 +268,7 @@ export default {
       subscriptions.push(rosbridge.subscribe('/system_status', 'std_msgs/msg/String', (message) => {
         try {
           const statusData = JSON.parse(message.data)
-          if (statusData.cpu_usage !== undefined) {
-            systemData.value.cpuUsage = statusData.cpu_usage
-          }
-          if (statusData.mem_usage !== undefined) {
-            systemData.value.memUsage = statusData.mem_usage
-          }
-          if (statusData.temperature !== undefined) {
-            systemData.value.temperature = statusData.temperature
-          }
+          updateSystemMetrics(statusData)
         } catch (error) {
           console.warn('Failed to parse system status:', error)
         }
@@ -308,15 +302,28 @@ export default {
         connectionData.value.latency = 0
       }
     }
+
+    const formatPercent = (value) => {
+      return `${Math.round(toNumber(value))}%`
+    }
+
+    const formatTemperature = (value) => {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return '--'
+      }
+      return `${Number(value).toFixed(1)}°C`
+    }
     
     onMounted(() => {
       console.log('StatusPanel mounted - 使用真实ROS数据')
       subscribeToStatus()
       updateConnectionStatus()
+      fetchSystemStatus()
       startUptimeTracking()
       
       // 监听连接状态变化
       connectionStatusTimer = setInterval(updateConnectionStatus, 5000)
+      systemStatusTimer = setInterval(fetchSystemStatus, 3000)
     })
     
     onUnmounted(() => {
@@ -333,6 +340,10 @@ export default {
       if (connectionStatusTimer) {
         clearInterval(connectionStatusTimer)
       }
+
+      if (systemStatusTimer) {
+        clearInterval(systemStatusTimer)
+      }
     })
     
     return {
@@ -340,7 +351,6 @@ export default {
       systemData,
       modeData,
       networkData,
-      indicators,
       connectionStatusClass,
       connectionColor,
       systemStatusClass,
@@ -348,7 +358,9 @@ export default {
       modeStatusClass,
       modeColor,
       networkStatusClass,
-      networkColor
+      networkColor,
+      formatPercent,
+      formatTemperature
     }
   }
 }
@@ -431,64 +443,11 @@ export default {
   margin-top: 1px;
 }
 
-.indicator-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.indicator-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  padding: 2px 4px;
-  border-radius: 3px;
-  background: rgba(15, 23, 42, 0.8);
-  cursor: help;
-  transition: all 0.3s ease;
-}
-
-.indicator-item:hover {
-  background: rgba(15, 23, 42, 0.9);
-  transform: translateY(-1px);
-}
-
-.indicator-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.indicator-item.active .indicator-dot {
-  background: #67c23a;
-  box-shadow: 0 0 8px rgba(103, 194, 58, 0.6);
-}
-
-.indicator-item.warning .indicator-dot {
-  background: #e6a23c;
-  box-shadow: 0 0 8px rgba(230, 162, 60, 0.6);
-}
-
-.indicator-item.inactive .indicator-dot {
-  background: #f56c6c;
-  box-shadow: 0 0 8px rgba(245, 108, 108, 0.6);
-}
-
-.indicator-label {
-  color: #e2e8f0;
-  font-size: 9px;
-  white-space: nowrap;
-}
 .status-panel--wide {
   padding: 0;
   height: auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: block;
   align-items: center;
-  gap: 10px;
 }
 
 .status-panel--wide .status-grid {
@@ -515,30 +474,9 @@ export default {
   line-height: 1.2;
 }
 
-.status-panel--wide .indicator-bar {
-  justify-content: flex-end;
-  margin-top: 0;
-  max-width: 360px;
-}
-
-.status-panel--wide .indicator-item {
-  padding: 4px 6px;
-  border-radius: 4px;
-}
-
 @media (max-width: 1100px) {
-  .status-panel--wide {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-  }
-
   .status-panel--wide .status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .status-panel--wide .indicator-bar {
-    justify-content: flex-start;
-    max-width: none;
   }
 }
 
