@@ -4,6 +4,7 @@ Rosbridge 服务
 """
 
 import asyncio
+import importlib
 import json
 import logging
 import subprocess
@@ -123,6 +124,8 @@ class RosbridgeService:
         self.start_time = time.time()
         self.topic_info_cache = {}
         self.node_info_cache = {}
+        self._message_counts = {}
+        self._topic_message_times = defaultdict(lambda: deque(maxlen=200))
 
         # 异步消息处理队列
         self.message_queue = None
@@ -277,30 +280,28 @@ class RosbridgeService:
 
         logger.info(f"🔔 Received subscription request from {client_id}: topic={topic}, type={msg_type}")
 
-        if not topic or not msg_type:
-            logger.error(f"❌ Invalid subscription request from {client_id}: missing topic or type")
+        if not topic:
+            logger.error(f"❌ Invalid subscription request from {client_id}: missing topic")
             return
 
-        # 添加到客户端订阅列表
         info = self.connection_manager.connection_info.get(client_id)
-        if info:
-            if topic not in info.subscribed_topics:
-                info.subscribed_topics.append(topic)
-                logger.info(f"✅ Added {topic} to client {client_id} subscription list")
-                logger.info(f"🔍 Updated subscription list for {client_id}: {info.subscribed_topics}")
-            else:
-                logger.info(f"📝 Client {client_id} already subscribed to {topic}")
-        else:
+        if not info:
             logger.error(f"❌ Client {client_id} connection info not found")
             logger.error(f"🔍 Available connections: {list(self.connection_manager.connection_info.keys())}")
             return
 
-        # 创建 ROS2 订阅者（如果不存在）
-        if topic not in self.subscribers:
-            logger.info(f"🔄 Creating new ROS2 subscriber for {topic}")
-            await self._create_subscriber(topic, msg_type)
+        subscribed = await self.subscribe_topic(topic, msg_type)
+        if not subscribed:
+            logger.error(f"❌ Failed to subscribe client {client_id} to {topic}")
+            return
+
+        # 添加到客户端订阅列表
+        if topic not in info.subscribed_topics:
+            info.subscribed_topics.append(topic)
+            logger.info(f"✅ Added {topic} to client {client_id} subscription list")
+            logger.info(f"🔍 Updated subscription list for {client_id}: {info.subscribed_topics}")
         else:
-            logger.info(f"♻️ ROS2 subscriber for {topic} already exists")
+            logger.info(f"📝 Client {client_id} already subscribed to {topic}")
 
         logger.info(f"📊 Current subscriptions for {client_id}: {info.subscribed_topics if info else 'none'}")
         logger.info(f"📊 Total active ROS2 subscribers: {len(self.subscribers)}")
@@ -369,7 +370,7 @@ class RosbridgeService:
             # 轨迹消息
             'trajectory_msgs/msg/JointTrajectory': ('trajectory_msgs.msg', 'JointTrajectory'),
             'trajectory_msgs/msg/MultiDOFJointTrajectory': ('trajectory_msgs.msg', 'MultiDOFJointTrajectory'),
-            
+
             # Action和状态消息
             'actionlib_msgs/msg/GoalStatus': ('actionlib_msgs.msg', 'GoalStatus'),
             'rosgraph_msgs/msg/Log': ('rosgraph_msgs.msg', 'Log'),
@@ -399,10 +400,25 @@ class RosbridgeService:
                 module = __import__(module_name, fromlist=[class_name])
                 return getattr(module, class_name)
             except ImportError:
-                logger.warning(f"{module_name} not available, will use String as fallback for {msg_type}")
+                logger.warning(f"{module_name} not available, cannot use message type {msg_type}")
                 return None
         else:
-            logger.warning(f"Unknown message type {msg_type}")
+            try:
+                package_name, namespace, class_name = msg_type.split('/')
+            except ValueError:
+                logger.warning(f"Invalid ROS message type format: {msg_type}")
+                return None
+
+            if namespace != 'msg':
+                logger.warning(f"Unsupported ROS interface namespace for {msg_type}")
+                return None
+
+            module_name = f"{package_name}.msg"
+            try:
+                module = importlib.import_module(module_name)
+                return getattr(module, class_name)
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"Cannot import message type {msg_type} from {module_name}: {e}")
             return None
 
     async def _create_subscriber(self, topic: str, msg_type: str):
@@ -412,10 +428,10 @@ class RosbridgeService:
             msg_class = self._get_message_class(msg_type)
             
             if msg_class is None:
-                # 使用String作为默认类型
-                logger.warning(f"Using String as fallback for unsupported message type {msg_type}")
-                from std_msgs.msg import String
-                msg_class = String
+                logger.error(
+                    f"Cannot create subscriber for {topic}: unsupported or unavailable message type {msg_type}"
+                )
+                return
             
             def callback(msg):
                 # ROS2回调必须是同步的，但我们需要异步处理
@@ -617,6 +633,7 @@ class RosbridgeService:
                     if topic not in self._message_counts:
                         self._message_counts[topic] = 0
                     self._message_counts[topic] += 1
+                    self._topic_message_times[topic].append(time.time())
 
                     # 只记录第一条消息，减少日志输出
                     if self._message_counts[topic] == 1:
@@ -1056,12 +1073,72 @@ class RosbridgeService:
             if topic.name == topic_name:
                 return topic
         return None
+
+    async def _resolve_topic_message_type(
+        self,
+        topic_name: str,
+        requested_type: Optional[str] = None
+    ) -> Optional[str]:
+        """根据 ROS graph 中的实际 topic 信息解析订阅类型。"""
+        publisher_types = []
+        if self.node:
+            try:
+                publisher_types = [
+                    info.topic_type
+                    for info in self.node.get_publishers_info_by_topic(topic_name)
+                    if getattr(info, 'topic_type', None)
+                ]
+            except Exception as e:
+                logger.debug(f"Could not inspect publishers for {topic_name}: {e}")
+
+        unique_publisher_types = list(dict.fromkeys(publisher_types))
+        if unique_publisher_types:
+            resolved_type = (
+                requested_type
+                if requested_type in unique_publisher_types
+                else unique_publisher_types[0]
+            )
+            if requested_type and requested_type != resolved_type:
+                logger.warning(
+                    f"Requested type {requested_type} for {topic_name} does not match publisher type "
+                    f"{resolved_type}; using publisher type"
+                )
+            return resolved_type
+
+        topic_info = await self.get_topic_info(topic_name)
+        discovered_type = topic_info.message_type if topic_info else None
+        if discovered_type and discovered_type != "unknown":
+            if requested_type and requested_type != discovered_type:
+                logger.warning(
+                    f"Requested type {requested_type} for {topic_name} does not match discovered type "
+                    f"{discovered_type}; using discovered type"
+                )
+            return discovered_type
+
+        return requested_type
     
-    async def subscribe_topic(self, topic_name: str) -> bool:
+    async def subscribe_topic(
+        self,
+        topic_name: str,
+        message_type: Optional[str] = None
+    ) -> bool:
         """订阅主题"""
         try:
-            # 实现订阅逻辑
-            return True
+            if not self.node:
+                logger.error("Cannot subscribe before ROS2 node is initialized")
+                return False
+
+            if topic_name in self.subscribers:
+                return True
+
+            msg_type = await self._resolve_topic_message_type(topic_name, message_type)
+
+            if not msg_type or msg_type == "unknown":
+                logger.error(f"Cannot subscribe to {topic_name}: unknown message type")
+                return False
+
+            await self._create_subscriber(topic_name, msg_type)
+            return topic_name in self.subscribers
         except Exception as e:
             logger.error(f"Failed to subscribe to {topic_name}: {e}")
             return False
@@ -1069,16 +1146,48 @@ class RosbridgeService:
     async def unsubscribe_topic(self, topic_name: str) -> bool:
         """取消订阅主题"""
         try:
-            # 实现取消订阅逻辑
+            subscriber = self.subscribers.pop(topic_name, None)
+            if subscriber and self.node:
+                self.node.destroy_subscription(subscriber)
+            self._topic_message_times.pop(topic_name, None)
+            self._message_counts.pop(topic_name, None)
             return True
         except Exception as e:
             logger.error(f"Failed to unsubscribe from {topic_name}: {e}")
             return False
             
-    async def publish_message(self, topic_name: str, message: Dict[str, Any]) -> bool:
+    async def publish_message(
+        self,
+        topic_name: str,
+        message: Dict[str, Any],
+        message_type: Optional[str] = None
+    ) -> bool:
         """发布消息"""
         try:
-            # 实现发布逻辑
+            if not self.node:
+                logger.error("Cannot publish before ROS2 node is initialized")
+                return False
+
+            publisher_record = self.publishers.get(topic_name)
+            msg_type = message_type or (publisher_record or {}).get('msg_type')
+            if not msg_type:
+                topic_info = await self.get_topic_info(topic_name)
+                msg_type = topic_info.message_type if topic_info else None
+
+            if not msg_type or msg_type == "unknown":
+                logger.error(f"Cannot publish to {topic_name}: unknown message type")
+                return False
+
+            await self._ensure_publisher(topic_name, msg_type)
+            publisher_record = self.publishers.get(topic_name)
+            if not publisher_record:
+                return False
+
+            ros_msg = self._dict_to_message(publisher_record['msg_class'], message)
+            if ros_msg is None:
+                return False
+
+            publisher_record['publisher'].publish(ros_msg)
             return True
         except Exception as e:
             logger.error(f"Failed to publish to {topic_name}: {e}")
@@ -1161,28 +1270,28 @@ class RosbridgeService:
         try:
             frequencies = {}
             topic_names_and_types = self.node.get_topic_names_and_types()
+            now = time.time()
             
             for topic_name, _ in topic_names_and_types:
                 try:
-                    # 获取主题的发布者信息
                     publishers_info = self.node.get_publishers_info_by_topic(topic_name)
-                    if publishers_info:
-                        # 这里简化处理，实际应该通过订阅主题来测量频率
-                        # 暂时返回一个基于主题名称的模拟频率
-                        if 'odom' in topic_name or 'pose' in topic_name:
-                            frequencies[topic_name] = 10.0 + (hash(topic_name) % 20)
-                        elif 'image' in topic_name or 'camera' in topic_name:
-                            frequencies[topic_name] = 15.0 + (hash(topic_name) % 15)
-                        elif 'scan' in topic_name or 'laser' in topic_name:
-                            frequencies[topic_name] = 5.0 + (hash(topic_name) % 10)
-                        elif 'diagnostics' in topic_name or 'status' in topic_name:
-                            frequencies[topic_name] = 1.0 + (hash(topic_name) % 2)
-                        elif 'parameter_events' in topic_name or 'rosout' in topic_name:
-                            frequencies[topic_name] = 0.1 + (hash(topic_name) % 0.5)
-                        else:
-                            frequencies[topic_name] = 1.0 + (hash(topic_name) % 5)
+                    timestamps = self._topic_message_times.get(topic_name)
+                    if timestamps:
+                        while timestamps and now - timestamps[0] > 5.0:
+                            timestamps.popleft()
+
+                    if timestamps and len(timestamps) >= 2:
+                        duration = timestamps[-1] - timestamps[0]
+                        frequencies[topic_name] = (
+                            (len(timestamps) - 1) / duration
+                            if duration > 0
+                            else 0.0
+                        )
+                    elif publishers_info:
+                        # 有发布者但当前桥未收到足够样本时，明确返回未知/未测得为0。
+                        frequencies[topic_name] = 0.0
                     else:
-                        frequencies[topic_name] = 0.0  # 没有发布者，频率为0
+                        frequencies[topic_name] = 0.0
                         
                 except Exception as e:
                     logger.warning(f"Could not get frequency for topic {topic_name}: {e}")
