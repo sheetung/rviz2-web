@@ -2,16 +2,16 @@
   "name": "default.rvizweb",
   "version": 1,
   "config": {
-    "fixedFrame": "map",
+    "fixedFrame": "world",
     "scene": {
       "showGrid": true,
       "showAxes": true,
       "viewPreset": "iso",
       "camera": {
         "position": {
-          "x": 0.0001380255656906077,
-          "y": -14.000272318169724,
-          "z": 9.999677162072201
+          "x": -0.3972593666861049,
+          "y": -4.006963835939913,
+          "z": 3.8431118784019187
         },
         "target": {
           "x": 0.00013710924082511693,
@@ -38,9 +38,9 @@
     },
     "goal": {
       "topic": "/goal_pose",
-      "x": 0,
-      "y": 0,
-      "z": 0
+      "x": 2,
+      "y": 2,
+      "z": 0.5
     },
     "position": {
       "odomTopic": "/uav1/prometheus/odom_slam",
@@ -50,7 +50,7 @@
     "laser": {
       "laserType": "3d",
       "laserScanTopic": "",
-      "pointCloudTopic": "/uav1/prometheus/local_points",
+      "pointCloudTopic": "/rog_map/inf_occ",
       "showLaserPoints": true,
       "showLaserLines": true,
       "showIntensity": false,
@@ -69,9 +69,9 @@
       {
         "name": "/uav1/prometheus/local_points",
         "messageType": "sensor_msgs/msg/PointCloud2",
-        "visible": false,
+        "visible": true,
         "config": {
-          "pointSize": 0.23
+          "pointSize": 0.04
         }
       },
       {
@@ -106,10 +106,16 @@
       {
         "name": "/rog_map/occ",
         "messageType": "sensor_msgs/msg/PointCloud2",
-        "visible": true,
+        "visible": false,
         "config": {
           "pointSize": 0.15
         }
+      },
+      {
+        "name": "/planning/pos_cmd",
+        "messageType": "mars_quadrotor_msgs/msg/PositionCommand",
+        "visible": true,
+        "config": {}
       }
     ]
   }

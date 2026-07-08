@@ -57,8 +57,7 @@ npm run dev
 docker build -t ros-web-viz .
 docker run -d -p 8000:8000 -p 9090:9090 ros-web-viz
 
-# 或使用 docker-compose
-docker-compose up -d
+# 当前仓库未提供 docker-compose.yml
 ```
 
 ### 访问地址
@@ -66,7 +65,7 @@ docker-compose up -d
 - 🌐 **前端界面**: http://localhost:3000
 - 🔧 **后端 API**: http://localhost:8000  
 - 📚 **API 文档**: http://localhost:8000/docs
-- 🔌 **WebSocket**: ws://localhost:9090
+- 🔌 **WebSocket**: ws://localhost:8000/ws
 
 ## 📁 项目结构
 
@@ -95,7 +94,6 @@ ros-web-viz/
 │   ├── package.json          # 前端依赖
 │   └── vite.config.js        # 构建配置
 ├── Dockerfile                 # 单一容器构建
-├── docker-compose.yml         # 多服务编排(可选)
 ├── start.sh                   # 一键启动脚本
 └── .env                       # 环境变量配置
 ```
@@ -265,7 +263,7 @@ ROS_DISCOVERY_SERVER=           # 发现服务器
 # 服务配置  
 WEB_HOST=0.0.0.0               # Web 服务主机
 WEB_PORT=8000                  # Web 服务端口
-ROSBRIDGE_PORT=9090            # Rosbridge 端口
+ROSBRIDGE_PORT=9090            # 预留 Rosbridge 端口；前端默认连接 FastAPI /ws
 
 # 性能配置
 MAX_CONNECTIONS=100            # 最大连接数
@@ -296,12 +294,11 @@ export default defineConfig({
 cd backend
 pytest tests/ -v
 
-# 前端测试  
+# 前端检查  
 cd frontend
-npm test
+npm run lint:check
 
-# 集成测试
-docker-compose -f docker-compose.test.yml up
+# 集成测试需另行提供测试编排文件
 ```
 
 ## 📝 API 文档

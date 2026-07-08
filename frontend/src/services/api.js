@@ -65,16 +65,28 @@ export const rosApi = {
   getTopics: () => api.get('/topics'),
   
   // 获取特定主题信息
-  getTopicInfo: (topicName) => api.get(`/topics/${encodeURIComponent(topicName)}`),
+  getTopicInfo: (topicName) => api.get('/topic-info', { params: { topic_name: topicName } }),
   
   // 订阅主题
-  subscribeTopic: (topicName) => api.post(`/topics/${encodeURIComponent(topicName)}/subscribe`),
+  subscribeTopic: (topicName, messageType) => api.post('/topics/subscribe', {
+    topic: topicName,
+    message_type: messageType
+  }),
   
   // 取消订阅主题
-  unsubscribeTopic: (topicName) => api.post(`/topics/${encodeURIComponent(topicName)}/unsubscribe`),
+  unsubscribeTopic: (topicName) => api.post('/topics/unsubscribe', {
+    topic: topicName
+  }),
   
   // 发布消息到主题
-  publishMessage: (topicName, message) => api.post(`/topics/${encodeURIComponent(topicName)}/publish`, message),
+  publishMessage: (topicName, messageType, message) => api.post('/topics/publish', {
+    topic: topicName,
+    message_type: messageType,
+    msg: message
+  }),
+  
+  // 获取主题频率
+  getTopicFrequencies: () => api.get('/topics/frequencies'),
   
   // 获取节点列表
   getNodes: () => api.get('/nodes'),
