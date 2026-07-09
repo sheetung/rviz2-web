@@ -509,6 +509,8 @@ class RosbridgeService:
                 'sensor_msgs/LaserScan',
                 'sensor_msgs/msg/Image',
                 'sensor_msgs/Image',
+                'sensor_msgs/msg/CompressedImage',
+                'sensor_msgs/CompressedImage',
                 'mars_quadrotor_msgs/msg/PositionCommand',
                 'mars_quadrotor_msgs/PositionCommand',
             }
@@ -881,6 +883,33 @@ class RosbridgeService:
                 'data': []
             }
 
+    def _process_compressed_image_data(self, image_msg) -> dict:
+        """处理压缩图像数据"""
+        try:
+            result = {
+                'header': self._message_to_dict(image_msg.header),
+                'format': image_msg.format,
+                'compressed': True
+            }
+
+            if len(image_msg.data) > 10000:
+                import base64
+                result['data'] = base64.b64encode(image_msg.data).decode('ascii')
+                result['data_encoding'] = 'base64'
+            else:
+                result['data'] = list(image_msg.data)
+                result['data_encoding'] = 'array'
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to process compressed image data: {e}")
+            return {
+                'header': self._message_to_dict(image_msg.header),
+                'error': str(e),
+                'data': []
+            }
+
     def _message_to_dict(self, msg) -> dict:
         """将 ROS 消息转换为字典"""
         try:
@@ -896,8 +925,12 @@ class RosbridgeService:
                 return self._process_pointcloud_data(msg)
             
             # 特殊处理图像数据
-            if isinstance(msg, (Image, CompressedImage)):
+            if isinstance(msg, Image):
                 return self._process_image_data(msg)
+
+            # 特殊处理压缩图像数据
+            if isinstance(msg, CompressedImage):
+                return self._process_compressed_image_data(msg)
             
             if hasattr(msg, '__slots__'):
                 result = {}
