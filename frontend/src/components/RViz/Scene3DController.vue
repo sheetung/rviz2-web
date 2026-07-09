@@ -406,9 +406,6 @@ export default {
         selectedMapTopic.value = preferTopic(availableMapTopics.value, '', selectedMapTopic.value)
 
         emit('laser-type-change', laserType.value)
-        if (selectedPointCloud.value) {
-          emit('pointcloud-change', selectedPointCloud.value)
-        }
         if (selectedOdomTopic.value) {
           emit('odom-topic-change', selectedOdomTopic.value)
         }

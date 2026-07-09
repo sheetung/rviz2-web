@@ -183,7 +183,6 @@ export default {
       if (cfg.laser) {
         if (cfg.laser.laserType) emit('laser-type-change', cfg.laser.laserType)
         if (cfg.laser.laserScanTopic) emit('laser2d-change', cfg.laser.laserScanTopic)
-        if (cfg.laser.pointCloudTopic) emit('pointcloud-change', cfg.laser.pointCloudTopic)
         emit('settings-update', {
           type: 'laser',
           showLaserPoints: cfg.laser.showLaserPoints !== false,
