@@ -52,3 +52,7 @@ log/
 Thumbs.db
 
 frontend/dist/
+
+# RViz web local configs
+rvizweb_configs/*
+!rvizweb_configs/.gitkeep
