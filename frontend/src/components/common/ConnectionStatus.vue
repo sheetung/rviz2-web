@@ -1,5 +1,5 @@
 <template>
-  <div class="connection-status">
+  <div ref="statusRef" class="connection-status">
     <el-badge
       :type="badgeType"
       is-dot
@@ -51,7 +51,7 @@
 </template>
 
 <script>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Connection, ArrowDown } from '@element-plus/icons-vue'
 import { useConnectionStore } from '../../composables/useConnectionStore'
 import StatusPanel from '../panels/StatusPanel.vue'
@@ -66,6 +66,7 @@ export default {
   setup() {
     const connectionStore = useConnectionStore()
     const showDetails = ref(false)
+    const statusRef = ref(null)
 
     // 徽章类型
     const badgeType = computed(() => {
@@ -102,12 +103,30 @@ export default {
       showDetails.value = !showDetails.value
     }
 
+    const closeDetails = () => {
+      showDetails.value = false
+    }
+
+    const handleDocumentClick = (event) => {
+      if (!showDetails.value || statusRef.value?.contains(event.target)) return
+      closeDetails()
+    }
+
     const reconnect = () => {
       connectionStore.disconnect()
       connectionStore.connect()
     }
 
+    onMounted(() => {
+      document.addEventListener('click', handleDocumentClick)
+    })
+
+    onUnmounted(() => {
+      document.removeEventListener('click', handleDocumentClick)
+    })
+
     return {
+      statusRef,
       connectionStore,
       showDetails,
       badgeType,
@@ -115,6 +134,7 @@ export default {
       visibleTopics,
       hiddenTopicCount,
       toggleDetails,
+      closeDetails,
       reconnect
     }
   }
