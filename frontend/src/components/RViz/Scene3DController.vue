@@ -1,129 +1,5 @@
 <template>
   <div class="scene3d-controller">
-    <!-- 激光雷达设置 -->
-    <div class="control-section">
-      <h4>激光雷达设置</h4>
-      <div class="laser-controls">
-        <div class="control-item">
-          <label>激光类型:</label>
-          <el-radio-group v-model="laserType" @change="onLaserTypeChange">
-            <el-radio label="2d">2D激光</el-radio>
-            <el-radio label="3d">3D点云</el-radio>
-          </el-radio-group>
-        </div>
-        
-        <div class="control-item" v-if="laserType === '2d'">
-          <label>2D激光主题:</label>
-          <el-select 
-            v-model="selectedLaser2D" 
-            @change="onLaser2DChange"
-            placeholder="选择激光雷达主题"
-            size="small"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="topic in availableLaser2D"
-              :key="topic.name"
-              :label="topic.label"
-              :value="topic.name"
-            />
-          </el-select>
-        </div>
-        
-        <div class="control-item" v-if="laserType === '3d'">
-          <label>3D点云主题:</label>
-          <el-select 
-            v-model="selectedPointCloud" 
-            @change="onPointCloudChange"
-            placeholder="选择点云主题"
-            size="small"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="topic in availablePointClouds"
-              :key="topic.name"
-              :label="topic.label"
-              :value="topic.name"
-            />
-          </el-select>
-        </div>
-        
-        <div class="control-item">
-          <label>显示设置:</label>
-          <div class="display-options">
-            <div class="setting-toggle">
-              <span>激光点</span>
-              <el-switch v-model="showLaserPoints" size="small" @change="updateLaserSettings" />
-            </div>
-            <div class="setting-toggle" v-if="laserType === '2d'">
-              <span>连线</span>
-              <el-switch v-model="showLaserLines" size="small" @change="updateLaserSettings" />
-            </div>
-            <div class="setting-toggle" v-if="laserType === '3d'">
-              <span>强度</span>
-              <el-switch v-model="showIntensity" size="small" @change="updateLaserSettings" />
-            </div>
-          </div>
-        </div>
-
-        <div class="control-item" v-if="laserType === '2d'">
-          <label>激光点设置:</label>
-          <div class="laser-settings">
-            <div class="setting-row">
-              <span>点大小:</span>
-              <el-slider
-                v-model="laserPointSize"
-                :min="0.05"
-                :max="0.5"
-                :step="0.05"
-                @change="updateLaserSettings"
-                style="flex: 1; margin-left: 12px;"
-              />
-            </div>
-          </div>
-        </div>
-        
-        <div class="control-item" v-if="laserType === '3d'">
-          <label>点云设置:</label>
-          <div class="pointcloud-settings">
-            <div class="setting-row point-size-row">
-              <span>Point Size:</span>
-              <el-slider
-                v-model="pointSize"
-                :min="0.01"
-                :max="1"
-                :step="0.01"
-                @input="updatePointCloudSettings"
-                style="flex: 1;"
-              />
-              <el-input-number
-                v-model="pointSize"
-                :min="0.01"
-                :max="1"
-                :step="0.01"
-                :precision="2"
-                controls-position="right"
-                size="small"
-                @change="updatePointCloudSettings"
-                class="point-size-input"
-              />
-            </div>
-            <div class="setting-row">
-              <span>透明度:</span>
-              <el-slider 
-                v-model="pointOpacity" 
-                :min="0.1" 
-                :max="1" 
-                :step="0.1"
-                @change="updatePointCloudSettings"
-                style="flex: 1; margin-left: 12px;"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- 地图设置 -->
     <div class="control-section">
       <h4>地图设置</h4>
@@ -270,7 +146,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Refresh, Aim, Folder } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRosbridge } from '../../composables/useRosbridge'
@@ -282,9 +158,6 @@ export default {
     Refresh, Aim, Folder
   },
   emits: [
-    'laser-type-change',
-    'laser2d-change',
-    'pointcloud-change',
     'map-topic-change',
     'map-file-change',
     'odom-topic-change',
@@ -297,17 +170,6 @@ export default {
     
     // 引用
     const fileInput = ref(null)
-    
-    // 激光雷达设置
-    const laserType = ref('3d')
-    const selectedLaser2D = ref(ROS_TOPICS.laserScan)
-    const selectedPointCloud = ref(ROS_TOPICS.pointCloud)
-    const showLaserPoints = ref(true)
-    const showLaserLines = ref(true)
-    const showIntensity = ref(false)
-    const laserPointSize = ref(0.15)  // 2D激光点大小
-    const pointSize = ref(0.03)       // 3D点云大小
-    const pointOpacity = ref(0.8)
     
     // 地图设置
     const selectedMapTopic = ref('')
@@ -328,26 +190,6 @@ export default {
     
     // 可用主题列表
     const availableTopics = ref([])
-    const availableLaser2D = computed(() => 
-      availableTopics.value.filter(topic => 
-        topic.messageType.includes('LaserScan')
-      ).map(topic => ({
-        name: topic.name,
-        label: topic.name.split('/').pop() || topic.name,
-        messageType: topic.messageType
-      }))
-    )
-    
-    const availablePointClouds = computed(() =>
-      availableTopics.value.filter(topic => 
-        topic.messageType.includes('PointCloud2')
-      ).map(topic => ({
-        name: topic.name,
-        label: topic.name.split('/').pop() || topic.name,
-        messageType: topic.messageType
-      }))
-    )
-    
     const availableMapTopics = computed(() =>
       availableTopics.value.filter(topic => 
         topic.messageType.includes('OccupancyGrid')
@@ -400,12 +242,9 @@ export default {
 
         console.log('加载可用主题:', availableTopics.value)
         // 自动选择 RViz2 默认主题
-        selectedLaser2D.value = preferTopic(availableLaser2D.value, ROS_TOPICS.laserScan, selectedLaser2D.value)
-        selectedPointCloud.value = preferTopic(availablePointClouds.value, ROS_TOPICS.pointCloud, selectedPointCloud.value)
         selectedOdomTopic.value = preferTopic(availableOdomTopics.value, ROS_TOPICS.odom, selectedOdomTopic.value)
         selectedMapTopic.value = preferTopic(availableMapTopics.value, '', selectedMapTopic.value)
 
-        emit('laser-type-change', laserType.value)
         if (selectedOdomTopic.value) {
           emit('odom-topic-change', selectedOdomTopic.value)
         }
@@ -416,27 +255,6 @@ export default {
     }
 
     // 事件处理
-    const onLaserTypeChange = (type) => {
-      console.log('激光类型切换:', type)
-      emit('laser-type-change', type)
-      
-      if (type === '2d' && selectedLaser2D.value) {
-        emit('laser2d-change', selectedLaser2D.value)
-      } else if (type === '3d' && selectedPointCloud.value) {
-        emit('pointcloud-change', selectedPointCloud.value)
-      }
-    }
-
-    const onLaser2DChange = (topic) => {
-      console.log('2D激光主题切换:', topic)
-      emit('laser2d-change', topic)
-    }
-
-    const onPointCloudChange = (topic) => {
-      console.log('点云主题切换:', topic)
-      emit('pointcloud-change', topic)
-    }
-
     const onMapTopicChange = (topic) => {
       console.log('地图主题切换:', topic)
       emit('map-topic-change', topic)
@@ -523,25 +341,6 @@ export default {
     }
 
     // 设置更新
-    const updateLaserSettings = () => {
-      emit('settings-update', {
-        type: 'laser',
-        showLaserPoints: showLaserPoints.value,
-        showLaserLines: showLaserLines.value,
-        showIntensity: showIntensity.value,
-        pointSize: laserPointSize.value
-      })
-    }
-
-    const updatePointCloudSettings = () => {
-      emit('settings-update', {
-        type: 'pointcloud',
-        pointSize: pointSize.value,
-        opacity: pointOpacity.value,
-        showIntensity: showIntensity.value
-      })
-    }
-
     const updateMapSettings = () => {
       emit('settings-update', {
         type: 'map',
@@ -592,17 +391,6 @@ export default {
       // 引用
       fileInput,
       
-      // 激光设置
-      laserType,
-      selectedLaser2D,
-      selectedPointCloud,
-      showLaserPoints,
-      showLaserLines,
-      showIntensity,
-      laserPointSize,
-      pointSize,
-      pointOpacity,
-      
       // 地图设置
       selectedMapTopic,
       mapFilePath,
@@ -623,21 +411,14 @@ export default {
       showAxes,
       
       // 可用主题
-      availableLaser2D,
-      availablePointClouds,
       availableMapTopics,
       availableOdomTopics,
       
       // 方法
-      onLaserTypeChange,
-      onLaser2DChange,
-      onPointCloudChange,
       onMapTopicChange,
       selectMapFile,
       onFileSelected,
       onOdomTopicChange,
-      updateLaserSettings,
-      updatePointCloudSettings,
       updateMapSettings,
       updatePositionSettings,
       updateTrajectorySettings,

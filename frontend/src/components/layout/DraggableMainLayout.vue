@@ -139,9 +139,6 @@
                 <div class="mini-panel-content">
                   <Scene3DController
                     :compact="true"
-                    @laser-type-change="onLaserTypeChange"
-                    @laser2d-change="onLaser2DChange"
-                    @pointcloud-change="onPointCloudChange"
                     @map-topic-change="onMapTopicChange"
                     @map-file-change="onMapFileChange"
                     @map-files-change="onMapFilesChange"
@@ -645,23 +642,6 @@ export default {
     }
 
     // 3D控制器事件处理
-    const onLaserTypeChange = (laserType) => {
-      console.log(`激光类型切换: ${laserType}`)
-      if (scene3dRef.value && scene3dRef.value.setLaserType) {
-        scene3dRef.value.setLaserType(laserType)
-      }
-    }
-
-    const onLaser2DChange = (topicName) => {
-      console.log(`2D激光主题切换: ${topicName}`)
-      onTopicSubscribe(topicName, 'sensor_msgs/msg/LaserScan')
-    }
-
-    const onPointCloudChange = (topicName) => {
-      console.log(`点云主题切换: ${topicName}`)
-      onTopicSubscribe(topicName, 'sensor_msgs/msg/PointCloud2')
-    }
-
     const onMapTopicChange = (topicName) => {
       console.log(`地图主题切换: ${topicName}`)
       onTopicSubscribe(topicName, 'nav_msgs/msg/OccupancyGrid')
@@ -787,9 +767,6 @@ export default {
       onTopicSubscribe,
       onTopicUnsubscribe,
       onTopicVisualize,
-      onLaserTypeChange,
-      onLaser2DChange,
-      onPointCloudChange,
       onMapTopicChange,
       onMapFileChange,
       onMapFilesChange,
