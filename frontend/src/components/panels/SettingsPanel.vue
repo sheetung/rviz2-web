@@ -94,8 +94,9 @@ export default {
     'fixed-frame-change'
   ],
   setup(props, { emit }) {
-    const configName = ref('default.rvizweb')
-    const selectedConfigName = ref('default.rvizweb')
+    const startupConfigName = import.meta.env.VITE_RVIZWEB_CONFIG || 'default.rvizweb'
+    const configName = ref(startupConfigName)
+    const selectedConfigName = ref(startupConfigName)
     const configFiles = ref([])
 
     const configSummary = computed(() => ({
@@ -278,9 +279,12 @@ export default {
 
     const loadDefaultConfig = async () => {
       await loadConfigFiles()
-      if (configFiles.value.includes('default.rvizweb')) {
-        selectedConfigName.value = 'default.rvizweb'
+      const requestedConfig = normalizeConfigName(startupConfigName)
+      if (configFiles.value.includes(requestedConfig)) {
+        selectedConfigName.value = requestedConfig
         await loadSelectedConfig()
+      } else {
+        ElMessage.error(`启动配置不存在: ${requestedConfig}`)
       }
     }
 

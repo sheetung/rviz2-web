@@ -8,6 +8,7 @@ BACKEND_DIR="$PROJECT_ROOT/backend"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 LOG_DIR="$PROJECT_ROOT/logs"
 ENV_FILE="$PROJECT_ROOT/.env"
+DEFAULT_RVIZWEB_CONFIG="${RVIZWEB_CONFIG:-uav1.rvizweb}"
 BACKEND_PID=""
 FRONTEND_PID=""
 
@@ -90,6 +91,8 @@ start_local() {
 
   [[ -d "$BACKEND_DIR/.venv" ]] || fail "Backend environment missing. Run: cd backend && uv sync"
   [[ -d "$FRONTEND_DIR/node_modules" ]] || fail "Frontend dependencies missing. Run: cd frontend && npm ci"
+  [[ "$DEFAULT_RVIZWEB_CONFIG" == *.rvizweb ]] || fail "Default frontend config must use the .rvizweb suffix"
+  [[ -f "$PROJECT_ROOT/rvizweb_configs/$DEFAULT_RVIZWEB_CONFIG" ]] || fail "Default frontend config not found: rvizweb_configs/$DEFAULT_RVIZWEB_CONFIG"
   "$BACKEND_DIR/.venv/bin/python" -c "import rclpy" || fail "rclpy is unavailable; check the ROS2 setup files"
 
   trap cleanup INT TERM EXIT
@@ -105,6 +108,7 @@ start_local() {
   log "Starting frontend on $frontend_port"
   (
     cd "$FRONTEND_DIR"
+    export VITE_RVIZWEB_CONFIG="$DEFAULT_RVIZWEB_CONFIG"
     exec setsid npm run dev -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "$frontend_port"
   ) >"$LOG_DIR/frontend.log" 2>&1 &
   FRONTEND_PID=$!
@@ -112,6 +116,7 @@ start_local() {
 
   log "Frontend: http://192.168.1.66:$frontend_port"
   log "Backend:  http://127.0.0.1:$backend_port"
+  log "Config:   rvizweb_configs/$DEFAULT_RVIZWEB_CONFIG"
   wait -n "$BACKEND_PID" "$FRONTEND_PID"
   fail "A service stopped unexpectedly; see $LOG_DIR"
 }
