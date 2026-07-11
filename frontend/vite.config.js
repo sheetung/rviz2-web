@@ -34,10 +34,19 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          three: ['three'],
-          element: ['element-plus', '@element-plus/icons-vue'],
-          vue: ['vue', 'vue-router', 'pinia']
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('/three/')) return 'three'
+          if (id.includes('/element-plus/') || id.includes('/@element-plus/')) return 'element'
+          if (
+            id.includes('/vue/') ||
+            id.includes('/vue-router/') ||
+            id.includes('/pinia/') ||
+            id.includes('/@vue/')
+          ) {
+            return 'vue'
+          }
+          return undefined
         }
       }
     }

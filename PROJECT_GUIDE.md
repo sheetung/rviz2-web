@@ -24,7 +24,7 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 
 - ROS2 环境，当前启动脚本默认尝试加载 ROS2 Humble。
 - Python 3.10–3.12。
-- Node.js 18 或更高版本。
+- Node.js 20.19 或更高版本（Vite 8 要求）。
 - npm、curl、`ss`、`setsid`。
 - uv；如果系统中没有，`start.sh` 会通过 uv 官方安装脚本安装。
 

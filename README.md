@@ -132,7 +132,7 @@ cd /home/amov/RVIZ-RQT-VISUAL
 本地模式需要：
 
 - ROS2 环境可用
-- Node.js 18+
+- Node.js 20.19+
 - Python 3.10+
 - curl（若未安装 `uv`，启动脚本会通过官方安装脚本自动安装）
 
@@ -258,8 +258,7 @@ RVIZ-RQT-VISUAL/
 
 ## 后续计划
 
-- 升级前端依赖并处理 `npm audit` 当前报告的 15 个既有漏洞。
-- 继续缩小 Element Plus 产物；当前已拆为独立缓存包，但体积仍约 888 KB。
+- 继续缩小 Element Plus 产物并完善组件、图标和样式的按需引入。
 - 为 TF 增加严格的过去/未来外推错误状态，并继续覆盖 Display 生命周期。
 - 增加 WebSocket 重连和真实 ROS2 图的自动化集成测试。
 

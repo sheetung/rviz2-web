@@ -18,6 +18,7 @@
 - 启动时读取 `.env`，端口使用 `BACKEND_PORT` 与 `FRONTEND_PORT`。
 - 支持通过 `RVIZWEB_CONFIG` 选择启动配置，默认使用 `uav1.rvizweb`。
 - 前后端健康检查、日志归档和退出时进程清理已集成到启动脚本。
+- 前端已升级到 Vite 8、Axios 1.18、Vue 3.5 和 Element Plus 2.14；当前 `npm audit` 为 0 项漏洞。
 
 ### ROS2 与通信
 
