@@ -39,7 +39,7 @@
             </div>
           </div>
           <div class="scene-content">
-            <Scene3D ref="scene3dRef" />
+            <Scene3D ref="scene3dRef" @display-status="onDisplayStatus" />
           </div>
         </div>
       </section>
@@ -123,7 +123,7 @@
             panel-class="settings-mini-panel"
             :style="getSidePanelStyle('settings')"
           >
-            <SettingsPanel
+            <AsyncSettingsPanel
               :settings-snapshot="settingsSnapshot"
               :display-snapshot="displaySnapshot"
               @laser-type-change="onLaserTypeChange"
@@ -188,7 +188,7 @@
 </template>
 
 <script>
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, defineAsyncComponent } from 'vue'
 import {
   ArrowDown
 } from '@element-plus/icons-vue'
@@ -201,7 +201,7 @@ import Scene3DController from '../RViz/Scene3DController.vue'
 import TopicConfigPanel from '../RViz/TopicConfigPanel.vue'
 import WorkbenchPanel from './WorkbenchPanel.vue'
 import ChartPanel from '../panels/ChartPanel.vue'
-import SettingsPanel from '../panels/SettingsPanel.vue'
+const AsyncSettingsPanel = defineAsyncComponent(() => import('../panels/SettingsPanel.vue'))
 import ExpectedGoalPanel from '../panels/ExpectedGoalPanel.vue'
 
 const DEFAULT_SIDE_PANEL_HEIGHTS = {
@@ -232,7 +232,7 @@ export default {
     TopicConfigPanel,
     WorkbenchPanel,
     ChartPanel,
-    SettingsPanel,
+    AsyncSettingsPanel,
     ExpectedGoalPanel
   },
   setup() {
@@ -790,6 +790,10 @@ export default {
       }
     }
 
+    const onDisplayStatus = ({ topic, error }) => {
+      topicConfigRef.value?.setDisplayStatus?.(topic, error || '')
+    }
+
     const onConfigFixedFrameChange = (frameId) => {
       const nextFrameId = frameId || 'map'
       topicConfigRef.value?.setFixedFrameSilently?.(nextFrameId)
@@ -843,6 +847,7 @@ export default {
       onDisplayTopicChange,
       onDisplayConfigApply,
       onFixedFrameChange,
+      onDisplayStatus,
       onConfigFixedFrameChange,
       captureSceneState
     }

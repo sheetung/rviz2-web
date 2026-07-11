@@ -35,7 +35,11 @@
             @click="selectDisplay(display.id)"
           >
             <span class="tree-caret">{{ selectedDisplayId === display.id ? '▾' : '▸' }}</span>
-            <span class="status-dot" :class="{ ok: display.visible, muted: !display.visible }"></span>
+            <span
+              class="status-dot"
+              :class="{ ok: display.visible && !display.error, error: !!display.error, muted: !display.visible }"
+              :title="display.error || (display.visible ? '正常' : '已隐藏')"
+            ></span>
             <span class="display-kind">{{ displayTypeLabel(display.messageType) }}</span>
             <span class="tree-label">{{ displayLabel(display) }}</span>
             <el-button
@@ -74,6 +78,10 @@
                 :value="topic.name"
               />
             </el-select>
+          </div>
+
+          <div v-if="selectedDisplayId === display.id && display.error" class="display-error">
+            {{ display.error }}
           </div>
 
           <div
@@ -366,6 +374,7 @@ export default {
       messageType,
       visible,
       previousName: name,
+      error: '',
       config: normalizeDisplayConfig(messageType, config)
     })
     const createDefaultDisplayTopics = () => [
@@ -583,7 +592,12 @@ export default {
       updateFixedFrame()
     }
 
-    expose({ applyDisplays, getDisplays, setFixedFrame, setFixedFrameSilently })
+    const setDisplayStatus = (topic, error = '') => {
+      const display = displayTopics.value.find(item => item.name === topic)
+      if (display) display.error = error
+    }
+
+    expose({ applyDisplays, getDisplays, setFixedFrame, setFixedFrameSilently, setDisplayStatus })
 
     const loadDefaultConfig = async () => {
       updateFixedFrame()
@@ -706,6 +720,19 @@ export default {
 
 .status-dot.muted {
   background: #5f6770;
+}
+
+.status-dot.error {
+  background: #f56c6c;
+  box-shadow: 0 0 0 2px rgba(245, 108, 108, 0.18);
+}
+
+.display-error {
+  margin: 2px 8px 6px 39px;
+  color: #f89898;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .tree-label {

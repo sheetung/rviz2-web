@@ -516,6 +516,7 @@ class RosbridgeService:
             }
 
             reliability = QoSReliabilityPolicy.BEST_EFFORT if msg_type in sensor_like_types else QoSReliabilityPolicy.RELIABLE
+            durability = QoSDurabilityPolicy.TRANSIENT_LOCAL if topic == '/tf_static' else QoSDurabilityPolicy.VOLATILE
             history = QoSHistoryPolicy.KEEP_LAST
             depth = 10
 
@@ -529,10 +530,12 @@ class RosbridgeService:
                 if first_pub_qos.history == QoSHistoryPolicy.KEEP_ALL:
                     history = QoSHistoryPolicy.KEEP_ALL
                     depth = 1000
+                if first_pub_qos.durability == QoSDurabilityPolicy.TRANSIENT_LOCAL:
+                    durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
 
             qos_profile = QoSProfile(
                 reliability=reliability,
-                durability=QoSDurabilityPolicy.VOLATILE,
+                durability=durability,
                 history=history,
                 depth=depth
             )

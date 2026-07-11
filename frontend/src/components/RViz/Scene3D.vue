@@ -32,10 +32,12 @@ import { ElMessage } from 'element-plus'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { useConnectionStore } from '../../composables/useConnectionStore'
 import { ROS_TOPICS, getDefaultVisualizationTopics, getPositionTopics } from '../../config/rosTopics'
+import { TfBuffer, frameIdFromMessage } from '../../utils/tfBuffer'
+import { debugLog } from '../../utils/debug'
 
 export default {
   name: 'Scene3D',
-  emits: ['object-selected', 'camera-moved'],
+  emits: ['object-selected', 'camera-moved', 'display-status'],
   setup(props, { emit }) {
     const rosbridge = useRosbridge()
     const connectionStore = useConnectionStore()
@@ -68,6 +70,109 @@ export default {
     const plugins = new Map()
     const displayConfigs = new Map()
     const positionCommandPaths = new Map()
+    const tfBuffer = new TfBuffer()
+    const pendingPointClouds = new Map()
+    const latestDisplayMessages = new Map()
+    let pointCloudFrameRequest = null
+    let transformFrameRequest = null
+
+    const setDisplayStatus = (topic, error = '') => {
+      emit('display-status', { topic, error })
+    }
+
+    const applyFixedFrame = (topic, message, object = visualizationObjects.get(topic), report = true) => {
+      if (!object) return true
+      if (object.userData?.fixedFrameApplied) return true
+      const sourceFrame = frameIdFromMessage(message) || frameIdFromMessage(message?.markers?.[0])
+      if (!sourceFrame || sourceFrame === fixedFrameId.replace(/^\/+/, '')) {
+        if (object.userData?.fixedFrameBaseMatrix) {
+          object.matrixAutoUpdate = false
+          object.matrix.copy(object.userData.fixedFrameBaseMatrix)
+          object.matrixWorldNeedsUpdate = true
+        }
+        object.visible = true
+        if (report) setDisplayStatus(topic)
+        return true
+      }
+      const transform = tfBuffer.lookupTransform(fixedFrameId, sourceFrame)
+      if (!transform) {
+        object.visible = false
+        if (report) setDisplayStatus(topic, `缺少 ${sourceFrame} → ${fixedFrameId} 的 TF`)
+        return false
+      }
+      object.updateMatrix()
+      if (!object.userData.fixedFrameBaseMatrix) {
+        object.userData.fixedFrameBaseMatrix = object.matrix.clone()
+      }
+      object.matrixAutoUpdate = false
+      object.matrix.copy(object.userData.fixedFrameBaseMatrix).premultiply(transform)
+      object.matrixWorldNeedsUpdate = true
+      object.visible = true
+      if (report) setDisplayStatus(topic)
+      return true
+    }
+
+    const flushPointCloudUpdates = () => {
+      pointCloudFrameRequest = null
+      pendingPointClouds.forEach((message, topic) => {
+        updatePointCloud(topic, message)
+        applyFixedFrame(topic, message)
+      })
+      pendingPointClouds.clear()
+    }
+
+    const queuePointCloudUpdate = (topic, message) => {
+      pendingPointClouds.set(topic, message)
+      if (pointCloudFrameRequest === null) {
+        pointCloudFrameRequest = requestAnimationFrame(flushPointCloudUpdates)
+      }
+    }
+
+    const refreshFixedFrameObjects = () => {
+      transformFrameRequest = null
+      latestDisplayMessages.forEach(({ messageType, message }, topic) => {
+        if ((messageType || '').includes('Odometry')) {
+          updateOdometry(topic, message)
+        } else if ((messageType || '').includes('MarkerArray')) {
+          updateMarkerArray(topic, message)
+        } else {
+          applyFixedFrame(topic, message)
+        }
+      })
+    }
+
+    const scheduleTransformRefresh = () => {
+      if (transformFrameRequest === null) {
+        transformFrameRequest = requestAnimationFrame(refreshFixedFrameObjects)
+      }
+    }
+
+    const transformPoseToFixed = (topic, message, position, orientation) => {
+      const sourceFrame = frameIdFromMessage(message)
+      if (!sourceFrame || sourceFrame === fixedFrameId.replace(/^\/+/, '')) {
+        setDisplayStatus(topic)
+        return { position, orientation }
+      }
+      const transform = tfBuffer.lookupTransform(fixedFrameId, sourceFrame)
+      if (!transform) {
+        setDisplayStatus(topic, `缺少 ${sourceFrame} → ${fixedFrameId} 的 TF`)
+        return null
+      }
+      const poseMatrix = new THREE.Matrix4().compose(
+        new THREE.Vector3(Number(position.x || 0), Number(position.y || 0), Number(position.z || 0)),
+        new THREE.Quaternion(
+          Number(orientation?.x || 0), Number(orientation?.y || 0),
+          Number(orientation?.z || 0), Number(orientation?.w ?? 1)
+        ).normalize(),
+        new THREE.Vector3(1, 1, 1)
+      )
+      const result = transform.clone().multiply(poseMatrix)
+      const nextPosition = new THREE.Vector3()
+      const nextOrientation = new THREE.Quaternion()
+      result.decompose(nextPosition, nextOrientation, new THREE.Vector3())
+      setDisplayStatus(topic)
+      return { position: nextPosition, orientation: nextOrientation }
+    }
 
     const isPathLikeMessageType = (messageType = '') => {
       return messageType.includes('Path') || messageType.includes('PositionCommand')
@@ -216,12 +321,12 @@ export default {
         animate()
         
         loading.value = false
-        console.log('3D Scene initialized successfully')
-        console.log('坐标系设置：')
-        console.log('- X轴：向前（红色）')
-        console.log('- Y轴：向左（绿色）')
-        console.log('- Z轴：向上（蓝色）')
-        console.log('机器人模型已创建，等待里程计数据...')
+        debugLog('3D Scene initialized successfully')
+        debugLog('坐标系设置：')
+        debugLog('- X轴：向前（红色）')
+        debugLog('- Y轴：向左（绿色）')
+        debugLog('- Z轴：向上（蓝色）')
+        debugLog('机器人模型已创建，等待里程计数据...')
         
       } catch (error) {
         console.error('Failed to initialize 3D scene:', error)
@@ -267,10 +372,10 @@ export default {
         const zSprite = createLabelSprite('Z', '#0000FF', new THREE.Vector3(0, 0, 2.5))
         scene.add(zSprite)
 
-        console.log('坐标系标签已创建')
-        console.log('- X轴 (红色): 水平向右')
-        console.log('- Y轴 (绿色): 垂直向上')
-        console.log('- Z轴 (蓝色): 深度向前')
+        debugLog('坐标系标签已创建')
+        debugLog('- X轴 (红色): 水平向右')
+        debugLog('- Y轴 (绿色): 垂直向上')
+        debugLog('- Z轴 (蓝色): 深度向前')
       } catch (error) {
         console.warn('创建坐标系标签失败:', error)
       }
@@ -349,7 +454,7 @@ export default {
         }
 
         scene.add(robotModel)
-        console.log('UAV model created')
+        debugLog('UAV model created')
 
       } catch (error) {
         console.warn('Failed to create UAV model:', error)
@@ -379,7 +484,7 @@ export default {
         }
 
         robotModel.userData.lastUpdate = Date.now()
-        // console.log(`[updateRobotPosition] 机器人位置更新: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`)
+        // debugLog(`[updateRobotPosition] 机器人位置更新: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`)
 
         // 创建轨迹点（基于机器人位置更新）
         if (persistentSettings.position.showTrajectory) {
@@ -389,13 +494,13 @@ export default {
           if (trajectoryPoints.length === 0 ||
               trajectoryPoints[trajectoryPoints.length - 1].distanceTo(currentPos) > 0.1) {
             trajectoryPoints.push(currentPos.clone())
-            // console.log(`[Trajectory-Robot] 添加轨迹点 #${trajectoryPoints.length}: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`)
+            // debugLog(`[Trajectory-Robot] 添加轨迹点 #${trajectoryPoints.length}: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`)
 
             // 限制轨迹点数量（由控制面板传入，范围10~100）
             const maxLen = Math.max(10, Math.min(100, persistentSettings.position.trajectoryLength || 100))
             if (trajectoryPoints.length > maxLen) {
               trajectoryPoints.shift()
-              // console.log(`[Trajectory-Robot] 轨迹点数量达到上限，移除最早的点`)
+              // debugLog(`[Trajectory-Robot] 轨迹点数量达到上限，移除最早的点`)
             }
 
             // 创建或更新轨迹线
@@ -420,7 +525,7 @@ export default {
               globalTrajectoryLine.visible = true
 
               scene.add(globalTrajectoryLine)
-              // console.log(`[Trajectory-Robot] 创建全局轨迹线，点数: ${trajectoryPoints.length}`)
+              // debugLog(`[Trajectory-Robot] 创建全局轨迹线，点数: ${trajectoryPoints.length}`)
             }
           }
         }
@@ -434,16 +539,16 @@ export default {
      * 订阅位置主题更新机器人位置 (与位置信息面板保持一致)
      */
     const subscribeToPositionTopics = () => {
-      console.log('[Scene3D] 开始订阅位置主题以更新机器人模型...')
+      debugLog('[Scene3D] 开始订阅位置主题以更新机器人模型...')
 
       const positionTopics = getPositionTopics()
 
       positionTopics.forEach(({ topic, type }) => {
-        console.log(`[Scene3D] 尝试订阅位置主题: ${topic} (${type})`)
+        debugLog(`[Scene3D] 尝试订阅位置主题: ${topic} (${type})`)
 
         try {
           rosbridge.subscribe(topic, type, (message) => {
-            // console.log(`[Scene3D] 收到${topic}位置数据，更新机器人模型`)
+            // debugLog(`[Scene3D] 收到${topic}位置数据，更新机器人模型`)
 
             let position = null
             let orientation = null
@@ -475,13 +580,13 @@ export default {
             if (position) {
               updateRobotPosition(position, orientation)
               // 减少频繁的位置更新日志
-              // console.debug(`[Scene3D] 机器人位置已更新: (${position.x?.toFixed(3)}, ${position.y?.toFixed(3)}, ${position.z?.toFixed(3)})`)
+              // debugLog(`[Scene3D] 机器人位置已更新: (${position.x?.toFixed(3)}, ${position.y?.toFixed(3)}, ${position.z?.toFixed(3)})`)
             } else {
               console.warn(`[Scene3D] 无法从${topic}解析位置信息`, message)
             }
           })
 
-          console.log(`[Scene3D] ✅ 成功订阅位置主题: ${topic}`)
+          debugLog(`[Scene3D] ✅ 成功订阅位置主题: ${topic}`)
         } catch (error) {
           console.error(`[Scene3D] 订阅${topic}失败:`, error)
         }
@@ -828,7 +933,7 @@ export default {
     }
     
     const setBackgroundColor = (color) => {
-      console.log('Setting background color to:', color)
+      debugLog('Setting background color to:', color)
       if (scene) {
         try {
           // 支持多种颜色格式
@@ -844,7 +949,7 @@ export default {
           }
           
           scene.background = threeColor
-          console.log('Background color updated to:', threeColor.getHexString())
+          debugLog('Background color updated to:', threeColor.getHexString())
         } catch (error) {
           console.error('Failed to set background color:', error)
           // 设置默认颜色
@@ -889,22 +994,22 @@ export default {
     
     // ROS主题订阅方法
     const subscribeToRosTopic = (topicName, messageType) => {
-      // console.log(`[Scene3D] 订阅ROS主题: ${topicName}, 类型: ${messageType}`)
+      // debugLog(`[Scene3D] 订阅ROS主题: ${topicName}, 类型: ${messageType}`)
       if (rosSubscriptions.has(topicName)) {
-        console.log(`[Scene3D] 主题已订阅，跳过重复订阅: ${topicName}`)
+        debugLog(`[Scene3D] 主题已订阅，跳过重复订阅: ${topicName}`)
         return true
       }
       
       try {
         // 使用rosbridge订阅主题
-        // console.log(`[Scene3D] 调用rosbridge.subscribe...`)
+        // debugLog(`[Scene3D] 调用rosbridge.subscribe...`)
         
         const subscription = rosbridge.subscribe(topicName, messageType, (message) => {
           const now = Date.now()
           const subInfo = rosSubscriptions.get(topicName)
 
           /*
-          console.log(`[Scene3D] 📨 收到主题消息: ${topicName}`, {
+          debugLog(`[Scene3D] 📨 收到主题消息: ${topicName}`, {
             messageType: typeof message,
             hasRanges: message?.ranges?.length,
             hasData: message?.data?.length,
@@ -917,10 +1022,10 @@ export default {
             subInfo.messageCount = (subInfo.messageCount || 0) + 1
             subInfo.lastMessageTime = now
 
-            // console.log(`[Scene3D] 🎉 收到主题 ${topicName} 的第${subInfo.messageCount}条消息`)
+            // debugLog(`[Scene3D] 🎉 收到主题 ${topicName} 的第${subInfo.messageCount}条消息`)
 
             // 确保消息不为空
-            if (message) {
+          if (message) {
               updateVisualization(topicName, messageType, message)
             } else {
               console.warn(`[Scene3D] 收到空消息: ${topicName}`)
@@ -930,7 +1035,7 @@ export default {
           }
         })
         
-        // console.log(`[Scene3D] rosbridge.subscribe返回:`, subscription)
+        // debugLog(`[Scene3D] rosbridge.subscribe返回:`, subscription)
         
         // 检查订阅是否成功
         if (subscription) {
@@ -945,7 +1050,7 @@ export default {
           }
           
           rosSubscriptions.set(topicName, subscriptionInfo)
-          // console.log(`[Scene3D] ✅ 成功订阅主题: ${topicName}, 当前订阅数: ${rosSubscriptions.size}`)
+          // debugLog(`[Scene3D] ✅ 成功订阅主题: ${topicName}, 当前订阅数: ${rosSubscriptions.size}`)
           
           // 设置定时检查，确认是否收到数据
           setTimeout(() => {
@@ -954,7 +1059,7 @@ export default {
               console.warn(`[Scene3D] ⚠️ 主题 ${topicName} 在 5 秒内没有收到任何消息`)
               ElMessage.warning(`主题 ${topicName} 可能没有数据发布，请检查ROS系统`)
             } else if (sub) {
-              // console.log(`[Scene3D] ✅ 主题 ${topicName} 正常，已收到 ${sub.messageCount} 条消息`)
+              // debugLog(`[Scene3D] ✅ 主题 ${topicName} 正常，已收到 ${sub.messageCount} 条消息`)
             }
           }, 5000)
           
@@ -977,11 +1082,11 @@ export default {
       const subscription = rosSubscriptions.get(topicName)
       if (subscription) {
         try {
-          // console.log(`[Scene3D] 取消订阅主题: ${topicName}`)
+          // debugLog(`[Scene3D] 取消订阅主题: ${topicName}`)
           rosbridge.unsubscribe(subscription)
           rosSubscriptions.delete(topicName)
           removeVisualization(topicName)
-          // console.log(`[Scene3D] 已成功取消订阅主题: ${topicName}`)
+          // debugLog(`[Scene3D] 已成功取消订阅主题: ${topicName}`)
         } catch (error) {
           console.error(`[Scene3D] 取消订阅主题 ${topicName} 失败:`, error)
         }
@@ -1004,9 +1109,14 @@ export default {
       ElMessage.success('已加载 RViz2 默认显示配置')
     }
 
+    const subscribeToTfTopics = () => {
+      subscribeToRosTopic('/tf', 'tf2_msgs/msg/TFMessage')
+      subscribeToRosTopic('/tf_static', 'tf2_msgs/msg/TFMessage')
+    }
+
     // 取消所有订阅
     const unsubscribeAllTopics = () => {
-      // console.log(`[Scene3D] 取消所有订阅, 当前订阅数: ${rosSubscriptions.size}`)
+      // debugLog(`[Scene3D] 取消所有订阅, 当前订阅数: ${rosSubscriptions.size}`)
 
       rosSubscriptions.forEach((subscription, topicName) => {
         unsubscribeFromRosTopic(topicName)
@@ -1025,17 +1135,17 @@ export default {
 
       // 只每5秒记录一次日志，避免刷屏
       if (now - lastLogTime > 5000) {
-        console.debug(`[Scene3D] 📡 处理可视化更新 - 主题: ${topic}, 消息类型: ${messageType}, 最近5秒处理了${messageCount}条消息`)
+        debugLog(`[Scene3D] 📡 处理可视化更新 - 主题: ${topic}, 消息类型: ${messageType}, 最近5秒处理了${messageCount}条消息`)
         lastLogTime = now
         messageCount = 0
       }
 
-      // 记录处理前的状态
-      const beforeCount = visualizationObjects.size
-      
       try {
+        if (!(messageType || '').includes('TFMessage')) {
+          latestDisplayMessages.set(topic, { messageType, message })
+        }
         if (isPositionCommandMessage(topic, messageType, message)) {
-          console.log(`[Scene3D] 🔄 处理位置指令轨迹消息...`)
+          debugLog(`[Scene3D] 🔄 处理位置指令轨迹消息...`)
           updatePositionCommandPath(topic, message, messageType || 'mars_quadrotor_msgs/msg/PositionCommand')
           return
         }
@@ -1044,32 +1154,36 @@ export default {
         switch (messageType) {
           case 'sensor_msgs/msg/PointCloud2':
           case 'sensor_msgs/PointCloud2':
-            console.debug(`[Scene3D] 🔄 处理点云消息...`)
-            updatePointCloud(topic, message)
-            break
+            queuePointCloudUpdate(topic, message)
+            return
+          case 'tf2_msgs/msg/TFMessage':
+          case 'tf2_msgs/TFMessage':
+            tfBuffer.updateMessage(message, topic === '/tf_static')
+            scheduleTransformRefresh()
+            return
           case 'sensor_msgs/msg/LaserScan':
           case 'sensor_msgs/LaserScan':
-            console.debug(`[Scene3D] 🔄 处理激光雷达消息...`)
+            debugLog(`[Scene3D] 🔄 处理激光雷达消息...`)
             updateLaserScan(topic, message)
             break
           case 'visualization_msgs/msg/Marker':
           case 'visualization_msgs/Marker':
-            console.debug(`[Scene3D] 🔄 处理标记消息...`)
+            debugLog(`[Scene3D] 🔄 处理标记消息...`)
             updateMarker(topic, message)
             break
           case 'visualization_msgs/msg/MarkerArray':
           case 'visualization_msgs/MarkerArray':
-            console.log(`[Scene3D] 🔄 处理标记数组消息...`)
+            debugLog(`[Scene3D] 🔄 处理标记数组消息...`)
             updateMarkerArray(topic, message)
             break
           case 'nav_msgs/msg/Path':
           case 'nav_msgs/Path':
-            console.log(`[Scene3D] 🔄 处理路径消息...`)
+            debugLog(`[Scene3D] 🔄 处理路径消息...`)
             updatePath(topic, message)
             break
           case 'mars_quadrotor_msgs/msg/PositionCommand':
           case 'mars_quadrotor_msgs/PositionCommand':
-            console.log(`[Scene3D] 🔄 处理位置指令轨迹消息...`)
+            debugLog(`[Scene3D] 🔄 处理位置指令轨迹消息...`)
             updatePositionCommandPath(topic, message, messageType)
             break
           case 'nav_msgs/msg/Odometry':
@@ -1080,8 +1194,8 @@ export default {
               const position = poseData?.position || poseData?._position
               const orientation = poseData?.orientation || poseData?._orientation
 
-              console.log(`[Scene3D] 🔄 准备处理里程计消息，主题: ${topic}`)
-              console.log(`[Scene3D] 🔄 里程计消息内容预览:`, {
+              debugLog(`[Scene3D] 🔄 准备处理里程计消息，主题: ${topic}`)
+              debugLog(`[Scene3D] 🔄 里程计消息内容预览:`, {
                 topic,
                 hasMessage: !!message,
                 hasHeader: !!(message?.header || message?._header),
@@ -1095,12 +1209,12 @@ export default {
             break
           case 'geometry_msgs/msg/PoseStamped':
           case 'geometry_msgs/PoseStamped':
-            console.log(`[Scene3D] 🔄 处理位置消息...`)
+            debugLog(`[Scene3D] 🔄 处理位置消息...`)
             updatePoseStamped(topic, message)
             break
           case 'geometry_msgs/msg/PoseWithCovarianceStamped':
           case 'geometry_msgs/PoseWithCovarianceStamped':
-            console.log(`[Scene3D] 🔄 处理带协方差位置消息...`)
+            debugLog(`[Scene3D] 🔄 处理带协方差位置消息...`)
             updatePoseWithCovarianceStamped(topic, message)
             break
           default:
@@ -1108,11 +1222,7 @@ export default {
             return
         }
         
-        // 只在首次或调试时记录详细信息
-        const afterCount = visualizationObjects.size
-        if (afterCount > beforeCount && now - lastLogTime <= 1000) {
-          console.log(`[Scene3D] ✅ 成功创建可视化对象，新增 ${afterCount - beforeCount} 个对象`)
-        }
+        applyFixedFrame(topic, message)
         
       } catch (error) {
         console.error(`[Scene3D] ❌ 处理可视化消息时发生错误:`, error)
@@ -1171,7 +1281,7 @@ export default {
     const removeVisualization = (topic) => {
       const object = visualizationObjects.get(topic)
       if (object) {
-        // console.log(`[Scene3D] 清除可视化对象: ${topic}`)
+        // debugLog(`[Scene3D] 清除可视化对象: ${topic}`)
 
         // 递归清理对象和其子对象
         const cleanupObject = (obj) => {
@@ -1194,13 +1304,13 @@ export default {
         scene.remove(object)
         visualizationObjects.delete(topic)
 
-        // console.log(`[Scene3D] 已清除可视化对象: ${topic}, 剩余对象数: ${visualizationObjects.size}`)
+        // debugLog(`[Scene3D] 已清除可视化对象: ${topic}, 剩余对象数: ${visualizationObjects.size}`)
       }
 
       // 同时检查并清除关联的激光连线对象
       const linesObject = visualizationObjects.get(topic + '_lines')
       if (linesObject) {
-        // console.log(`[Scene3D] 清除激光连线对象: ${topic}_lines`)
+        // debugLog(`[Scene3D] 清除激光连线对象: ${topic}_lines`)
         const cleanupObject = (obj) => {
           if (obj.geometry) {
             obj.geometry.dispose()
@@ -1221,7 +1331,7 @@ export default {
 
     // 清除所有可视化对象（但保留地图）
     const clearAllVisualizations = () => {
-      // console.log(`[Scene3D] 清除所有可视化对象, 当前数量: ${visualizationObjects.size}`)
+      // debugLog(`[Scene3D] 清除所有可视化对象, 当前数量: ${visualizationObjects.size}`)
 
       // 需要保留的主题类型（地图相关）
       const preservedTopics = new Set()
@@ -1233,7 +1343,7 @@ export default {
 
         // 只保留PGM加载的地图，不保留主题订阅的地图
         if (topic === 'loaded_map') {
-          // console.log(`[Scene3D] 保留PGM加载的地图: ${topic}`)
+          // debugLog(`[Scene3D] 保留PGM加载的地图: ${topic}`)
           preservedTopics.add(topic)
         } else {
           removeVisualization(topic)
@@ -1243,7 +1353,7 @@ export default {
       // 清理轨迹点
       trajectoryPoints = []
 
-      // console.log(`[Scene3D] 已清除可视化对象，保留 ${preservedTopics.size} 个地图对象`)
+      // debugLog(`[Scene3D] 已清除可视化对象，保留 ${preservedTopics.size} 个地图对象`)
       ElMessage.info(`已清除可视化对象，保留了 ${preservedTopics.size} 个地图`)
     }
     
@@ -1262,7 +1372,7 @@ export default {
       const shouldLog = pointCloudUpdateCount <= 3 || pointCloudUpdateCount % 100 === 0
 
       if (shouldLog) {
-        // console.log(`Updating point cloud for ${topic} (update #${pointCloudUpdateCount})`)
+        // debugLog(`Updating point cloud for ${topic} (update #${pointCloudUpdateCount})`)
       }
       
       try {
@@ -1279,9 +1389,9 @@ export default {
         // 解析点云数据
         if (message && typeof message === 'object') {
           if (shouldLog) {
-            // console.log('Processing PointCloud2 message')
-            console.log('Fields:', message.fields)
-            console.log('Width:', message.width, 'Height:', message.height, 'Point step:', message.point_step)
+            // debugLog('Processing PointCloud2 message')
+            debugLog('Fields:', message.fields)
+            debugLog('Width:', message.width, 'Height:', message.height, 'Point step:', message.point_step)
           }
           
           // 如果是 PointCloud2 格式
@@ -1290,14 +1400,14 @@ export default {
             
             // 处理Base64编码的数据（ROSBridge通常这样传输）
             if (typeof message.data === 'string') {
-              if (shouldLog) console.log('Decoding Base64 data...')
+              if (shouldLog) debugLog('Decoding Base64 data...')
               try {
                 const binaryString = atob(message.data)
                 dataArray = new Uint8Array(binaryString.length)
                 for (let i = 0; i < binaryString.length; i++) {
                   dataArray[i] = binaryString.charCodeAt(i)
                 }
-                if (shouldLog) console.log('Decoded data length:', dataArray.length)
+                if (shouldLog) debugLog('Decoded data length:', dataArray.length)
               } catch (e) {
                 console.error('Base64 decode failed:', e)
                 dataArray = []
@@ -1316,20 +1426,20 @@ export default {
             const littleEndian = message.is_bigendian !== true
             const dataView = new DataView(dataArray.buffer, dataArray.byteOffset, dataArray.byteLength)
             
-            if (shouldLog) console.log(`Processing ${totalPoints} points with step ${pointStep}`)
+            if (shouldLog) debugLog(`Processing ${totalPoints} points with step ${pointStep}`)
 
             // 查找XYZ字段的偏移量
             let xOffset = 0, yOffset = 4, zOffset = 8
             if (message.fields && Array.isArray(message.fields)) {
               message.fields.forEach(field => {
-                if (shouldLog) console.log(`Field: ${field.name}, offset: ${field.offset}, datatype: ${field.datatype}`)
+                if (shouldLog) debugLog(`Field: ${field.name}, offset: ${field.offset}, datatype: ${field.datatype}`)
                 if (field.name === 'x') xOffset = field.offset
                 else if (field.name === 'y') yOffset = field.offset
                 else if (field.name === 'z') zOffset = field.offset
               })
             }
 
-            if (shouldLog) console.log(`Using offsets - X: ${xOffset}, Y: ${yOffset}, Z: ${zOffset}`)
+            if (shouldLog) debugLog(`Using offsets - X: ${xOffset}, Y: ${yOffset}, Z: ${zOffset}`)
             
             // 解析完整点云。不要只取开头一段，否则地图会像被截断。
             const sampleStep = 1
@@ -1372,11 +1482,11 @@ export default {
               }
             }
             
-            if (shouldLog) console.log(`Successfully processed ${pointsProcessed} points out of ${totalPoints} (sample step: ${sampleStep})`)
+            if (shouldLog) debugLog(`Successfully processed ${pointsProcessed} points out of ${totalPoints} (sample step: ${sampleStep})`)
           }
           // 如果是简单的点数组格式
           else if (Array.isArray(message.points)) {
-            if (shouldLog) console.log('Processing points array format')
+            if (shouldLog) debugLog('Processing points array format')
             for (let i = 0; i < Math.min(message.points.length, 5000); i++) {
               const point = message.points[i]
               if (point && typeof point === 'object') {
@@ -1394,7 +1504,7 @@ export default {
         
         // 如果没有成功解析出点，创建测试数据以验证渲染
         if (pointsProcessed === 0) {
-          console.log('No valid points parsed, creating test point cloud')
+          debugLog('No valid points parsed, creating test point cloud')
           ElMessage.warning(`主题 ${topic} 的点云数据解析失败，显示测试数据`)
           
           for (let i = 0; i < 2000; i++) {
@@ -1464,8 +1574,8 @@ export default {
           // Users can still press F to fit the point cloud explicitly.
           
           if (shouldLog) {
-            console.log(`✅ Added point cloud with ${pointsProcessed} points`)
-            console.log(`Point size: ${material.size}, Bounding box:`, box)
+            debugLog(`✅ Added point cloud with ${pointsProcessed} points`)
+            debugLog(`Point size: ${material.size}, Bounding box:`, box)
           }
 
           // 只在首次显示成功消息
@@ -1494,12 +1604,12 @@ export default {
         scene.add(errorBox)
         visualizationObjects.set(topic, errorBox)
         
-        console.log('Added error indicator box')
+        debugLog('Added error indicator box')
       }
     }
     
     const updateLaserScan = (topic, message) => {
-      // console.log(`[LaserScan] 开始处理激光雷达数据 for ${topic}`)
+      // debugLog(`[LaserScan] 开始处理激光雷达数据 for ${topic}`)
 
       // 兼容不同的字段命名格式（有些有下划线前缀）
       let ranges = message.ranges || message._ranges
@@ -1512,7 +1622,7 @@ export default {
 
       // 处理ranges字段 - 可能是字符串格式的Python array
       if (typeof ranges === 'string') {
-        // console.log(`[LaserScan] ranges是字符串格式，尝试解析: ${ranges.substring(0, 100)}...`)
+        // debugLog(`[LaserScan] ranges是字符串格式，尝试解析: ${ranges.substring(0, 100)}...`)
         try {
           // 解析Python array格式：array('f', [1.0, 2.0, 3.0, ...])
           const match = ranges.match(/array\('f',\s*\[(.*)\]\)/)
@@ -1527,7 +1637,7 @@ export default {
               return parseFloat(trimmed)
             })
             // 不要在这里过滤无效值！保留所有值以维持角度索引对应关系
-            // console.log(`[LaserScan] 成功解析${ranges.length}个ranges值 (包含${ranges.filter(val => !isFinite(val)).length}个无效值)`) 
+            // debugLog(`[LaserScan] 成功解析${ranges.length}个ranges值 (包含${ranges.filter(val => !isFinite(val)).length}个无效值)`)
           } else {
             console.error(`[LaserScan] 无法解析ranges字符串格式: ${ranges}`)
             ranges = []
@@ -1546,7 +1656,7 @@ export default {
         return
       }
 
-      // console.log(`[LaserScan] ✅ 消息验证通过，开始处理 ${ranges.length} 个激光点`)
+      // debugLog(`[LaserScan] ✅ 消息验证通过，开始处理 ${ranges.length} 个激光点`)
 
       removeVisualization(topic)
 
@@ -1565,35 +1675,35 @@ export default {
 
           // 只在第一次更新时显示详细信息
           if (!updateLaserScan._firstLogged) {
-            console.log(`LaserScan info: ${ranges.length} rays`)
-            console.log(`  - 角度范围: ${angleMin.toFixed(3)} 到 ${angleMax.toFixed(3)} 弧度`)
-            console.log(`  - 角度范围: ${(angleMin * 180 / Math.PI).toFixed(1)}° 到 ${(angleMax * 180 / Math.PI).toFixed(1)}°`)
-            console.log(`  - 角度增量: ${angleIncrement.toFixed(6)} 弧度 (${(angleIncrement * 180 / Math.PI).toFixed(3)}°)`)
-            console.log(`  - 距离范围: ${rangeMin} 到 ${rangeMax} 米`)
-            console.log(`  - 角度跨度: ${((angleMax - angleMin) * 180 / Math.PI).toFixed(1)}°`)
+            debugLog(`LaserScan info: ${ranges.length} rays`)
+            debugLog(`  - 角度范围: ${angleMin.toFixed(3)} 到 ${angleMax.toFixed(3)} 弧度`)
+            debugLog(`  - 角度范围: ${(angleMin * 180 / Math.PI).toFixed(1)}° 到 ${(angleMax * 180 / Math.PI).toFixed(1)}°`)
+            debugLog(`  - 角度增量: ${angleIncrement.toFixed(6)} 弧度 (${(angleIncrement * 180 / Math.PI).toFixed(3)}°)`)
+            debugLog(`  - 距离范围: ${rangeMin} 到 ${rangeMax} 米`)
+            debugLog(`  - 角度跨度: ${((angleMax - angleMin) * 180 / Math.PI).toFixed(1)}°`)
 
             // 检查是否是完整的360度扫描
             const totalAngle = angleMax - angleMin
             if (Math.abs(totalAngle - 2 * Math.PI) < 0.1) {
-              console.log(`  - 这是360度全方位扫描`)
+              debugLog(`  - 这是360度全方位扫描`)
             } else {
-              console.log(`  - 这是${(totalAngle * 180 / Math.PI).toFixed(1)}度扇形扫描`)
+              debugLog(`  - 这是${(totalAngle * 180 / Math.PI).toFixed(1)}度扇形扫描`)
             }
 
             // 计算应该在90度、180度、270度的索引位置
             const index90 = Math.round((Math.PI / 2 - angleMin) / angleIncrement)
             const index180 = Math.round((Math.PI - angleMin) / angleIncrement)
             const index270 = Math.round((3 * Math.PI / 2 - angleMin) / angleIncrement)
-            console.log(`  - 关键角度索引: 90°→${index90}, 180°→${index180}, 270°→${index270}`)
+            debugLog(`  - 关键角度索引: 90°→${index90}, 180°→${index180}, 270°→${index270}`)
 
             // 检查这些索引是否有有效数据
             if (index90 >= 0 && index90 < ranges.length) {
               const range90 = ranges[index90]
-              console.log(`  - 90度方向距离: ${range90} (${isFinite(range90) ? '有效' : '无效'})`)
+              debugLog(`  - 90度方向距离: ${range90} (${isFinite(range90) ? '有效' : '无效'})`)
             }
             if (index180 >= 0 && index180 < ranges.length) {
               const range180 = ranges[index180]
-              console.log(`  - 180度方向距离: ${range180} (${isFinite(range180) ? '有效' : '无效'})`)
+              debugLog(`  - 180度方向距离: ${range180} (${isFinite(range180) ? '有效' : '无效'})`)
             }
           }
 
@@ -1631,7 +1741,7 @@ export default {
               // 只在第一次更新时输出少量验证数据
               if (!updateLaserScan._firstLogged && validPoints < 3) {
                 const angleDeg = angle * 180 / Math.PI
-                // console.log(`[LaserScan] 验证点${validPoints}: i=${i}, angle=${angleDeg.toFixed(1)}°, range=${range.toFixed(2)}m`)
+                // debugLog(`[LaserScan] 验证点${validPoints}: i=${i}, angle=${angleDeg.toFixed(1)}°, range=${range.toFixed(2)}m`)
               }
 
 
@@ -1658,22 +1768,22 @@ export default {
             }
           }
 
-          // console.log(`[LaserScan] 处理结果: ${validPoints}/${ranges.length} 有效点`)
+          // debugLog(`[LaserScan] 处理结果: ${validPoints}/${ranges.length} 有效点`)
 
           // 详细统计：分析有效点的分布
           if (!updateLaserScan._firstLogged && validPoints > 0) {
-            // console.log(`[LaserScan] 📊 数据分析:`)
-            console.log(`  - 总测量点: ${ranges.length}`)
-            console.log(`  - 有效点数: ${validPoints}`)
-            console.log(`  - 无效点数: ${ranges.length - validPoints}`)
-            console.log(`  - 有效率: ${(validPoints / ranges.length * 100).toFixed(1)}%`)
-            console.log(`  - 角度范围: ${(angleMin * 180 / Math.PI).toFixed(1)}° ~ ${(angleMax * 180 / Math.PI).toFixed(1)}°`)
-            console.log(`  - 距离范围: ${rangeMin}m ~ ${rangeMax}m`)
+            // debugLog(`[LaserScan] 📊 数据分析:`)
+            debugLog(`  - 总测量点: ${ranges.length}`)
+            debugLog(`  - 有效点数: ${validPoints}`)
+            debugLog(`  - 无效点数: ${ranges.length - validPoints}`)
+            debugLog(`  - 有效率: ${(validPoints / ranges.length * 100).toFixed(1)}%`)
+            debugLog(`  - 角度范围: ${(angleMin * 180 / Math.PI).toFixed(1)}° ~ ${(angleMax * 180 / Math.PI).toFixed(1)}°`)
+            debugLog(`  - 距离范围: ${rangeMin}m ~ ${rangeMax}m`)
 
             // 检查是否真的是360度扫描
             const totalAngleDeg = (angleMax - angleMin) * 180 / Math.PI
-            console.log(`  - 扫描角度跨度: ${totalAngleDeg.toFixed(1)}°`)
-            console.log(`  - 是否360度扫描: ${Math.abs(totalAngleDeg - 360) < 5 ? '是' : '否'}`)
+            debugLog(`  - 扫描角度跨度: ${totalAngleDeg.toFixed(1)}°`)
+            debugLog(`  - 是否360度扫描: ${Math.abs(totalAngleDeg - 360) < 5 ? '是' : '否'}`)
 
             // 分析有效点的角度分布
             const validAngles = []
@@ -1687,16 +1797,16 @@ export default {
             if (validAngles.length > 0) {
               const minAngle = Math.min(...validAngles)
               const maxAngle = Math.max(...validAngles)
-              console.log(`  - 有效点角度分布: ${minAngle.toFixed(1)}° ~ ${maxAngle.toFixed(1)}°`)
-              console.log(`  - 角度分布跨度: ${(maxAngle - minAngle).toFixed(1)}°`)
+              debugLog(`  - 有效点角度分布: ${minAngle.toFixed(1)}° ~ ${maxAngle.toFixed(1)}°`)
+              debugLog(`  - 角度分布跨度: ${(maxAngle - minAngle).toFixed(1)}°`)
             }
           }
 
           // 只在第一次更新时显示边界框信息
           if (!updateLaserScan._firstLogged && validPoints > 0) {
-            // console.log(`[LaserScan] 点云边界框: X=[${minX.toFixed(2)}, ${maxX.toFixed(2)}], Y=[${minY.toFixed(2)}, ${maxY.toFixed(2)}]`)
-            // console.log(`[LaserScan] 点云尺寸: ${(maxX - minX).toFixed(2)}m x ${(maxY - minY).toFixed(2)}m`)
-            // console.log(`[LaserScan] X范围: ${(maxX - minX).toFixed(2)}m, Y范围: ${(maxY - minY).toFixed(2)}m`)
+            // debugLog(`[LaserScan] 点云边界框: X=[${minX.toFixed(2)}, ${maxX.toFixed(2)}], Y=[${minY.toFixed(2)}, ${maxY.toFixed(2)}]`)
+            // debugLog(`[LaserScan] 点云尺寸: ${(maxX - minX).toFixed(2)}m x ${(maxY - minY).toFixed(2)}m`)
+            // debugLog(`[LaserScan] X范围: ${(maxX - minX).toFixed(2)}m, Y范围: ${(maxY - minY).toFixed(2)}m`)
 
             // 如果Y范围太小，说明有问题
             if ((maxY - minY) < 1.0) {
@@ -1782,7 +1892,7 @@ export default {
 
         // 只在第一次成功时显示详细日志和消息
         if (!updateLaserScan._firstLogged) {
-          // console.log(`[LaserScan] 成功添加激光雷达点云: ${positions.length / 3} 个点`)
+          // debugLog(`[LaserScan] 成功添加激光雷达点云: ${positions.length / 3} 个点`)
           ElMessage.success(`激光雷达 ${topic} 显示成功: ${positions.length / 3} 个点`)
           updateLaserScan._firstLogged = true
         }
@@ -1795,7 +1905,7 @@ export default {
     
     const updateMarker = (topic, message) => {
       // 标记可视化实现
-      // console.log(`Updating marker for ${topic}:`, message)
+      // debugLog(`Updating marker for ${topic}:`, message)
       
       removeVisualization(topic)
       
@@ -1862,24 +1972,30 @@ export default {
     
     const updateMarkerArray = (topic, message) => {
       // 标记数组可视化实现
-      // console.log(`Updating marker array for ${topic}:`, message)
+      // debugLog(`Updating marker array for ${topic}:`, message)
       
       removeVisualization(topic)
       
       const group = new THREE.Group()
       
+      let transformError = ''
       if (message.markers && message.markers.length > 0) {
         message.markers.forEach((marker, index) => {
           updateMarker(`${topic}_${index}`, marker)
           const markerObject = visualizationObjects.get(`${topic}_${index}`)
           if (markerObject) {
+            if (!applyFixedFrame(topic, marker, markerObject, false)) {
+              const frame = frameIdFromMessage(marker) || 'unknown'
+              transformError = `缺少 ${frame} → ${fixedFrameId} 的 TF`
+            }
             group.add(markerObject)
             visualizationObjects.delete(`${topic}_${index}`)
           }
         })
       }
       
-      group.userData = { topic, messageType: 'visualization_msgs/msg/MarkerArray' }
+      group.userData = { topic, messageType: 'visualization_msgs/msg/MarkerArray', fixedFrameApplied: true }
+      setDisplayStatus(topic, transformError)
       
       scene.add(group)
       visualizationObjects.set(topic, group)
@@ -1887,7 +2003,7 @@ export default {
     
     const updatePath = (topic, message) => {
       // 路径可视化实现
-      // console.log(`Updating path for ${topic}:`, message)
+      // debugLog(`Updating path for ${topic}:`, message)
       
       removeVisualization(topic)
       
@@ -1977,8 +2093,8 @@ export default {
     
 
     const updateOdometry = (topic, message) => {
-      // console.log(`[updateOdometry] ⚙️ 开始处理里程计消息 - 主题: ${topic}`)
-      // console.log(`[updateOdometry] 消息内容:`, message)
+      // debugLog(`[updateOdometry] ⚙️ 开始处理里程计消息 - 主题: ${topic}`)
+      // debugLog(`[updateOdometry] 消息内容:`, message)
 
       try {
         removeVisualization(topic)
@@ -1998,8 +2114,9 @@ export default {
           return
         }
 
-        // 更新机器人模型位置
-        updateRobotPosition(position, orientation)
+        const transformedPose = transformPoseToFixed(topic, message, position, orientation)
+        if (!transformedPose) return
+        updateRobotPosition(transformedPose.position, transformedPose.orientation)
 
         // Odom from the position panel drives the UAV model itself. Do not draw
         // an extra odom arrow here; it can visually cover the aircraft model.
@@ -2010,7 +2127,7 @@ export default {
     }
 
     const updatePoseStamped = (topic, message) => {
-      console.log(`Updating pose stamped for ${topic}:`, message)
+      debugLog(`Updating pose stamped for ${topic}:`, message)
 
       try {
         removeVisualization(topic)
@@ -2043,7 +2160,7 @@ export default {
         scene.add(axesHelper)
         visualizationObjects.set(topic, axesHelper)
 
-        // console.log(`Successfully updated pose at (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`)
+        // debugLog(`Successfully updated pose at (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`)
 
       } catch (error) {
         console.error('Error updating pose stamped:', error)
@@ -2051,7 +2168,7 @@ export default {
     }
 
     const updatePoseWithCovarianceStamped = (topic, message) => {
-      console.log(`Updating pose with covariance for ${topic}:`, message)
+      debugLog(`Updating pose with covariance for ${topic}:`, message)
 
       try {
         removeVisualization(topic)
@@ -2129,7 +2246,7 @@ export default {
         scene.add(group)
         visualizationObjects.set(topic, group)
 
-        // console.log(`Successfully updated pose with covariance at (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`)
+        // debugLog(`Successfully updated pose with covariance at (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`)
 
       } catch (error) {
         console.error('Error updating pose with covariance:', error)
@@ -2141,18 +2258,18 @@ export default {
 
     // 启动消息验证
     const startMessageVerification = () => {
-      console.log('[Verification] 启动消息验证系统')
+      debugLog('[Verification] 启动消息验证系统')
 
       if (ROS_TOPICS.expectedControl) {
         try {
           const goalPoseVerification = rosbridge.subscribe(ROS_TOPICS.expectedControl, 'geometry_msgs/msg/PoseStamped', (message) => {
-            console.log(`[Verification] ✅ 收到${ROS_TOPICS.expectedControl}消息:`, message)
+            debugLog(`[Verification] ✅ 收到${ROS_TOPICS.expectedControl}消息:`, message)
             ElMessage.success('验证成功：收到发布的目标点消息')
           })
 
           if (goalPoseVerification) {
             verificationSubscriptions.set(ROS_TOPICS.expectedControl, goalPoseVerification)
-            console.log(`[Verification] ✅ 成功订阅${ROS_TOPICS.expectedControl}用于验证`)
+            debugLog(`[Verification] ✅ 成功订阅${ROS_TOPICS.expectedControl}用于验证`)
           }
         } catch (error) {
           console.error(`[Verification] 订阅${ROS_TOPICS.expectedControl}失败:`, error)
@@ -2162,13 +2279,13 @@ export default {
       if (ROS_TOPICS.initialPose) {
         try {
           const initialPoseVerification = rosbridge.subscribe(ROS_TOPICS.initialPose, 'geometry_msgs/msg/PoseWithCovarianceStamped', (message) => {
-            console.log(`[Verification] ✅ 收到${ROS_TOPICS.initialPose}消息:`, message)
+            debugLog(`[Verification] ✅ 收到${ROS_TOPICS.initialPose}消息:`, message)
             ElMessage.success('验证成功：收到发布的位置估计消息')
           })
 
           if (initialPoseVerification) {
             verificationSubscriptions.set(ROS_TOPICS.initialPose, initialPoseVerification)
-            console.log(`[Verification] ✅ 成功订阅${ROS_TOPICS.initialPose}用于验证`)
+            debugLog(`[Verification] ✅ 成功订阅${ROS_TOPICS.initialPose}用于验证`)
           }
         } catch (error) {
           console.error(`[Verification] 订阅${ROS_TOPICS.initialPose}失败:`, error)
@@ -2178,11 +2295,11 @@ export default {
 
     // 停止消息验证
     const stopMessageVerification = () => {
-      console.log('[Verification] 停止消息验证系统')
+      debugLog('[Verification] 停止消息验证系统')
       verificationSubscriptions.forEach((subscription, topic) => {
         try {
           rosbridge.unsubscribe(subscription)
-          // console.log(`[Verification] 取消订阅验证话题: ${topic}`)
+          // debugLog(`[Verification] 取消订阅验证话题: ${topic}`)
         } catch (error) {
           console.error(`[Verification] 取消订阅${topic}失败:`, error)
         }
@@ -2192,18 +2309,18 @@ export default {
 
     // 生命周期
     onMounted(async () => {
-      console.log('Scene3D component mounted')
+      debugLog('Scene3D component mounted')
       await nextTick()
 
       if (containerRef.value) {
-        console.log('Container found, initializing scene...')
-        console.log('Container size:', containerRef.value.clientWidth, 'x', containerRef.value.clientHeight)
+        debugLog('Container found, initializing scene...')
+        debugLog('Container size:', containerRef.value.clientWidth, 'x', containerRef.value.clientHeight)
 
         // 确保容器有尺寸后再初始化
         if (containerRef.value.clientWidth > 0 && containerRef.value.clientHeight > 0) {
           await initScene()
         } else {
-          console.log('Container has no size, retrying in 100ms')
+          debugLog('Container has no size, retrying in 100ms')
           setTimeout(async () => {
             if (containerRef.value && containerRef.value.clientWidth > 0) {
               await initScene()
@@ -2216,17 +2333,19 @@ export default {
 
       // 检查ROS连接状态并启动验证
       if (rosbridge.isConnected) {
-        console.log('[Scene3D] ROS已连接，启动消息验证')
+        debugLog('[Scene3D] ROS已连接，启动消息验证')
         startMessageVerification()
         subscribeToDefaultVisualizationTopics()
+        subscribeToTfTopics()
       } else {
-        console.log('[Scene3D] ROS未连接，等待连接后启动验证')
+        debugLog('[Scene3D] ROS未连接，等待连接后启动验证')
         // 定期检查连接状态
         const connectionCheckInterval = setInterval(() => {
           if (rosbridge.isConnected) {
-            console.log('[Scene3D] ROS连接成功，启动消息验证')
+            debugLog('[Scene3D] ROS连接成功，启动消息验证')
             startMessageVerification()
             subscribeToDefaultVisualizationTopics()
+            subscribeToTfTopics()
             clearInterval(connectionCheckInterval)
           }
         }, 1000)
@@ -2243,6 +2362,8 @@ export default {
       if (animationId) {
         cancelAnimationFrame(animationId)
       }
+      if (pointCloudFrameRequest !== null) cancelAnimationFrame(pointCloudFrameRequest)
+      if (transformFrameRequest !== null) cancelAnimationFrame(transformFrameRequest)
 
       // 停止消息验证
       stopMessageVerification()
@@ -2254,7 +2375,7 @@ export default {
       rosSubscriptions.forEach((subscription, topicName) => {
         try {
           rosbridge.unsubscribe(subscription)
-          // console.log(`清理ROS订阅: ${topicName}`)
+          // debugLog(`清理ROS订阅: ${topicName}`)
         } catch (error) {
           console.error(`清理ROS订阅失败: ${topicName}`, error)
         }
@@ -2286,7 +2407,7 @@ export default {
 
     // 新增控制方法
     const setLaserType = (type) => {
-      console.log('设置激光类型:', type)
+      debugLog('设置激光类型:', type)
       // 在3D场景中切换激光显示方式
     }
 
@@ -2320,11 +2441,12 @@ export default {
     // 导航工具相关方法
     const setFixedFrame = (frameId) => {
       fixedFrameId = frameId || 'map'
+      scheduleTransformRefresh()
     }
 
     const setNavigationTool = (tool) => {
       currentNavigationTool = tool
-      console.log('set navigation tool:', tool)
+      debugLog('set navigation tool:', tool)
 
       clearPreviewArrow()
       isDragging = false
@@ -2445,8 +2567,8 @@ export default {
     }
 
     const publishGoalPose = (position, orientation, topicName = '') => {
-      console.log('[Navigation] 开始发布2D目标点')
-      console.log('[Navigation] 连接状态检查:', {
+      debugLog('[Navigation] 开始发布2D目标点')
+      debugLog('[Navigation] 连接状态检查:', {
         isConnected: rosbridge.isConnected,
         connectionStatus: connectionStore.connectionStatus,
         websocketState: connectionStore.websocket?.readyState
@@ -2488,20 +2610,20 @@ export default {
         }
       }
 
-      console.log('[Navigation] 发布2D目标点消息:', JSON.stringify(goalMsg, null, 2))
+      debugLog('[Navigation] 发布2D目标点消息:', JSON.stringify(goalMsg, null, 2))
 
       try {
         const publishResult = rosbridge.publish(publishTopic, 'geometry_msgs/msg/PoseStamped', goalMsg)
-        // console.log('[Navigation] rosbridge.publish返回结果:', publishResult)
+        // debugLog('[Navigation] rosbridge.publish返回结果:', publishResult)
 
         if (publishResult) {
           const yawDegrees = (Math.atan2(2 * (orientation.w * orientation.z + orientation.x * orientation.y),
                                          1 - 2 * (orientation.y * orientation.y + orientation.z * orientation.z)) * 180 / Math.PI).toFixed(1)
-          console.log(`[Navigation] ✅ 目标点发布成功: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
+          debugLog(`[Navigation] ✅ 目标点发布成功: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
           ElMessage.success(`已设置目标点: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
 
           // 额外验证：订阅目标话题来验证消息是否真的发送了
-          console.log('[Navigation] 尝试验证消息发送...')
+          debugLog('[Navigation] 尝试验证消息发送...')
           return true
         } else {
           throw new Error('发布函数返回false')
@@ -2543,8 +2665,8 @@ export default {
     }
 
     const publishPoseEstimate = (position, orientation) => {
-      console.log('[Navigation] 开始发布2D位置估计')
-      console.log('[Navigation] 连接状态检查:', {
+      debugLog('[Navigation] 开始发布2D位置估计')
+      debugLog('[Navigation] 连接状态检查:', {
         isConnected: rosbridge.isConnected,
         connectionStatus: connectionStore.connectionStatus,
         websocketState: connectionStore.websocket?.readyState
@@ -2597,16 +2719,16 @@ export default {
         }
       }
 
-      console.log('[Navigation] 发布2D位置估计消息:', JSON.stringify(poseMsg, null, 2))
+      debugLog('[Navigation] 发布2D位置估计消息:', JSON.stringify(poseMsg, null, 2))
 
       try {
         const publishResult = rosbridge.publish(ROS_TOPICS.initialPose, 'geometry_msgs/msg/PoseWithCovarianceStamped', poseMsg)
-        // console.log('[Navigation] rosbridge.publish返回结果:', publishResult)
+        // debugLog('[Navigation] rosbridge.publish返回结果:', publishResult)
 
         if (publishResult) {
           const yawDegrees = (Math.atan2(2 * (orientation.w * orientation.z + orientation.x * orientation.y),
                                          1 - 2 * (orientation.y * orientation.y + orientation.z * orientation.z)) * 180 / Math.PI).toFixed(1)
-          console.log(`[Navigation] ✅ 位置估计发布成功: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
+          debugLog(`[Navigation] ✅ 位置估计发布成功: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
           ElMessage.success(`已设置位置估计: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
           return true
         } else {
@@ -2619,7 +2741,7 @@ export default {
     }
 
     const updateSettings = (settings) => {
-      console.log('更新3D场景设置:', settings)
+      debugLog('更新3D场景设置:', settings)
 
       // 首先保存设置到持久化存储
       if (settings.type && persistentSettings[settings.type]) {
@@ -2681,7 +2803,7 @@ export default {
               }
             }
           })
-          console.log('激光雷达设置已更新:', settings)
+          debugLog('激光雷达设置已更新:', settings)
           break
 
         case 'pointcloud':
@@ -2712,7 +2834,7 @@ export default {
               }
             }
           })
-          console.log('点云设置已更新:', settings)
+          debugLog('点云设置已更新:', settings)
           break
           
         case 'map':
@@ -2737,7 +2859,7 @@ export default {
               camera.lookAt(position)
             }
           }
-          console.log('地图设置已更新:', settings)
+          debugLog('地图设置已更新:', settings)
           break
 
         case 'position':
@@ -2755,13 +2877,13 @@ export default {
               }
             }
           })
-          console.log('位置设置已更新:', settings)
+          debugLog('位置设置已更新:', settings)
           if (settings.trajectoryLength !== undefined) {
             // 更新轨迹长度（夹取到10~100）
             const clamped = Math.max(10, Math.min(100, settings.trajectoryLength))
             updateTrajectoryLength(clamped)
           }
-          console.log('位置设置已更新:', settings)
+          debugLog('位置设置已更新:', settings)
           break
 
         case 'scene':
@@ -2786,14 +2908,14 @@ export default {
             const clamped = Math.max(10, Math.min(100, settings.trajectoryLength))
             persistentSettings.position.trajectoryLength = clamped
             updateTrajectoryLength(clamped)
-            console.log('更新轨迹长度:', clamped)
+            debugLog('更新轨迹长度:', clamped)
           }
           break
       }
     }
 
     const setViewPreset = (preset) => {
-      console.log('设置视角预设:', preset)
+      debugLog('设置视角预设:', preset)
       
       if (!camera) return
       
@@ -2839,7 +2961,7 @@ export default {
     }
 
     const loadMapFile = async (file) => {
-      console.log(`[Scene3D] 加载地图文件: ${file.name}, 大小: ${file.size} bytes`)
+      debugLog(`[Scene3D] 加载地图文件: ${file.name}, 大小: ${file.size} bytes`)
       
       try {
         const fileExtension = file.name.toLowerCase().split('.').pop()
@@ -2861,9 +2983,9 @@ export default {
           let mapConfig = null
           if (window.mapConfigs && window.mapConfigs[baseName]) {
             mapConfig = window.mapConfigs[baseName]
-            console.log(`[Scene3D] 找到对应的YAML配置:`, mapConfig)
+            debugLog(`[Scene3D] 找到对应的YAML配置:`, mapConfig)
           } else {
-            console.log(`[Scene3D] 未找到${baseName}.yaml配置，使用默认参数`)
+            debugLog(`[Scene3D] 未找到${baseName}.yaml配置，使用默认参数`)
             mapConfig = {
               resolution: 0.05,
               origin: [0, 0, 0],
@@ -2902,12 +3024,12 @@ export default {
     }
 
     const loadMapFiles = async (yamlFile, pgmFile) => {
-      console.log(`[Scene3D] 同时加载地图文件: ${yamlFile.name} + ${pgmFile.name}`)
+      debugLog(`[Scene3D] 同时加载地图文件: ${yamlFile.name} + ${pgmFile.name}`)
 
       try {
         // 先加载YAML配置
         const mapConfig = await loadMapYaml(yamlFile)
-        console.log(`[Scene3D] YAML配置加载完成:`, mapConfig)
+        debugLog(`[Scene3D] YAML配置加载完成:`, mapConfig)
 
         // 再用配置加载PGM文件
         await loadMapPgmWithConfig(pgmFile, mapConfig)
@@ -2921,7 +3043,7 @@ export default {
     }
 
     const loadMapYaml = async (file) => {
-      console.log(`[Scene3D] 解析YAML地图配置文件`)
+      debugLog(`[Scene3D] 解析YAML地图配置文件`)
       
       return new Promise((resolve, reject) => {
         const reader = new FileReader()
@@ -2929,11 +3051,11 @@ export default {
         reader.onload = (e) => {
           try {
             const yamlContent = e.target.result
-            console.log('YAML内容:', yamlContent)
+            debugLog('YAML内容:', yamlContent)
             
             // 简单解析YAML内容（手动解析关键字段）
             const mapConfig = parseMapYaml(yamlContent)
-            console.log('解析的地图配置:', mapConfig)
+            debugLog('解析的地图配置:', mapConfig)
             
             // 如果YAML中指定了图像文件，提示用户也上传PGM文件
             if (mapConfig.image) {
@@ -2957,7 +3079,7 @@ export default {
     }
 
     const loadMapPgmWithConfig = async (file, mapConfig) => {
-      console.log(`[Scene3D] 加载PGM地图图像，使用配置:`, mapConfig)
+      debugLog(`[Scene3D] 加载PGM地图图像，使用配置:`, mapConfig)
       
       return new Promise((resolve, reject) => {
         const reader = new FileReader()
@@ -2986,7 +3108,7 @@ export default {
     }
 
     const loadMapPgm = async (file) => {
-      console.log(`[Scene3D] 加载PGM地图图像（使用默认配置）`)
+      debugLog(`[Scene3D] 加载PGM地图图像（使用默认配置）`)
       
       const defaultConfig = {
         resolution: 0.05,
@@ -3050,7 +3172,7 @@ export default {
     }
 
     const parsePgmFile = (arrayBuffer) => {
-      console.log(`[PGM Parser] 开始解析PGM文件，大小: ${arrayBuffer.byteLength} 字节`)
+      debugLog(`[PGM Parser] 开始解析PGM文件，大小: ${arrayBuffer.byteLength} 字节`)
       
       const uint8Array = new Uint8Array(arrayBuffer)
       let offset = 0
@@ -3068,7 +3190,7 @@ export default {
             // 忽略注释行
             if (!currentLine.trim().startsWith('#')) {
               headerLines.push(currentLine.trim())
-              console.log(`[PGM Parser] 头部行 ${headerLines.length}: "${currentLine.trim()}"`)
+              debugLog(`[PGM Parser] 头部行 ${headerLines.length}: "${currentLine.trim()}"`)
             }
             currentLine = ''
           }
@@ -3089,8 +3211,8 @@ export default {
         }
       }
       
-      console.log(`[PGM Parser] 解析到头部行:`, headerLines)
-      console.log(`[PGM Parser] 数据偏移量: ${offset}`)
+      debugLog(`[PGM Parser] 解析到头部行:`, headerLines)
+      debugLog(`[PGM Parser] 数据偏移量: ${offset}`)
       
       // 验证头部格式
       if (headerLines.length < 3) {
@@ -3133,7 +3255,7 @@ export default {
         return null
       }
       
-      console.log(`[PGM Parser] ✅ PGM图像信息: ${width}x${height}, 最大值: ${maxVal}, 格式: ${magicNumber}`)
+      debugLog(`[PGM Parser] ✅ PGM图像信息: ${width}x${height}, 最大值: ${maxVal}, 格式: ${magicNumber}`)
       
       // 读取图像数据
       let imageData
@@ -3160,7 +3282,7 @@ export default {
         imageData = new Uint8Array(values.slice(0, expectedDataSize))
       }
       
-      console.log(`[PGM Parser] ✅ 成功解析PGM文件: ${width}x${height}, 数据长度: ${imageData.length}`)
+      debugLog(`[PGM Parser] ✅ 成功解析PGM文件: ${width}x${height}, 数据长度: ${imageData.length}`)
       
       return {
         width,
@@ -3173,8 +3295,8 @@ export default {
     }
 
     const createMapFromPgmWithConfig = (pgmData, mapConfig, filename) => {
-      console.log(`[Scene3D] 创建地图可视化: ${filename}`)
-      console.log(`[Scene3D] 使用地图配置:`, mapConfig)
+      debugLog(`[Scene3D] 创建地图可视化: ${filename}`)
+      debugLog(`[Scene3D] 使用地图配置:`, mapConfig)
       
       try {
         // 移除旧地图
@@ -3182,8 +3304,8 @@ export default {
         
         const { width, height, data, maxVal } = pgmData
         
-        console.log(`[Scene3D] PGM数据 - 宽度: ${width}, 高度: ${height}, 最大值: ${maxVal}`)
-        console.log(`[Scene3D] 地图配置 - 分辨率: ${mapConfig.resolution}m/pixel, 原点: [${mapConfig.origin.join(', ')}]`)
+        debugLog(`[Scene3D] PGM数据 - 宽度: ${width}, 高度: ${height}, 最大值: ${maxVal}`)
+        debugLog(`[Scene3D] 地图配置 - 分辨率: ${mapConfig.resolution}m/pixel, 原点: [${mapConfig.origin.join(', ')}]`)
         
         // 创建Canvas纹理
         const canvas = document.createElement('canvas')
@@ -3260,7 +3382,7 @@ export default {
         const mapWidthMeters = width * mapConfig.resolution
         const mapHeightMeters = height * mapConfig.resolution
         
-        console.log(`[Scene3D] 地图物理尺寸: ${mapWidthMeters.toFixed(2)}m x ${mapHeightMeters.toFixed(2)}m`)
+        debugLog(`[Scene3D] 地图物理尺寸: ${mapWidthMeters.toFixed(2)}m x ${mapHeightMeters.toFixed(2)}m`)
         
         // 地图位置计算 - 正确应用YAML origin偏移
         //
@@ -3292,24 +3414,24 @@ export default {
         const originInMapX = 0 - mapConfig.origin[0]  // 原点X - 地图左下角X
         const originInMapY = 0 - mapConfig.origin[1]  // 原点Y - 地图左下角Y
 
-        console.log(`[Scene3D] 坐标原点(0,0)在地图中的位置检查:`)
-        console.log(`[Scene3D] - 原点相对于地图左下角偏移: (${originInMapX.toFixed(2)}, ${originInMapY.toFixed(2)}) 米`)
-        console.log(`[Scene3D] - 原点在地图中的百分比位置: (${(originInMapX/mapWidthWorld*100).toFixed(1)}%, ${(originInMapY/mapHeightWorld*100).toFixed(1)}%)`)
+        debugLog(`[Scene3D] 坐标原点(0,0)在地图中的位置检查:`)
+        debugLog(`[Scene3D] - 原点相对于地图左下角偏移: (${originInMapX.toFixed(2)}, ${originInMapY.toFixed(2)}) 米`)
+        debugLog(`[Scene3D] - 原点在地图中的百分比位置: (${(originInMapX/mapWidthWorld*100).toFixed(1)}%, ${(originInMapY/mapHeightWorld*100).toFixed(1)}%)`)
 
         // 如果原点不在地图范围内，给出警告
         if (originInMapX < 0 || originInMapX > mapWidthWorld || originInMapY < 0 || originInMapY > mapHeightWorld) {
           console.warn(`[Scene3D] ⚠️ 坐标原点(0,0)在地图范围外！`)
         }
 
-        console.log(`[Scene3D] 地图世界坐标计算:`)
-        console.log(`[Scene3D] - 地图物理尺寸: ${mapWidthWorld.toFixed(2)}m × ${mapHeightWorld.toFixed(2)}m`)
-        console.log(`[Scene3D] - YAML origin: [${mapConfig.origin.join(', ')}]`)
-        console.log(`[Scene3D] - 计算的地图中心位置: (${mapX.toFixed(3)}, ${mapY.toFixed(3)}, ${mapZ.toFixed(3)})`)
+        debugLog(`[Scene3D] 地图世界坐标计算:`)
+        debugLog(`[Scene3D] - 地图物理尺寸: ${mapWidthWorld.toFixed(2)}m × ${mapHeightWorld.toFixed(2)}m`)
+        debugLog(`[Scene3D] - YAML origin: [${mapConfig.origin.join(', ')}]`)
+        debugLog(`[Scene3D] - 计算的地图中心位置: (${mapX.toFixed(3)}, ${mapY.toFixed(3)}, ${mapZ.toFixed(3)})`)
 
         // 计算坐标原点(0,0)在地图中的相对位置
         const originOffsetX = -mapConfig.origin[0] / mapWidthWorld
         const originOffsetY = -mapConfig.origin[1] / mapHeightWorld
-        console.log(`[Scene3D] - 坐标原点(0,0)在地图中的相对位置: (${(originOffsetX*100).toFixed(1)}%, ${(originOffsetY*100).toFixed(1)}%)`)
+        debugLog(`[Scene3D] - 坐标原点(0,0)在地图中的相对位置: (${(originOffsetX*100).toFixed(1)}%, ${(originOffsetY*100).toFixed(1)}%)`)
 
         mesh.position.set(mapX, mapY, mapZ)
 
@@ -3323,19 +3445,19 @@ export default {
         mesh.rotation.y = 0
         mesh.rotation.z = 0
 
-        console.log(`[Scene3D] ✅ 地图加载完成:`)
-        console.log(`[Scene3D] - 几何中心位置: (${mapX.toFixed(3)}, ${mapY.toFixed(3)}, ${mapZ.toFixed(3)})`)
-        console.log(`[Scene3D] - 原点配置: [${mapConfig.origin.join(', ')}]`)
-        console.log(`[Scene3D] - 物理尺寸: ${mapWidthMeters.toFixed(2)}m × ${mapHeightMeters.toFixed(2)}m`)
-        console.log(`[Scene3D] - 分辨率: ${mapConfig.resolution}m/pixel`)
-        console.log(`[Scene3D] - 像素尺寸: ${width} × ${height}`)
+        debugLog(`[Scene3D] ✅ 地图加载完成:`)
+        debugLog(`[Scene3D] - 几何中心位置: (${mapX.toFixed(3)}, ${mapY.toFixed(3)}, ${mapZ.toFixed(3)})`)
+        debugLog(`[Scene3D] - 原点配置: [${mapConfig.origin.join(', ')}]`)
+        debugLog(`[Scene3D] - 物理尺寸: ${mapWidthMeters.toFixed(2)}m × ${mapHeightMeters.toFixed(2)}m`)
+        debugLog(`[Scene3D] - 分辨率: ${mapConfig.resolution}m/pixel`)
+        debugLog(`[Scene3D] - 像素尺寸: ${width} × ${height}`)
 
         // 计算地图在世界坐标系中的实际覆盖范围
         const worldMinX = mapConfig.origin[0]
         const worldMinY = mapConfig.origin[1]
         const worldMaxX = mapConfig.origin[0] + width * mapConfig.resolution
         const worldMaxY = mapConfig.origin[1] + height * mapConfig.resolution
-        console.log(`[Scene3D] - 世界坐标覆盖范围: X=[${worldMinX.toFixed(2)}, ${worldMaxX.toFixed(2)}], Y=[${worldMinY.toFixed(2)}, ${worldMaxY.toFixed(2)}]`)
+        debugLog(`[Scene3D] - 世界坐标覆盖范围: X=[${worldMinX.toFixed(2)}, ${worldMaxX.toFixed(2)}], Y=[${worldMinY.toFixed(2)}, ${worldMaxY.toFixed(2)}]`)
         
         // 设置用户数据
         mesh.userData = {
@@ -3355,12 +3477,12 @@ export default {
         // 自动调整相机以查看地图
         fitCameraToMap(mesh)
         
-        console.log(`[Scene3D] ✅ 地图加载成功:`)
-        console.log(`[Scene3D] - 像素尺寸: ${width}x${height}`)
-        console.log(`[Scene3D] - 物理尺寸: ${mapWidthMeters.toFixed(2)}m x ${mapHeightMeters.toFixed(2)}m`)
-        console.log(`[Scene3D] - 分辨率: ${mapConfig.resolution}m/pixel`)
-        console.log(`[Scene3D] - 世界位置: (${mapX.toFixed(2)}, ${mapY.toFixed(2)}, ${mapZ.toFixed(2)})`)
-        console.log(`[Scene3D] - 原点配置: [${mapConfig.origin.join(', ')}]`)
+        debugLog(`[Scene3D] ✅ 地图加载成功:`)
+        debugLog(`[Scene3D] - 像素尺寸: ${width}x${height}`)
+        debugLog(`[Scene3D] - 物理尺寸: ${mapWidthMeters.toFixed(2)}m x ${mapHeightMeters.toFixed(2)}m`)
+        debugLog(`[Scene3D] - 分辨率: ${mapConfig.resolution}m/pixel`)
+        debugLog(`[Scene3D] - 世界位置: (${mapX.toFixed(2)}, ${mapY.toFixed(2)}, ${mapZ.toFixed(2)})`)
+        debugLog(`[Scene3D] - 原点配置: [${mapConfig.origin.join(', ')}]`)
         
         // 显示成功消息
         ElMessage.success(`地图加载成功！尺寸: ${mapWidthMeters.toFixed(1)}m×${mapHeightMeters.toFixed(1)}m`)
@@ -3379,7 +3501,7 @@ export default {
         const center = box.getCenter(new THREE.Vector3())
         const size = box.getSize(new THREE.Vector3())
         
-        console.log(`[Scene3D] 地图边界框:`, {
+        debugLog(`[Scene3D] 地图边界框:`, {
           center: { x: center.x.toFixed(2), y: center.y.toFixed(2), z: center.z.toFixed(2) },
           size: { x: size.x.toFixed(2), y: size.y.toFixed(2), z: size.z.toFixed(2) }
         })
@@ -3405,11 +3527,11 @@ export default {
           controls.update()
         }
         
-        console.log(`[Scene3D] ✅ 相机已适配到地图:`)
-        console.log(`[Scene3D] - 相机位置: (${cameraX.toFixed(2)}, ${cameraY.toFixed(2)}, ${cameraZ.toFixed(2)})`)
-        console.log(`[Scene3D] - 观察目标: (${targetPoint.x.toFixed(2)}, ${targetPoint.y.toFixed(2)}, ${targetPoint.z.toFixed(2)})`)
-        console.log(`[Scene3D] - 观察距离: ${cameraZ.toFixed(2)}m`)
-        console.log(`[Scene3D] - 地图尺寸: ${maxDim.toFixed(2)}m`)
+        debugLog(`[Scene3D] ✅ 相机已适配到地图:`)
+        debugLog(`[Scene3D] - 相机位置: (${cameraX.toFixed(2)}, ${cameraY.toFixed(2)}, ${cameraZ.toFixed(2)})`)
+        debugLog(`[Scene3D] - 观察目标: (${targetPoint.x.toFixed(2)}, ${targetPoint.y.toFixed(2)}, ${targetPoint.z.toFixed(2)})`)
+        debugLog(`[Scene3D] - 观察距离: ${cameraZ.toFixed(2)}m`)
+        debugLog(`[Scene3D] - 地图尺寸: ${maxDim.toFixed(2)}m`)
         
       } catch (error) {
         console.error('[Scene3D] 相机适配到地图失败:', error)
@@ -3452,7 +3574,7 @@ export default {
           controls.update()
         }
         
-        console.log(`相机已调整以查看点云 - 中心: (${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}), 距离: ${distance.toFixed(2)}`)
+        debugLog(`相机已调整以查看点云 - 中心: (${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}), 距离: ${distance.toFixed(2)}`)
         
       } catch (error) {
         console.error('调整相机视角失败:', error)
@@ -3493,28 +3615,28 @@ export default {
         }
       }
       
-      console.log('=== 🔍 3D场景详细调试信息 ===')
-      console.log('时间戳:', debugInfo.timestamp)
-      console.log('--- 场景状态 ---')
-      console.log('可视化对象数量:', debugInfo.scene.objects)
-      console.log('ROS订阅数量:', debugInfo.scene.subscriptions)
-      console.log('Three.js场景子对象数量:', debugInfo.scene.sceneChildren)
-      console.log('--- 相机信息 ---')
-      console.log('相机位置:', debugInfo.scene.camera?.position)
-      console.log('相机目标:', debugInfo.scene.camera?.target)
-      console.log('--- ROS连接 ---')
-      console.log('ROSBridge连接状态:', debugInfo.rosbridge.connected)
-      console.log('--- 性能统计 ---')
-      console.log('FPS:', debugInfo.performance.fps)
-      console.log('渲染对象数:', debugInfo.performance.objects)
-      console.log('顶点数:', debugInfo.performance.vertices)
-      
-      console.log('--- 可视化对象详情 ---')
+      debugLog('=== 🔍 3D场景详细调试信息 ===')
+      debugLog('时间戳:', debugInfo.timestamp)
+      debugLog('--- 场景状态 ---')
+      debugLog('可视化对象数量:', debugInfo.scene.objects)
+      debugLog('ROS订阅数量:', debugInfo.scene.subscriptions)
+      debugLog('Three.js场景子对象数量:', debugInfo.scene.sceneChildren)
+      debugLog('--- 相机信息 ---')
+      debugLog('相机位置:', debugInfo.scene.camera?.position)
+      debugLog('相机目标:', debugInfo.scene.camera?.target)
+      debugLog('--- ROS连接 ---')
+      debugLog('ROSBridge连接状态:', debugInfo.rosbridge.connected)
+      debugLog('--- 性能统计 ---')
+      debugLog('FPS:', debugInfo.performance.fps)
+      debugLog('渲染对象数:', debugInfo.performance.objects)
+      debugLog('顶点数:', debugInfo.performance.vertices)
+
+      debugLog('--- 可视化对象详情 ---')
       if (visualizationObjects.size === 0) {
-        console.log('⚠️ 没有可视化对象')
+        debugLog('⚠️ 没有可视化对象')
       } else {
         visualizationObjects.forEach((obj, topic) => {
-          console.log(`📊 ${topic}:`, {
+          debugLog(`📊 ${topic}:`, {
             类型: obj.userData?.messageType,
             点数: obj.userData?.pointCount,
             可见: obj.visible,
@@ -3525,21 +3647,21 @@ export default {
         })
       }
       
-      console.log('--- ROS订阅详情 ---')
+      debugLog('--- ROS订阅详情 ---')
       if (rosSubscriptions.size === 0) {
-        console.log('⚠️ 没有ROS订阅')
+        debugLog('⚠️ 没有ROS订阅')
       } else {
         rosSubscriptions.forEach((subscription, topic) => {
-          console.log(`📡 ${topic}:`, {
+          debugLog(`📡 ${topic}:`, {
             订阅对象: subscription,
             订阅时间: subscription?.timestamp ? new Date(subscription.timestamp).toLocaleString() : '未知'
           })
         })
       }
       
-      console.log('--- Three.js场景对象 ---')
+      debugLog('--- Three.js场景对象 ---')
       scene.children.forEach((child, index) => {
-        console.log(`🎭 场景对象 ${index}:`, {
+        debugLog(`🎭 场景对象 ${index}:`, {
           类型: child.type,
           名称: child.name || '未命名',
           可见: child.visible,
@@ -3548,7 +3670,7 @@ export default {
         })
       })
       
-      console.log('=== 🔍 调试信息结束 ===')
+      debugLog('=== 🔍 调试信息结束 ===')
       
       // 显示简化的用户消息
       ElMessage.info(`调试信息已输出到控制台 - 对象:${debugInfo.scene.objects} 订阅:${debugInfo.scene.subscriptions} FPS:${debugInfo.performance.fps}`)
@@ -3557,7 +3679,7 @@ export default {
     }
 
     const checkSubscriptionStatus = () => {
-      console.log('=== 🔍 ROS订阅状态检查 ===')
+      debugLog('=== 🔍 ROS订阅状态检查 ===')
       
       const now = Date.now()
       let activeSubscriptions = 0
@@ -3565,7 +3687,7 @@ export default {
       let totalMessages = 0
       
       if (rosSubscriptions.size === 0) {
-        console.log('⚠️ 没有任何ROS订阅')
+        debugLog('⚠️ 没有任何ROS订阅')
         ElMessage.warning('没有任何ROS订阅')
         return
       }
@@ -3575,28 +3697,28 @@ export default {
         const timeSinceLastMessage = subscription.lastMessageTime > 0 ? now - subscription.lastMessageTime : -1
         const messageCount = subscription.messageCount || 0
         
-        console.log(`📡 ${topic}:`)
-        console.log(`  - 订阅时长: ${(timeSinceSubscribe / 1000).toFixed(1)}秒`)
-        console.log(`  - 消息数量: ${messageCount}`)
-        console.log(`  - 最后消息: ${timeSinceLastMessage > 0 ? (timeSinceLastMessage / 1000).toFixed(1) + '秒前' : '从未收到'}`)
+        debugLog(`📡 ${topic}:`)
+        debugLog(`  - 订阅时长: ${(timeSinceSubscribe / 1000).toFixed(1)}秒`)
+        debugLog(`  - 消息数量: ${messageCount}`)
+        debugLog(`  - 最后消息: ${timeSinceLastMessage > 0 ? (timeSinceLastMessage / 1000).toFixed(1) + '秒前' : '从未收到'}`)
         
         if (messageCount > 0) {
           const avgFreq = messageCount / (timeSinceSubscribe / 1000)
-          console.log(`  - 平均频率: ${avgFreq.toFixed(2)} Hz`)
+          debugLog(`  - 平均频率: ${avgFreq.toFixed(2)} Hz`)
           activeSubscriptions++
         } else {
-          console.log(`  - ⚠️ 此主题没有收到任何数据`)
+          debugLog(`  - ⚠️ 此主题没有收到任何数据`)
           inactiveSubscriptions++
         }
         
         totalMessages += messageCount
       })
       
-      console.log('=== 📊 订阅统计 ===')
-      console.log(`总订阅数: ${rosSubscriptions.size}`)
-      console.log(`活跃订阅: ${activeSubscriptions}`)
-      console.log(`无数据订阅: ${inactiveSubscriptions}`)
-      console.log(`总消息数: ${totalMessages}`)
+      debugLog('=== 📊 订阅统计 ===')
+      debugLog(`总订阅数: ${rosSubscriptions.size}`)
+      debugLog(`活跃订阅: ${activeSubscriptions}`)
+      debugLog(`无数据订阅: ${inactiveSubscriptions}`)
+      debugLog(`总消息数: ${totalMessages}`)
       
       // 用户反馈
       if (inactiveSubscriptions > 0) {
