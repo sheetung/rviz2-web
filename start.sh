@@ -94,6 +94,7 @@ cleanup() {
 }
 
 start_local() {
+  local frontend_mode="${1:-local}"
   check_command curl
   ensure_uv
   check_command npm
@@ -114,6 +115,14 @@ start_local() {
   [[ -f "$PROJECT_ROOT/rvizweb_configs/$DEFAULT_RVIZWEB_CONFIG" ]] || fail "Default frontend config not found: rvizweb_configs/$DEFAULT_RVIZWEB_CONFIG"
   "$BACKEND_DIR/.venv/bin/python" -c "import rclpy" || fail "rclpy is unavailable; check the ROS2 setup files"
 
+  if [[ "$frontend_mode" == "local" ]]; then
+    log "Building frontend for normal local use"
+    (
+      cd "$FRONTEND_DIR"
+      VITE_RVIZWEB_CONFIG="$DEFAULT_RVIZWEB_CONFIG" npm run build
+    ) >"$LOG_DIR/frontend.log" 2>&1 || fail "Frontend build failed; see $LOG_DIR/frontend.log"
+  fi
+
   trap cleanup INT TERM EXIT
 
   log "Starting backend on $backend_port"
@@ -123,14 +132,17 @@ start_local() {
   ) >"$LOG_DIR/backend.log" 2>&1 &
   BACKEND_PID=$!
 
-  log "Starting frontend on $frontend_port"
+  log "Starting frontend on $frontend_port ($frontend_mode mode)"
   (
     cd "$FRONTEND_DIR"
-    export VITE_RVIZWEB_CONFIG="$DEFAULT_RVIZWEB_CONFIG"
-    export CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}"
-    export CHOKIDAR_INTERVAL="${CHOKIDAR_INTERVAL:-500}"
-    exec setsid npm run dev -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "$frontend_port"
-  ) >"$LOG_DIR/frontend.log" 2>&1 &
+    if [[ "$frontend_mode" == "dev" ]]; then
+      export VITE_RVIZWEB_CONFIG="$DEFAULT_RVIZWEB_CONFIG"
+      export CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}"
+      export CHOKIDAR_INTERVAL="${CHOKIDAR_INTERVAL:-500}"
+      exec setsid npm run dev -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "$frontend_port"
+    fi
+    exec setsid npm run preview -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "$frontend_port"
+  ) >>"$LOG_DIR/frontend.log" 2>&1 &
   FRONTEND_PID=$!
 
   wait_for_http "http://127.0.0.1:$backend_port/health" backend "$BACKEND_PID" 120
@@ -144,9 +156,10 @@ start_local() {
 }
 
 show_help() {
-  printf 'Usage: %s [local|sync|help]\n' "$0"
+  printf 'Usage: %s [local|dev|sync|help]\n' "$0"
   printf '  sync   Install/update backend and frontend dependencies\n'
-  printf '  local  Start both services (default)\n'
+  printf '  local  Build and start for normal local use (default)\n'
+  printf '  dev    Start with Vite hot reload for development\n'
 }
 
 main() {
@@ -161,7 +174,8 @@ main() {
       )
       (cd "$FRONTEND_DIR" && npm ci)
       ;;
-    local) start_local ;;
+    local) start_local local ;;
+    dev) start_local dev ;;
     help|-h|--help) show_help ;;
     *) show_help; return 2 ;;
   esac

@@ -12,7 +12,7 @@
 
 ### 启动与配置
 
-- `start.sh` 支持 `sync`、`local`、`help`。
+- `start.sh` 支持 `sync`、`local`、`dev`、`help`；默认 `local` 使用构建后的静态资源，`dev` 才启用热更新。
 - 缺少 uv 时可通过官方安装脚本自动安装。
 - 后端使用 uv 锁定依赖，前端使用 `npm ci`。
 - 启动时读取 `.env`，端口使用 `BACKEND_PORT` 与 `FRONTEND_PORT`。
@@ -80,7 +80,6 @@
 
 - `ROSBRIDGE_PORT` 当前只作为预留变量存在，没有实际监听者。
 - 后端 `Settings` 中仍保留部分旧的 `web_*`、rosbridge 和容量配置字段；启动入口实际以 `start.sh` 传给 Uvicorn 的 `BACKEND_HOST/BACKEND_PORT` 为准。
-- `frontend/vite.config.js` 的 `/api`、`/ws` 代理仍固定指向 `localhost:8000`，尚未跟随 `BACKEND_PORT`。
 - `LOG_LEVEL` 的端到端配置行为需要进一步统一验证。
 
 ### ROS2 环境路径与发行版固定

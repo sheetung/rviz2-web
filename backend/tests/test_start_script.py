@@ -32,6 +32,7 @@ def test_help_lists_supported_commands_without_starting_services():
     assert result.returncode == 0
     assert "sync" in result.stdout
     assert "local" in result.stdout
+    assert "dev" in result.stdout
     assert "docker" not in result.stdout
 
 

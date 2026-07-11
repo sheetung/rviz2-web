@@ -116,7 +116,7 @@ cd /home/amov/RVIZ-RQT-VISUAL
 ./start.sh sync
 ```
 
-本地启动：
+正常本地启动：
 
 ```bash
 cd /home/amov/RVIZ-RQT-VISUAL
@@ -127,6 +127,12 @@ cd /home/amov/RVIZ-RQT-VISUAL
 
 ```bash
 ./start.sh
+```
+
+正常模式会先执行前端生产构建，再用静态预览服务提供页面，不监视源码文件。开发前端并需要热更新时使用：
+
+```bash
+./start.sh dev
 ```
 
 本地模式需要：
@@ -161,7 +167,8 @@ uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```bash
 cd frontend
 npm ci
-VITE_RVIZWEB_CONFIG=uav1.rvizweb npm run dev -- --host 0.0.0.0 --port 3000
+VITE_RVIZWEB_CONFIG=uav1.rvizweb npm run build
+npm run preview -- --host 0.0.0.0 --port 3000
 ```
 
 访问地址：
@@ -174,7 +181,7 @@ VITE_RVIZWEB_CONFIG=uav1.rvizweb npm run dev -- --host 0.0.0.0 --port 3000
 
 ### 文件监听数量不足
 
-如果启动时报：
+仅开发模式可能遇到此问题。如果 `./start.sh dev` 启动时报：
 
 ```text
 OS file watch limit reached
@@ -188,7 +195,7 @@ sudo sysctl fs.inotify.max_user_watches=524288
 sudo sysctl fs.inotify.max_user_instances=1024
 ```
 
-也可以继续使用当前脚本中的 `CHOKIDAR_USEPOLLING=true` 轮询模式。
+也可以在 `.env` 中使用 `CHOKIDAR_USEPOLLING=true` 轮询模式。正常的 `./start.sh` 不监听文件，不受该限制影响。
 
 ### Displays 没有话题
 

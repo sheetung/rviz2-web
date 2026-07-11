@@ -1,10 +1,24 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, '..', '')
+  const backendPort = env.BACKEND_PORT || '8000'
+  const backendProxy = {
+    '/api': {
+      target: `http://localhost:${backendPort}`,
+      changeOrigin: true
+    },
+    '/ws': {
+      target: `ws://localhost:${backendPort}`,
+      ws: true
+    }
+  }
+
+  return {
   envDir: '..',
   plugins: [
     vue(),
@@ -22,16 +36,10 @@ export default defineConfig({
       usePolling: process.env.CHOKIDAR_USEPOLLING === 'true',
       interval: Number(process.env.CHOKIDAR_INTERVAL || 500)
     },
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true
-      },
-      '/ws': {
-        target: 'ws://localhost:8000',
-        ws: true
-      }
-    }
+    proxy: backendProxy
+  },
+  preview: {
+    proxy: backendProxy
   },
   build: {
     outDir: 'dist',
@@ -54,5 +62,6 @@ export default defineConfig({
         }
       }
     }
+  }
   }
 })
