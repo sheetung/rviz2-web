@@ -21,23 +21,17 @@ class Settings(BaseSettings):
         extra="ignore",
     )
     
-    # Web 服务配置
-    web_host: str = Field(default="0.0.0.0", description="Web 服务主机")
-    web_port: int = Field(default=8000, description="Web 服务端口")
+    # 后端服务配置
+    backend_host: str = Field(default="0.0.0.0", description="后端服务主机")
+    backend_port: int = Field(default=8000, description="后端服务端口")
     debug: bool = Field(default=False, description="调试模式")
     
     # ROS2 配置
     ros_domain_id: int = Field(default=0, description="ROS2 Domain ID")
-    ros_discovery_server: str = Field(default="", description="ROS2 Discovery Server")
-    
-    # Rosbridge 配置
-    rosbridge_host: str = Field(default="0.0.0.0", description="Rosbridge 主机")
-    rosbridge_port: int = Field(default=9090, description="Rosbridge 端口")
     max_connections: int = Field(default=100, description="最大连接数")
     message_buffer_size: int = Field(default=10000, description="消息缓冲区大小")
     
     # 安全配置
-    secret_key: str = Field(default="ros-web-viz-secret-key", description="JWT 密钥")
     cors_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000",
         description="允许访问 API 的前端来源",

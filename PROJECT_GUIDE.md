@@ -60,8 +60,6 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 | `CONFIG_NAME_MAX_LENGTH` | 配置文件名最大长度 |
 | `VITE_DEBUG` | 是否输出前端调试日志 |
 
-`ROSBRIDGE_PORT` 是历史遗留的预留变量。当前工程没有监听 `9090` 的独立 Rosbridge 服务，前端实际连接 `BACKEND_PORT` 上的 `/ws`。
-
 ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、目标话题和样式等用户状态属于 `.rvizweb` 配置。
 
 ## 安装与启动
@@ -161,8 +159,6 @@ DELETE /api/v1/configs/{name}
 - `/topics`、`/topics/frequencies`、`/topic-info`
 - `/topics/subscribe`、`/topics/unsubscribe`、`/topics/publish`
 - `/nodes`、`/status`
-- `/topology` 及节点/话题连接查询
-- `/visualization/*` 可视化状态和插件接口
 
 完整参数与响应模型应以运行时 `/docs` 为准。
 
@@ -175,14 +171,13 @@ RVIZ-RQT-VISUAL/
 │   │   ├── api/v1/          # configs、ros、viz API
 │   │   ├── core/            # Pydantic 环境配置
 │   │   ├── models/          # API 数据模型
-│   │   ├── services/        # ROS2、WebSocket、拓扑服务
+│   │   ├── services/        # ROS2 与 WebSocket 服务
 │   │   └── main.py          # FastAPI 入口
 │   ├── pyproject.toml
 │   └── uv.lock
 ├── frontend/
 │   ├── src/
 │   │   ├── components/RViz/ # 3D 场景与 Displays
-│   │   ├── components/RQT/  # 节点图、话题、参数、服务等工具
 │   │   ├── components/panels/
 │   │   ├── composables/     # WebSocket 与连接状态
 │   │   ├── services/        # HTTP API 封装

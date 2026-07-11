@@ -9,12 +9,10 @@ import logging
 from pydantic import BaseModel, Field
 
 from ...models.ros import (
-    TopicInfo, NodeInfo, SystemStatus, 
-    SystemTopology, NodeTopology, TopicConnection
+    TopicInfo, NodeInfo, SystemStatus
 )
 from ...services.rosbridge import RosbridgeService
-from ...services.topology_service import TopologyService
-from ...services.dependencies import get_rosbridge_service, get_topology_service
+from ...services.dependencies import get_rosbridge_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -115,46 +113,6 @@ async def publish_message_by_body(
         logger.error(f"Failed to publish to {payload.topic}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/topics/{topic_name}", response_model=TopicInfo)
-async def get_topic_info(
-    topic_name: str,
-    service: RosbridgeService = Depends(get_rosbridge_service)
-):
-    """获取不含 / 的主题信息；完整 ROS topic 请使用 /topic-info。"""
-    return await get_topic_info_by_query(topic_name, service)
-
-@router.post("/topics/{topic_name}/subscribe")
-async def subscribe_topic(
-    topic_name: str,
-    service: RosbridgeService = Depends(get_rosbridge_service)
-):
-    """兼容旧接口；完整 ROS topic 请使用 /topics/subscribe。"""
-    payload = TopicSubscriptionRequest(topic=topic_name)
-    return await subscribe_topic_by_body(payload, service)
-
-@router.post("/topics/{topic_name}/unsubscribe")
-async def unsubscribe_topic(
-    topic_name: str,
-    service: RosbridgeService = Depends(get_rosbridge_service)
-):
-    """兼容旧接口；完整 ROS topic 请使用 /topics/unsubscribe。"""
-    payload = TopicSubscriptionRequest(topic=topic_name)
-    return await unsubscribe_topic_by_body(payload, service)
-
-@router.post("/topics/{topic_name}/publish")
-async def publish_message(
-    topic_name: str,
-    message: Dict[str, Any],
-    service: RosbridgeService = Depends(get_rosbridge_service)
-):
-    """兼容旧接口；完整 ROS topic 或新调用请使用 /topics/publish。"""
-    message_type = message.get("message_type") or message.get("type")
-    msg = message.get("msg", message)
-    if not message_type:
-        raise HTTPException(status_code=400, detail="message_type is required")
-    payload = TopicPublishRequest(topic=topic_name, message_type=message_type, msg=msg)
-    return await publish_message_by_body(payload, service)
-
 @router.get("/nodes", response_model=List[NodeInfo])
 async def get_nodes(
     service: RosbridgeService = Depends(get_rosbridge_service)
@@ -192,64 +150,4 @@ async def get_system_status(
         return status
     except Exception as e:
         logger.error(f"Failed to get system status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/topology", response_model=SystemTopology)
-async def get_system_topology(
-    use_cache: bool = True,
-    topology_service: TopologyService = Depends(get_topology_service)
-):
-    """获取系统拓扑结构"""
-    try:
-        topology = await topology_service.get_system_topology(use_cache)
-        return topology
-    except Exception as e:
-        logger.error(f"Failed to get system topology: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/topology/nodes/{node_name}", response_model=NodeTopology)
-async def get_node_topology(
-    node_name: str,
-    topology_service: TopologyService = Depends(get_topology_service)
-):
-    """获取特定节点的拓扑信息"""
-    try:
-        node_topology = await topology_service.get_node_topology(node_name)
-        if not node_topology:
-            raise HTTPException(status_code=404, detail=f"Node {node_name} not found")
-        return node_topology
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get topology for node {node_name}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/topology/topics", response_model=List[TopicConnection])
-async def get_topic_connections(
-    topic_name: Optional[str] = None,
-    topology_service: TopologyService = Depends(get_topology_service)
-):
-    """获取主题连接信息"""
-    try:
-        connections = await topology_service.get_topic_connections(topic_name)
-        return connections
-    except Exception as e:
-        logger.error(f"Failed to get topic connections: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/topology/topics/{topic_name}/connections", response_model=List[TopicConnection])
-async def get_topic_connection_details(
-    topic_name: str,
-    topology_service: TopologyService = Depends(get_topology_service)
-):
-    """获取特定主题的连接详情"""
-    try:
-        connections = await topology_service.get_topic_connections(topic_name)
-        if not connections:
-            raise HTTPException(status_code=404, detail=f"Topic {topic_name} not found")
-        return connections
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get connections for topic {topic_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

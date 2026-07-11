@@ -66,7 +66,6 @@ export default {
     // 可视化对象和ROS订阅管理
     const visualizationObjects = new Map()
     const rosSubscriptions = new Map()
-    const plugins = new Map()
     const displayConfigs = new Map()
     const positionCommandPaths = new Map()
     const tfBuffer = new TfBuffer()
@@ -968,22 +967,6 @@ export default {
       
       if (scene && settings.backgroundColor) {
         scene.background = new THREE.Color(settings.backgroundColor)
-      }
-    }
-    
-    const togglePlugin = (pluginId, enabled) => {
-      const plugin = plugins.get(pluginId)
-      if (plugin) {
-        plugin.enabled = enabled
-        // 更新插件状态
-      }
-    }
-    
-    const configurePlugin = (pluginId, config) => {
-      const plugin = plugins.get(pluginId)
-      if (plugin) {
-        plugin.config = { ...plugin.config, ...config }
-        // 应用配置
       }
     }
     
@@ -3703,8 +3686,6 @@ export default {
       applyCameraState,
       setBackgroundColor,
       updateRenderSettings,
-      togglePlugin,
-      configurePlugin,
       // ROS集成方法
       subscribeToRosTopic,
       subscribeToDefaultVisualizationTopics,

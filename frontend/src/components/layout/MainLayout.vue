@@ -455,7 +455,6 @@ export default {
       }
     }
     
-    // RQT树事件处理 - 直接与3D场景集成
     const onTopicSubscribe = (topicName, messageType) => {
       console.log(`订阅主题: ${topicName}, 类型: ${messageType}`)
       
@@ -476,24 +475,10 @@ export default {
       }
     }
     
-    const onNodeSelected = (nodeData) => {
-      console.log('选中节点:', nodeData)
-      // 可以在这里处理节点选择的逻辑
-    }
-
-    // Node-Topic图事件处理
-    const onTopicVisualize = (topicName, messageType) => {
-      console.log(`可视化主题: ${topicName}, 类型: ${messageType}`)
-      onTopicSubscribe(topicName, messageType)
-    }
-
     // 3D控制器事件处理
     const onLaserTypeChange = (laserType) => {
       console.log(`激光类型切换: ${laserType}`)
       settingsSnapshot.value.laser.laserType = laserType
-      if (scene3dRef.value && scene3dRef.value.setLaserType) {
-        scene3dRef.value.setLaserType(laserType)
-      }
     }
 
     const onLaser2DChange = (topicName) => {
@@ -827,8 +812,6 @@ export default {
       sceneShowAxes,
       onTopicSubscribe,
       onTopicUnsubscribe,
-      onNodeSelected,
-      onTopicVisualize,
       onLaserTypeChange,
       onLaser2DChange,
       onPointCloudChange,

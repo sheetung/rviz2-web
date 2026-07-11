@@ -22,7 +22,6 @@ from std_msgs.msg import String
 
 from ..core.config import Settings
 from ..models.ros import TopicInfo, NodeInfo, SystemStatus, ConnectionInfo
-from ..models.viz import VisualizationState, PluginInfo, CameraSettings, RenderSettings
 
 logger = logging.getLogger(__name__)
 
@@ -140,15 +139,7 @@ class RosbridgeService:
         self.message_processor_task = None
         self._loop = None
         
-        # 可视化状态
         self._cache_warning_counts = {}  # 缓存警告计数
-        self.visualization_state = VisualizationState(
-            camera_settings=CameraSettings(
-                position=(5.0, 5.0, 5.0),
-                target=(0.0, 0.0, 0.0)
-            ),
-            render_settings=RenderSettings()
-        )
         
     async def start(self):
         """启动服务"""
@@ -173,10 +164,6 @@ class RosbridgeService:
 
             # 🔥 启动ROS2事件循环 - 这是关键！
             self.ros_spin_task = asyncio.create_task(self._ros_spin_loop())
-
-            # 启动后台任务
-            asyncio.create_task(self._update_topic_info())
-            asyncio.create_task(self._update_node_info())
 
         except Exception as e:
             logger.error(f"Failed to start Rosbridge service: {e}")
@@ -1452,91 +1439,6 @@ class RosbridgeService:
             logger.debug(f"Could not read CPU temperature from thermal zone: {e}")
 
         return None
-    
-    # 可视化相关方法
-    async def get_visualization_state(self) -> VisualizationState:
-        """获取可视化状态"""
-        return self.visualization_state
-    
-    async def update_camera_settings(self, settings: CameraSettings) -> bool:
-        """更新相机设置"""
-        try:
-            self.visualization_state.camera_settings = settings
-            return True
-        except Exception as e:
-            logger.error(f"Failed to update camera settings: {e}")
-            return False
-    
-    async def update_render_settings(self, settings: RenderSettings) -> bool:
-        """更新渲染设置"""
-        try:
-            self.visualization_state.render_settings = settings
-            return True
-        except Exception as e:
-            logger.error(f"Failed to update render settings: {e}")
-            return False
-    
-    async def get_available_plugins(self) -> List[PluginInfo]:
-        """获取可用插件"""
-        # 返回内置插件列表
-        return [
-            PluginInfo(
-                id="pointcloud_renderer",
-                name="Point Cloud Renderer",
-                version="1.0.0",
-                description="Renders point cloud data",
-                author="ROS Web Viz",
-                plugin_type="renderer",
-                status="loaded",
-                supported_message_types=["sensor_msgs/msg/PointCloud2"]
-            ),
-            PluginInfo(
-                id="laserscan_renderer",
-                name="LaserScan Renderer", 
-                version="1.0.0",
-                description="Renders laser scan data",
-                author="ROS Web Viz",
-                plugin_type="renderer",
-                status="loaded",
-                supported_message_types=["sensor_msgs/msg/LaserScan"]
-            )
-        ]
-    
-    async def enable_plugin(self, plugin_id: str) -> bool:
-        """启用插件"""
-        return True
-    
-    async def disable_plugin(self, plugin_id: str) -> bool:
-        """禁用插件"""
-        return True
-    
-    async def add_visualization_object(self, object_data: Dict[str, Any]) -> str:
-        """添加可视化对象"""
-        object_id = f"object_{int(time.time() * 1000)}"
-        return object_id
-    
-    async def remove_visualization_object(self, object_id: str) -> bool:
-        """移除可视化对象"""
-        return True
-    
-    # 后台任务
-    async def _update_topic_info(self):
-        """定期更新主题信息"""
-        while True:
-            try:
-                await asyncio.sleep(5)  # 每5秒更新一次
-                # 更新主题信息缓存
-            except Exception as e:
-                logger.error(f"Error updating topic info: {e}")
-    
-    async def _update_node_info(self):
-        """定期更新节点信息"""
-        while True:
-            try:
-                await asyncio.sleep(10)  # 每10秒更新一次
-                # 更新节点信息缓存
-            except Exception as e:
-                logger.error(f"Error updating node info: {e}")
     
     async def _handle_unsubscribe(self, client_id: str, message: dict):
         """处理取消订阅"""

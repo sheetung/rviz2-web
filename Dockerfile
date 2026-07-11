@@ -95,7 +95,6 @@ RUN echo '#!/bin/bash' > /app/start.sh && \
 # 设置环境变量
 ENV PYTHONPATH=/app
 ENV ROS_DOMAIN_ID=0
-ENV ROSBRIDGE_PORT=9090
 ENV BACKEND_PORT=8000
 ENV BACKEND_HOST=0.0.0.0
 # 强制使用 Fast DDS + UDPv4，禁用共享内存，避免容器/宿主机间SHM问题
@@ -104,7 +103,7 @@ ENV FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 ENV ROS_LOCALHOST_ONLY=0
 
 # 暴露端口
-EXPOSE 3000 8000 9090
+EXPOSE 3000 8000
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
