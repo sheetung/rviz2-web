@@ -118,19 +118,19 @@ export default {
 
     const extractPose = (message, type) => {
       if (type === 'nav_msgs/msg/Odometry') {
-        const pose = message.pose || message._pose
-        const poseData = pose?.pose || pose?._pose
+        const pose = message.pose
+        const poseData = pose?.pose
         return {
-          position: poseData?.position || poseData?._position,
-          orientation: poseData?.orientation || poseData?._orientation
+          position: poseData?.position,
+          orientation: poseData?.orientation
         }
       }
 
       if (type === 'geometry_msgs/msg/PoseStamped') {
-        const pose = message.pose || message._pose
+        const pose = message.pose
         return {
-          position: pose?.position || pose?._position,
-          orientation: pose?.orientation || pose?._orientation
+          position: pose?.position,
+          orientation: pose?.orientation
         }
       }
 
@@ -145,18 +145,18 @@ export default {
         return
       }
 
-      positionData.value.x = toNumber(position.x ?? position._x)
-      positionData.value.y = toNumber(position.y ?? position._y)
-      positionData.value.z = toNumber(position.z ?? position._z)
+      positionData.value.x = toNumber(position.x)
+      positionData.value.y = toNumber(position.y)
+      positionData.value.z = toNumber(position.z)
       positionData.value.status = 'ACTIVE'
       positionData.value.lastUpdate = new Date()
       positionData.value.sourceTopic = topic
 
       if (orientation) {
-        const qx = toNumber(orientation.x ?? orientation._x)
-        const qy = toNumber(orientation.y ?? orientation._y)
-        const qz = toNumber(orientation.z ?? orientation._z)
-        const qw = toNumber(orientation.w ?? orientation._w, 1)
+        const qx = toNumber(orientation.x)
+        const qy = toNumber(orientation.y)
+        const qz = toNumber(orientation.z)
+        const qw = toNumber(orientation.w, 1)
         const yaw = Math.atan2(
           2 * (qw * qz + qx * qy),
           1 - 2 * (qy * qy + qz * qz)

@@ -182,12 +182,10 @@ export default {
       if (topic === '/planning/pos_cmd') return true
       return !!(
         message &&
-        (message.position || message._position || message.pos || message._pos) &&
+        message.position &&
         (
           Object.prototype.hasOwnProperty.call(message, 'trajectory_flag') ||
-          Object.prototype.hasOwnProperty.call(message, '_trajectory_flag') ||
-          Object.prototype.hasOwnProperty.call(message, 'trajectory_id') ||
-          Object.prototype.hasOwnProperty.call(message, '_trajectory_id')
+          Object.prototype.hasOwnProperty.call(message, 'trajectory_id')
         )
       )
     }
@@ -466,19 +464,19 @@ export default {
       try {
         // 更新位置 - 确保使用正确的坐标映射，支持下划线前缀
         // X: 水平 (前后), Y: 水平 (左右), Z: 高度
-        const x = Number(position.x ?? position._x ?? 0)
-        const y = Number(position.y ?? position._y ?? 0)
-        const z = Number(position.z ?? position._z ?? 0)
+        const x = Number(position.x ?? 0)
+        const y = Number(position.y ?? 0)
+        const z = Number(position.z ?? 0)
 
         robotModel.position.set(x, y, z)
 
         // 更新方向，支持下划线前缀
         if (orientation) {
           robotModel.quaternion.set(
-            Number(orientation.x ?? orientation._x ?? 0),
-            Number(orientation.y ?? orientation._y ?? 0),
-            Number(orientation.z ?? orientation._z ?? 0),
-            Number(orientation.w ?? orientation._w ?? 1)
+            Number(orientation.x ?? 0),
+            Number(orientation.y ?? 0),
+            Number(orientation.z ?? 0),
+            Number(orientation.w ?? 1)
           )
         }
 
@@ -552,26 +550,24 @@ export default {
             let position = null
             let orientation = null
 
-            // 根据消息类型解析位置信息 (兼容下划线前缀格式)
+            // 根据消息类型解析位置信息
             if (type === 'nav_msgs/msg/Odometry') {
-              const pose = message.pose || message._pose
-              if (pose && (pose.pose || pose._pose)) {
-                const poseData = pose.pose || pose._pose || pose
-                position = poseData.position || poseData._position
-                orientation = poseData.orientation || poseData._orientation
+              const pose = message.pose
+              if (pose?.pose) {
+                position = pose.pose.position
+                orientation = pose.pose.orientation
               }
             } else if (type === 'geometry_msgs/msg/PoseStamped') {
-              const poseMsg = message.pose || message._pose
+              const poseMsg = message.pose
               if (poseMsg) {
-                position = poseMsg.position || poseMsg._position
-                orientation = poseMsg.orientation || poseMsg._orientation
+                position = poseMsg.position
+                orientation = poseMsg.orientation
               }
             } else if (type === 'geometry_msgs/msg/PoseWithCovarianceStamped') {
-              const pose = message.pose || message._pose
-              if (pose && (pose.pose || pose._pose)) {
-                const poseData = pose.pose || pose._pose || pose
-                position = poseData.position || poseData._position
-                orientation = poseData.orientation || poseData._orientation
+              const pose = message.pose
+              if (pose?.pose) {
+                position = pose.pose.position
+                orientation = pose.pose.orientation
               }
             }
 
@@ -758,7 +754,7 @@ export default {
     /**
      * 鼠标释放事件
      */
-    const onMouseUp = (event) => {
+    const onMouseUp = () => {
       if (isDragging && currentNavigationTool !== 'none') {
         isDragging = false
 
@@ -1188,16 +1184,16 @@ export default {
           case 'nav_msgs/msg/Odometry':
           case 'nav_msgs/Odometry':
             {
-              const pose = message?.pose || message?._pose
-              const poseData = pose?.pose || pose?._pose
-              const position = poseData?.position || poseData?._position
-              const orientation = poseData?.orientation || poseData?._orientation
+              const pose = message?.pose
+              const poseData = pose?.pose
+              const position = poseData?.position
+              const orientation = poseData?.orientation
 
               debugLog(`[Scene3D] 🔄 准备处理里程计消息，主题: ${topic}`)
               debugLog(`[Scene3D] 🔄 里程计消息内容预览:`, {
                 topic,
                 hasMessage: !!message,
-                hasHeader: !!(message?.header || message?._header),
+                hasHeader: !!message?.header,
                 hasPose: !!pose,
                 hasPosePose: !!poseData,
                 hasPosition: !!position,
@@ -1336,10 +1332,6 @@ export default {
       const preservedTopics = new Set()
 
       visualizationObjects.forEach((object, topic) => {
-        // 检查是否是需要保留的主题类型
-        const subscription = rosSubscriptions.get(topic)
-        const messageType = subscription?.messageType || ''
-
         // 只保留PGM加载的地图，不保留主题订阅的地图
         if (topic === 'loaded_map') {
           // debugLog(`[Scene3D] 保留PGM加载的地图: ${topic}`)
@@ -1539,9 +1531,6 @@ export default {
           
           // 应用持久化设置创建材质
           // 强度显示优先使用激光设置，如果没有则使用点云设置
-          const showIntensity = persistentSettings.laser.showIntensity !== undefined
-            ? persistentSettings.laser.showIntensity
-            : persistentSettings.pointcloud.showIntensity
           const displayConfig = displayConfigs.get(topic) || {}
 
           const material = new THREE.PointsMaterial({
@@ -1610,15 +1599,12 @@ export default {
     const updateLaserScan = (topic, message) => {
       // debugLog(`[LaserScan] 开始处理激光雷达数据 for ${topic}`)
 
-      // 兼容不同的字段命名格式（有些有下划线前缀）
-      let ranges = message.ranges || message._ranges
-      const angle_min = message.angle_min || message._angle_min
-      const angle_max = message.angle_max || message._angle_max
-      const angle_increment = message.angle_increment || message._angle_increment
-      const range_min = message.range_min || message._range_min
-      const range_max = message.range_max || message._range_max
-      const header = message.header || message._header
-
+      let ranges = message.ranges
+      const angle_min = message.angle_min
+      const angle_max = message.angle_max
+      const angle_increment = message.angle_increment
+      const range_min = message.range_min
+      const range_max = message.range_max
       // 处理ranges字段 - 可能是字符串格式的Python array
       if (typeof ranges === 'string') {
         // debugLog(`[LaserScan] ranges是字符串格式，尝试解析: ${ranges.substring(0, 100)}...`)
@@ -1736,13 +1722,6 @@ export default {
               const x = range * Math.cos(angle)
               const y = range * Math.sin(angle)
               const z = 0
-
-              // 只在第一次更新时输出少量验证数据
-              if (!updateLaserScan._firstLogged && validPoints < 3) {
-                const angleDeg = angle * 180 / Math.PI
-                // debugLog(`[LaserScan] 验证点${validPoints}: i=${i}, angle=${angleDeg.toFixed(1)}°, range=${range.toFixed(2)}m`)
-              }
-
 
               positions.push(x, y, z)
 
@@ -2033,12 +2012,12 @@ export default {
     }
 
     const getPositionCommandPoint = (message) => {
-      const position = message?.position || message?._position || message?.pos || message?._pos
+      const position = message?.position
       if (!position) return null
 
-      const x = Number(position.x ?? position._x ?? 0)
-      const y = Number(position.y ?? position._y ?? 0)
-      const z = Number(position.z ?? position._z ?? 0)
+      const x = Number(position.x ?? 0)
+      const y = Number(position.y ?? 0)
+      const z = Number(position.z ?? 0)
 
       if (![x, y, z].every(Number.isFinite)) return null
       return new THREE.Vector3(x, y, z)
@@ -2098,10 +2077,10 @@ export default {
       try {
         removeVisualization(topic)
 
-        const pose = message?.pose || message?._pose
-        const poseData = pose?.pose || pose?._pose
-        const position = poseData?.position || poseData?._position
-        const orientation = poseData?.orientation || poseData?._orientation
+        const pose = message?.pose
+        const poseData = pose?.pose
+        const position = poseData?.position
+        const orientation = poseData?.orientation
 
         if (!position) {
           console.warn('[Scene3D] Invalid odometry message format:', {
@@ -2405,14 +2384,9 @@ export default {
     })
 
     // 新增控制方法
-    const setLaserType = (type) => {
-      debugLog('设置激光类型:', type)
-      // 在3D场景中切换激光显示方式
-    }
-
     const updateRobotTrajectory = () => {
       // 更新所有机器人位姿对象的轨迹线
-      visualizationObjects.forEach((object, topic) => {
+      visualizationObjects.forEach((object) => {
         if (object.userData?.type === 'robot_pose') {
           // 找到轨迹线并更新
           object.children.forEach(child => {
@@ -2750,7 +2724,7 @@ export default {
       switch (settings.type) {
         case 'laser':
           // 更新激光雷达设置
-          visualizationObjects.forEach((object, key) => {
+          visualizationObjects.forEach((object) => {
             // 2D激光雷达设置
             if (object.userData?.messageType === 'sensor_msgs/msg/LaserScan') {
               // 激光点显示/隐藏
@@ -2807,7 +2781,7 @@ export default {
 
         case 'pointcloud':
           // 更新点云设置
-          visualizationObjects.forEach((object, topic) => {
+          visualizationObjects.forEach((object) => {
             if (object.userData?.messageType === 'sensor_msgs/msg/PointCloud2') {
               if (settings.pointSize !== undefined && object.material) {
                 object.material.size = settings.pointSize
@@ -2863,7 +2837,7 @@ export default {
 
         case 'position':
           // 更新位置显示设置
-          visualizationObjects.forEach((object, topic) => {
+          visualizationObjects.forEach((object) => {
             // 轨迹显示
             if (settings.showTrajectory !== undefined) {
               if (object.userData?.type === 'robot_pose') {
@@ -3104,20 +3078,6 @@ export default {
         reader.onerror = () => reject(new Error('文件读取失败'))
         reader.readAsArrayBuffer(file)
       })
-    }
-
-    const loadMapPgm = async (file) => {
-      debugLog(`[Scene3D] 加载PGM地图图像（使用默认配置）`)
-      
-      const defaultConfig = {
-        resolution: 0.05,
-        origin: [0, 0, 0],
-        occupied_thresh: 0.65,
-        free_thresh: 0.196,
-        negate: false
-      }
-      
-      return loadMapPgmWithConfig(file, defaultConfig)
     }
 
     const parseMapYaml = (yamlContent) => {
@@ -3754,8 +3714,6 @@ export default {
       setVisualizationVisible,
       configureDisplay,
       getPerformanceStats,
-      // 新增控制方法
-      setLaserType,
       updateSettings,
       setViewPreset,
       setNavigationTool,

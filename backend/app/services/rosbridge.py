@@ -939,21 +939,22 @@ class RosbridgeService:
                 result = {}
                 for slot in msg.__slots__:
                     value = getattr(msg, slot)
+                    field_name = slot.removeprefix('_')
                     
                     # 处理时间类型
                     if isinstance(value, Time):
-                        result[slot] = {
+                        result[field_name] = {
                             'sec': int(value.sec),
                             'nanosec': int(value.nanosec)
                         }
                     elif isinstance(value, Duration):
-                        result[slot] = {
+                        result[field_name] = {
                             'sec': int(value.sec),
                             'nanosec': int(value.nanosec)
                         }
                     # 处理Header
                     elif isinstance(value, Header):
-                        result[slot] = {
+                        result[field_name] = {
                             'stamp': {
                                 'sec': int(value.stamp.sec),
                                 'nanosec': int(value.stamp.nanosec)
@@ -962,16 +963,16 @@ class RosbridgeService:
                         }
                     # 处理几何类型
                     elif isinstance(value, Point):
-                        result[slot] = {'x': float(value.x), 'y': float(value.y), 'z': float(value.z)}
+                        result[field_name] = {'x': float(value.x), 'y': float(value.y), 'z': float(value.z)}
                     elif isinstance(value, Quaternion):
-                        result[slot] = {'x': float(value.x), 'y': float(value.y), 'z': float(value.z), 'w': float(value.w)}
+                        result[field_name] = {'x': float(value.x), 'y': float(value.y), 'z': float(value.z), 'w': float(value.w)}
                     elif isinstance(value, Pose):
-                        result[slot] = {
+                        result[field_name] = {
                             'position': {'x': float(value.position.x), 'y': float(value.position.y), 'z': float(value.position.z)},
                             'orientation': {'x': float(value.orientation.x), 'y': float(value.orientation.y), 'z': float(value.orientation.z), 'w': float(value.orientation.w)}
                         }
                     elif isinstance(value, PoseWithCovariance):
-                        result[slot] = {
+                        result[field_name] = {
                             'pose': {
                                 'position': {'x': float(value.pose.position.x), 'y': float(value.pose.position.y), 'z': float(value.pose.position.z)},
                                 'orientation': {'x': float(value.pose.orientation.x), 'y': float(value.pose.orientation.y), 'z': float(value.pose.orientation.z), 'w': float(value.pose.orientation.w)}
@@ -981,24 +982,24 @@ class RosbridgeService:
                     # 处理numpy数组
                     elif isinstance(value, np.ndarray):
                         if value.dtype == np.uint8:
-                            result[slot] = value.tolist()
+                            result[field_name] = value.tolist()
                         else:
-                            result[slot] = value.astype(float).tolist()
+                            result[field_name] = value.astype(float).tolist()
                     # 处理bytes类型（点云数据等）
                     elif isinstance(value, bytes):
                         # 对于大型bytes数据，使用Base64编码
                         if len(value) > 1000:
                             import base64
-                            result[slot] = base64.b64encode(value).decode('ascii')
-                            result[f"{slot}_encoding"] = "base64"
+                            result[field_name] = base64.b64encode(value).decode('ascii')
+                            result[f"{field_name}_encoding"] = "base64"
                         else:
-                            result[slot] = list(value)  # 小数据直接转换为数组
+                            result[field_name] = list(value)  # 小数据直接转换为数组
                     # 处理嵌套消息
                     elif hasattr(value, '__slots__'):
-                        result[slot] = self._message_to_dict(value)
+                        result[field_name] = self._message_to_dict(value)
                     # 处理列表
                     elif isinstance(value, list):
-                        result[slot] = [
+                        result[field_name] = [
                             self._message_to_dict(item) if hasattr(item, '__slots__') else 
                             float(item) if isinstance(item, (int, float, np.number)) else 
                             item
@@ -1006,10 +1007,10 @@ class RosbridgeService:
                         ]
                     # 处理基本数值类型
                     elif isinstance(value, (int, float, np.number)):
-                        result[slot] = float(value) if isinstance(value, (float, np.floating)) else int(value)
+                        result[field_name] = float(value) if isinstance(value, (float, np.floating)) else int(value)
                     # 处理字符串和其他类型
                     else:
-                        result[slot] = str(value) if value is not None else None
+                        result[field_name] = str(value) if value is not None else None
                         
                 return result
             else:

@@ -256,7 +256,7 @@
           <!-- 数据线 -->
           <g class="data-lines">
             <path
-              v-for="(series, index) in visibleDataSeries"
+              v-for="series in visibleDataSeries"
               :key="`series-${series.id}`"
               :d="getLinePath(series.data)"
               :stroke="series.color"
@@ -269,7 +269,7 @@
 
           <!-- 数据点 -->
           <g class="data-points">
-            <g v-for="(series, seriesIndex) in visibleDataSeries" :key="`points-${series.id}`">
+            <g v-for="series in visibleDataSeries" :key="`points-${series.id}`">
               <circle
                 v-for="(point, pointIndex) in getVisibleDataPoints(series.data)"
                 :key="`point-${series.id}-${pointIndex}`"
@@ -359,7 +359,7 @@
         <div class="panel-content">
           <div class="legend-list">
             <div
-              v-for="(series, index) in dataSeries"
+              v-for="series in dataSeries"
               :key="series.id"
               class="legend-item"
               :class="{ 'disabled': !series.visible }"
@@ -579,7 +579,7 @@ export default {
       return currentMargins.left + chartWidth * ratio
     }
 
-    const getY = (value, yAxisIndex = 0) => {
+    const getY = (value) => {
       if (yTicks.value.length < 2) return chartSize.value.height / 2
 
       const minY = yTicks.value[0].value
@@ -1451,7 +1451,7 @@ export default {
 
       // 订阅主题如果还未订阅
       if (!subscriptions.has(topicName)) {
-        subscribeToTopic(topicName, messageType, seriesId)
+        subscribeToTopic(topicName, messageType)
       }
 
       ElMessage.success(`已添加数据系列: ${field.name}`)
@@ -1484,7 +1484,7 @@ export default {
     }
 
     // 订阅主题
-    const subscribeToTopic = (topicName, messageType, firstSeriesId) => {
+    const subscribeToTopic = (topicName, messageType) => {
       console.log(`Subscribing to topic: ${topicName}, type: ${messageType}`)
 
       const subscription = rosbridge.subscribe(topicName, messageType, (message) => {
@@ -1522,7 +1522,7 @@ export default {
         // 为该主题的所有系列更新数据
         dataSeries.value.forEach(series => {
           if (series.topic === topicName) {
-            const value = extractFieldValue(message, series.fieldPath, messageType)
+            const value = extractFieldValue(message, series.fieldPath)
             if (value !== null && value !== undefined) {
               addDataPointToSeries(series.id, timestamp, value)
             }
@@ -1534,7 +1534,7 @@ export default {
     }
 
     // 提取字段值
-    const extractFieldValue = (message, fieldPath, messageType) => {
+    const extractFieldValue = (message, fieldPath) => {
       if (fieldPath.startsWith('_computed_')) {
         // 特殊计算字段
         switch (fieldPath) {
@@ -1582,7 +1582,7 @@ export default {
         }
       }
 
-      // 普通字段路径 - 处理ROS消息的下划线前缀
+      // 普通字段路径
       return getNestedValue(message, fieldPath)
     }
 
@@ -1593,19 +1593,10 @@ export default {
 
       for (const part of parts) {
         if (value && typeof value === 'object') {
-          // 首先尝试直接访问字段
           if (part in value) {
             value = value[part]
           } else {
-            // 如果直接访问失败，尝试下划线前缀
-            const underscorePart = `_${part}`
-            if (underscorePart in value) {
-              value = value[underscorePart]
-            } else {
-              // 如果都失败，返回null
-              console.warn(`[ChartPanel] 字段 ${part} 不存在，尝试了 ${part} 和 ${underscorePart}`)
-              return null
-            }
+            return null
           }
         } else {
           return null
@@ -1787,21 +1778,14 @@ export default {
 
         // 并行获取topics、类型和频率信息
         console.log('[ChartPanel] 获取ROS系统信息...')
-        const [topicsData, topicTypes, topicFrequencies] = await Promise.all([
+        const [topicsData, topicFrequencies] = await Promise.all([
           rosbridge.getTopics(),
-          rosbridge.getTopicTypes(),
           rosbridge.getTopicFrequencies()
         ])
 
         console.log('[ChartPanel] 获取到的原始数据:')
         console.log('- Topics Data:', topicsData, '类型:', typeof topicsData, '是数组:', Array.isArray(topicsData))
-        console.log('- Topic Types:', topicTypes, '类型:', typeof topicTypes)
         console.log('- Topic Frequencies:', topicFrequencies, '类型:', typeof topicFrequencies)
-
-        // 检查第一个topic的类型
-        if (topicsData && topicsData.length > 0) {
-          console.log('- 第一个topic:', topicsData[0], '类型:', typeof topicsData[0])
-        }
 
         if (!topicsData || !Array.isArray(topicsData) || topicsData.length === 0) {
           console.error('[ChartPanel] 没有获取到任何topic')
@@ -1810,20 +1794,10 @@ export default {
           return
         }
 
-        // 处理topic数据 - 支持两种格式：字符串数组或TopicInfo对象数组
-        let topics, topicTypesMap
-        if (typeof topicsData[0] === 'string') {
-          // 旧格式：字符串数组
-          topics = topicsData
-          topicTypesMap = topicTypes || {}
-        } else {
-          // 新格式：TopicInfo对象数组
-          topics = topicsData.map(topic => topic.name)
-          topicTypesMap = {}
-          topicsData.forEach(topic => {
-            topicTypesMap[topic.name] = topic.message_type
-          })
-        }
+        const topics = topicsData.map(topic => topic.name)
+        const topicTypesMap = Object.fromEntries(
+          topicsData.map(topic => [topic.name, topic.message_type])
+        )
 
         console.log('[ChartPanel] 处理后的数据:')
         console.log('- Topics:', topics)
@@ -2042,33 +2016,7 @@ export default {
           console.error(`[ChartPanel] 在 ${topics.length} 个topic中没有找到支持的消息类型`)
           console.error('[ChartPanel] 不支持的类型:', Array.from(unsupportedTypes))
 
-          // 临时降级方案：如果没有找到支持的类型，显示前几个topic让用户测试
-          console.warn('[ChartPanel] 启用兼容模式，显示前几个topic供测试')
-          const fallbackTopics = topics.slice(0, Math.min(10, topics.length)).map(topic => {
-            const topicName = typeof topic === 'string' ? topic : String(topic)
-            let label = topicName
-            try {
-              if (typeof topicName === 'string' && topicName.includes('/')) {
-                label = topicName.split('/').pop() || topicName
-              }
-            } catch (error) {
-              console.warn('[ChartPanel] 兼容模式标签处理失败:', topicName, error)
-              label = topicName
-            }
-
-            return {
-              value: topicName,
-              label: label,
-              fullName: topicName,
-              messageType: topicTypesMap[topicName] || 'unknown',
-              frequency: 0,
-              isActive: false,
-              status: '兼容模式'
-            }
-          })
-
-          availableTopics.value = fallbackTopics
-          ElMessage.warning(`没有找到明确支持的消息类型，显示前 ${fallbackTopics.length} 个topic供测试。不支持的类型包括: ${Array.from(unsupportedTypes).slice(0, 3).join(', ')}`)
+          ElMessage.warning(`没有找到支持的消息类型。不支持的类型包括: ${Array.from(unsupportedTypes).slice(0, 3).join(', ')}`)
         } else {
           ElMessage.success(`发现 ${supportedTopicCount} 个支持的topic（${activeTopicCount} 个活跃，${supportedTopicCount - activeTopicCount} 个无数据传输）`)
         }
@@ -2126,11 +2074,8 @@ export default {
 
       // 使用ResizeObserver API (如果支持) 来监听容器尺寸变化
       if (window.ResizeObserver) {
-        resizeObserver = new ResizeObserver((entries) => {
-          for (let entry of entries) {
-            // console.log(`[ChartPanel] ResizeObserver: 容器尺寸变化`, entry.contentRect)
-            updateChartSize()
-          }
+        resizeObserver = new ResizeObserver(() => {
+          updateChartSize()
         })
 
         // 在nextTick后开始观察，确保DOM已就绪

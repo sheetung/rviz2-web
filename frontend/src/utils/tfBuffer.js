@@ -4,28 +4,26 @@ const normalizeFrame = (frame = '') => String(frame).replace(/^\/+/, '')
 
 const stampToMilliseconds = stamp => {
   if (!stamp) return null
-  const seconds = Number(stamp.sec ?? stamp._sec ?? stamp.secs ?? stamp._secs ?? 0)
-  const nanoseconds = Number(
-    stamp.nanosec ?? stamp._nanosec ?? stamp.nsec ?? stamp._nsec ?? stamp.nsecs ?? stamp._nsecs ?? 0
-  )
+  const seconds = Number(stamp.sec ?? 0)
+  const nanoseconds = Number(stamp.nanosec ?? 0)
   if (!Number.isFinite(seconds) || !Number.isFinite(nanoseconds)) return null
   const milliseconds = seconds * 1000 + nanoseconds / 1e6
   return milliseconds > 0 ? milliseconds : null
 }
 
 const transformToMatrix = (transform = {}) => {
-  const translation = transform.translation || transform._translation || {}
-  const rotation = transform.rotation || transform._rotation || {}
+  const translation = transform.translation || {}
+  const rotation = transform.rotation || {}
   const position = new THREE.Vector3(
-    Number(translation.x ?? translation._x ?? 0),
-    Number(translation.y ?? translation._y ?? 0),
-    Number(translation.z ?? translation._z ?? 0)
+    Number(translation.x ?? 0),
+    Number(translation.y ?? 0),
+    Number(translation.z ?? 0)
   )
   const quaternion = new THREE.Quaternion(
-    Number(rotation.x ?? rotation._x ?? 0),
-    Number(rotation.y ?? rotation._y ?? 0),
-    Number(rotation.z ?? rotation._z ?? 0),
-    Number(rotation.w ?? rotation._w ?? 1)
+    Number(rotation.x ?? 0),
+    Number(rotation.y ?? 0),
+    Number(rotation.z ?? 0),
+    Number(rotation.w ?? 1)
   ).normalize()
   return new THREE.Matrix4().compose(position, quaternion, new THREE.Vector3(1, 1, 1))
 }
@@ -52,15 +50,15 @@ export class TfBuffer {
   }
 
   updateMessage(message, isStatic = false) {
-    const transforms = message?.transforms || message?._transforms || []
+    const transforms = message?.transforms || []
     transforms.forEach(stamped => {
-      const header = stamped.header || stamped._header || {}
-      const parent = normalizeFrame(header.frame_id || header._frame_id)
-      const child = normalizeFrame(stamped.child_frame_id || stamped._child_frame_id)
-      const transform = stamped.transform || stamped._transform
+      const header = stamped.header || {}
+      const parent = normalizeFrame(header.frame_id)
+      const child = normalizeFrame(stamped.child_frame_id)
+      const transform = stamped.transform
       if (!parent || !child || !transform || parent === child) return
 
-      const timestamp = stampToMilliseconds(header.stamp || header._stamp) ?? Date.now()
+      const timestamp = stampToMilliseconds(header.stamp) ?? Date.now()
       const existing = this.transforms.get(child)
       const entry = existing?.parent === parent && existing?.isStatic === isStatic
         ? existing
@@ -140,11 +138,11 @@ export class TfBuffer {
 }
 
 export const frameIdFromMessage = message => {
-  const header = message?.header || message?._header || {}
-  return normalizeFrame(header.frame_id || header._frame_id)
+  const header = message?.header || {}
+  return normalizeFrame(header.frame_id)
 }
 
 export const messageTimestampMs = message => {
-  const header = message?.header || message?._header || {}
-  return stampToMilliseconds(header.stamp || header._stamp)
+  const header = message?.header || {}
+  return stampToMilliseconds(header.stamp)
 }

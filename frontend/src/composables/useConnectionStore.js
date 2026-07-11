@@ -305,7 +305,7 @@ export const useConnectionStore = defineStore('connection', () => {
   
   // 清理待处理请求（连接关闭时）
   const clearPendingRequests = () => {
-    pendingRequests.value.forEach(({ reject }, requestId) => {
+    pendingRequests.value.forEach(({ reject }) => {
       reject(new Error('Connection closed'))
     })
     pendingRequests.value.clear()
