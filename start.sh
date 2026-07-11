@@ -127,6 +127,8 @@ start_local() {
   (
     cd "$FRONTEND_DIR"
     export VITE_RVIZWEB_CONFIG="$DEFAULT_RVIZWEB_CONFIG"
+    export CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}"
+    export CHOKIDAR_INTERVAL="${CHOKIDAR_INTERVAL:-500}"
     exec setsid npm run dev -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "$frontend_port"
   ) >"$LOG_DIR/frontend.log" 2>&1 &
   FRONTEND_PID=$!
