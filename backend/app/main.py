@@ -1,6 +1,6 @@
 """
 FastAPI 应用入口
-支持 ROS2 Web 可视化系统
+支持 RViz2 Web 可视化系统
 """
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -22,7 +22,7 @@ settings = get_settings()
 
 # 创建 FastAPI 应用
 app = FastAPI(
-    title="ROS2 Web Visualization",
+    title="RViz2 Web Visualization",
     description="基于 Vue.js + FastAPI 的 ROS2 可视化平台",
     version="1.0.0"
 )
@@ -50,7 +50,7 @@ if os.path.exists("./static"):
 @app.on_event("startup")
 async def startup_event():
     """应用启动事件"""
-    logger.info("Starting ROS2 Web Visualization System")
+    logger.info("Starting RViz2 Web Visualization System")
     
     # 初始化 Rosbridge 服务
     service = get_rosbridge_service()
@@ -61,7 +61,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭事件"""
-    logger.info("Shutting down ROS2 Web Visualization System")
+    logger.info("Shutting down RViz2 Web Visualization System")
     
     # 清理 Rosbridge 服务
     service = get_rosbridge_service()
@@ -70,7 +70,7 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     """根路径"""
-    return {"message": "ROS2 Web Visualization System", "version": "1.0.0"}
+    return {"message": "RViz2 Web Visualization System", "version": "1.0.0"}
 
 @app.get("/health")
 async def health_check():

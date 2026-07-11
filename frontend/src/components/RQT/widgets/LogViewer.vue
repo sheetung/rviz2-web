@@ -238,7 +238,7 @@ export default {
     
     onMounted(() => {
       // 添加一些初始日志
-      addLog('system', 'INFO', 'ROS2 Web Visualization System started')
+      addLog('system', 'INFO', 'RViz2 Web Visualization System started')
       addLog('rosbridge', 'INFO', 'WebSocket server listening on port 9090')
       addLog('web_server', 'INFO', 'HTTP server listening on port 8000')
       
