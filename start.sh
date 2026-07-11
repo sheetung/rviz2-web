@@ -1,165 +1,128 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-# ROS2 Web Visualization 启动脚本
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$PROJECT_ROOT/backend"
+FRONTEND_DIR="$PROJECT_ROOT/frontend"
+LOG_DIR="$PROJECT_ROOT/logs"
+ENV_FILE="$PROJECT_ROOT/.env"
+BACKEND_PID=""
+FRONTEND_PID=""
 
-echo "🚀 启动 ROS2 Web 可视化系统"
-echo "================================"
+mkdir -p "$LOG_DIR"
 
-# 检查是否安装了必要的依赖
-check_dependencies() {
-    echo "📋 检查依赖..."
-    
-    if [ "$1" = "docker" ] && ! command -v docker &> /dev/null; then
-        echo "❌ Docker 未安装，请先安装 Docker"
-        exit 1
-    fi
-    
-    if ! command -v node &> /dev/null && [ "$1" != "docker" ]; then
-        echo "❌ Node.js 未安装，请先安装 Node.js 18+ 或使用 Docker 模式"
-        exit 1
-    fi
-    
-    if ! command -v python3 &> /dev/null && [ "$1" != "docker" ]; then
-        echo "❌ Python3 未安装，请先安装 Python 3.9+ 或使用 Docker 模式"
-        exit 1
-    fi
-    
-    echo "✅ 依赖检查完成"
+log() { printf '[rvizweb] %s\n' "$*"; }
+fail() { printf '[rvizweb] ERROR: %s\n' "$*" >&2; exit 1; }
+
+load_env() {
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+    log "Loaded $ENV_FILE"
+  fi
 }
 
-# 本地开发模式启动
+check_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "Missing command: $1"
+}
+
+check_port() {
+  local port="$1"
+  if ss -ltn "sport = :$port" 2>/dev/null | grep -q LISTEN; then
+    fail "Port $port is already in use"
+  fi
+}
+
+wait_for_http() {
+  local url="$1" name="$2" pid="$3"
+  for _ in {1..50}; do
+    kill -0 "$pid" 2>/dev/null || fail "$name exited during startup; see $LOG_DIR"
+    curl -fsS "$url" >/dev/null 2>&1 && return 0
+    sleep 0.2
+  done
+  fail "$name did not become ready: $url"
+}
+
+cleanup() {
+  trap - INT TERM EXIT
+  log "Stopping services"
+  for pid in "$FRONTEND_PID" "$BACKEND_PID"; do
+    [[ -n "$pid" ]] || continue
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  done
+  for _ in {1..30}; do
+    local alive=0
+    for pid in "$FRONTEND_PID" "$BACKEND_PID"; do
+      [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && alive=1
+    done
+    [[ "$alive" -eq 0 ]] && return
+    sleep 0.1
+  done
+  for pid in "$FRONTEND_PID" "$BACKEND_PID"; do
+    [[ -n "$pid" ]] && kill -KILL -- "-$pid" 2>/dev/null || true
+  done
+}
+
 start_local() {
-    echo "🔧 本地开发模式启动"
-    
-    # 启动后端
-    echo "🐍 启动后端服务..."
-    cd backend
-    
-    if [ ! -d "venv" ]; then
-        echo "📦 创建虚拟环境..."
-        python3 -m venv --system-site-packages venv
-    fi
-    
-    if [ -f /opt/ros/humble/setup.bash ]; then
-        source /opt/ros/humble/setup.bash
-    fi
-    if [ -f /home/amov/super_ros2_ws/install/setup.bash ]; then
-        source /home/amov/super_ros2_ws/install/setup.bash
-    fi
+  check_command uv
+  check_command npm
+  check_command curl
+  check_command ss
+  check_command setsid
+  load_env
 
-    source venv/bin/activate
-    pip install -r requirements.txt
+  local backend_port="${WEB_PORT:-8000}"
+  local frontend_port="${FRONTEND_PORT:-3000}"
+  check_port "$backend_port"
+  check_port "$frontend_port"
 
-    echo "🚀 启动 FastAPI 服务 (端口 8000)..."
-    ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0} python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-    BACKEND_PID=$!
-    
-    cd ..
-    
-    # 启动前端
-    echo "🌐 启动前端服务..."
-    cd frontend
-    
-    if [ ! -d "node_modules" ]; then
-        echo "📦 安装前端依赖..."
-        npm install
-    fi
-    
-    echo "🚀 启动 Vue.js 开发服务器 (端口 3000)..."
-    CHOKIDAR_USEPOLLING=true npm run dev -- --host 0.0.0.0 --port 3000 &
-    FRONTEND_PID=$!
-    
-    cd ..
-    
-    echo ""
-    echo "✅ 系统启动完成！"
-    echo "🌐 前端地址: http://0.0.0.0:3000 (局域网访问 http://192.168.1.66:3000)"
-    echo "🔧 后端 API: http://localhost:8000"
-    echo "📚 API 文档: http://localhost:8000/docs"
-    echo ""
-    echo "按 Ctrl+C 停止服务"
-    
-    # 等待中断信号
-    trap 'echo "🛑 停止服务..."; kill $BACKEND_PID $FRONTEND_PID; exit 0' INT
-    wait
+  [[ -d "$BACKEND_DIR/.venv" ]] || fail "Backend environment missing. Run: cd backend && uv sync"
+  [[ -d "$FRONTEND_DIR/node_modules" ]] || fail "Frontend dependencies missing. Run: cd frontend && npm ci"
+
+  trap cleanup INT TERM EXIT
+
+  log "Starting backend on $backend_port"
+  (
+    cd "$BACKEND_DIR"
+    exec setsid uv run --no-sync uvicorn app.main:app --host "${WEB_HOST:-0.0.0.0}" --port "$backend_port"
+  ) >"$LOG_DIR/backend.log" 2>&1 &
+  BACKEND_PID=$!
+  wait_for_http "http://127.0.0.1:$backend_port/health" backend "$BACKEND_PID"
+
+  log "Starting frontend on $frontend_port"
+  (
+    cd "$FRONTEND_DIR"
+    exec setsid npm run dev -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "$frontend_port"
+  ) >"$LOG_DIR/frontend.log" 2>&1 &
+  FRONTEND_PID=$!
+  wait_for_http "http://127.0.0.1:$frontend_port" frontend "$FRONTEND_PID"
+
+  log "Frontend: http://192.168.1.66:$frontend_port"
+  log "Backend:  http://127.0.0.1:$backend_port"
+  wait -n "$BACKEND_PID" "$FRONTEND_PID"
+  fail "A service stopped unexpectedly; see $LOG_DIR"
 }
 
-# Docker 模式启动
-start_docker() {
-    echo "🐳 Docker 模式启动"
-    
-    if [ -f "docker-compose.yml" ]; then
-        echo "🚀 使用 docker-compose 启动..."
-        docker-compose up -d
-        
-        echo ""
-        echo "✅ 系统启动完成！"
-        echo "🌐 访问地址: http://localhost:3000"
-        echo "🔧 后端 API: http://localhost:8000" 
-        echo "📚 API 文档: http://localhost:8000/docs"
-        echo ""
-        echo "查看日志: docker-compose logs -f"
-        echo "停止服务: docker-compose down"
-    else
-        echo "🔨 构建单一容器镜像..."
-        docker build -t ros-web-viz .
-        
-        echo "🚀 启动容器..."
-        docker run -d \
-            --name ros-web-viz \
-            -p 3000:3000 \
-            -p 8000:8000 \
-            -p 9090:9090 \
-            --env-file .env \
-            --network host \
-            --pid host \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-            -e DISPLAY=$DISPLAY \
-            -e QT_X11_NO_MITSHM=1 \
-            ros-web-viz
-        
-        echo ""
-        echo "✅ 系统启动完成！"
-        echo "🌐 访问地址: http://localhost:3000"
-        echo "🔧 后端 API: http://localhost:8000"
-        echo "📚 API 文档: http://localhost:8000/docs"
-        echo ""
-        echo "查看日志: docker logs -f ros-web-viz"
-        echo "停止服务: docker stop ros-web-viz && docker rm ros-web-viz"
-    fi
-}
-
-# 显示帮助信息
 show_help() {
-    echo "用法: $0 [local|docker]"
-    echo ""
-    echo "启动模式:"
-    echo "  local   - 本地开发模式 (需要 Node.js 和 Python)"
-    echo "  docker  - Docker 容器模式"
-    echo ""
-    echo "示例:"
-    echo "  $0 local   # 本地开发启动"
-    echo "  $0 docker  # Docker 启动"
-    echo "  $0         # 默认本地开发启动"
+  printf 'Usage: %s [local|sync|help]\n' "$0"
+  printf '  sync   Install/update backend and frontend dependencies\n'
+  printf '  local  Start both services (default)\n'
 }
 
-# 主逻辑
 case "${1:-local}" in
-    "local")
-        check_dependencies local
-        start_local
-        ;;
-    "docker")
-        check_dependencies docker
-        start_docker
-        ;;
-    "help"|"-h"|"--help")
-        show_help
-        ;;
-    *)
-        echo "❌ 未知启动模式: $1"
-        show_help
-        exit 1
-        ;;
+  sync)
+    check_command uv
+    check_command npm
+    (
+      cd "$BACKEND_DIR"
+      [[ -d .venv ]] || uv venv --system-site-packages .venv
+      VIRTUAL_ENV="$BACKEND_DIR/.venv" uv sync --active
+    )
+    (cd "$FRONTEND_DIR" && npm ci)
+    ;;
+  local) start_local ;;
+  help|-h|--help) show_help ;;
+  *) show_help; exit 2 ;;
 esac
