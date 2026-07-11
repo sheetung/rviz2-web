@@ -46,13 +46,21 @@ check_port() {
 }
 
 wait_for_http() {
-  local url="$1" name="$2" pid="$3"
-  for _ in {1..50}; do
+  local url="$1" name="$2" pid="$3" timeout_seconds="${4:-60}"
+  local max_attempts=$(( timeout_seconds * 5 ))
+
+  for ((attempt=1; attempt<=max_attempts; attempt++)); do
     kill -0 "$pid" 2>/dev/null || fail "$name exited during startup; see $LOG_DIR"
     curl -fsS "$url" >/dev/null 2>&1 && return 0
+
+    if (( attempt % 20 == 0 )); then
+      log "Still waiting for $name at $url ($attempt/$max_attempts)"
+    fi
+
     sleep 0.2
   done
-  fail "$name did not become ready: $url"
+
+  fail "$name did not become ready within ${timeout_seconds}s: $url"
 }
 
 cleanup() {
@@ -86,6 +94,7 @@ start_local() {
 
   local backend_port="${WEB_PORT:-8000}"
   local frontend_port="${FRONTEND_PORT:-3000}"
+  local frontend_public_host="${FRONTEND_PUBLIC_HOST:-127.0.0.1}"
   check_port "$backend_port"
   check_port "$frontend_port"
 
@@ -103,7 +112,6 @@ start_local() {
     exec setsid uv run --no-sync uvicorn app.main:app --host "${WEB_HOST:-0.0.0.0}" --port "$backend_port"
   ) >"$LOG_DIR/backend.log" 2>&1 &
   BACKEND_PID=$!
-  wait_for_http "http://127.0.0.1:$backend_port/health" backend "$BACKEND_PID"
 
   log "Starting frontend on $frontend_port"
   (
@@ -112,9 +120,11 @@ start_local() {
     exec setsid npm run dev -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "$frontend_port"
   ) >"$LOG_DIR/frontend.log" 2>&1 &
   FRONTEND_PID=$!
-  wait_for_http "http://127.0.0.1:$frontend_port" frontend "$FRONTEND_PID"
 
-  log "Frontend: http://192.168.1.66:$frontend_port"
+  wait_for_http "http://127.0.0.1:$backend_port/health" backend "$BACKEND_PID" 120
+  wait_for_http "http://127.0.0.1:$frontend_port" frontend "$FRONTEND_PID" 120
+
+  log "Frontend: http://$frontend_public_host:$frontend_port"
   log "Backend:  http://127.0.0.1:$backend_port"
   log "Config:   rvizweb_configs/$DEFAULT_RVIZWEB_CONFIG"
   wait -n "$BACKEND_PID" "$FRONTEND_PID"
