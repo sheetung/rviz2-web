@@ -21,6 +21,8 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - `visualization_msgs/msg/Marker`
   - `visualization_msgs/msg/MarkerArray`
   - `nav_msgs/msg/OccupancyGrid`
+  - 自动订阅 `/tf` 和 `/tf_static`，将显示数据转换到选定的 Fixed Frame。
+  - 找不到 TF 链时隐藏错误坐标的数据，并在对应 Display 显示原因。
 - 点云与路径样式：
   - PointCloud2 支持按话题设置 `Point Size`。
   - Path 支持按话题设置线宽和颜色。
@@ -61,6 +63,10 @@ rvizweb_configs/*.rvizweb
 rvizweb_configs/default.rvizweb
 ```
 
+`default.rvizweb` 只包含通用界面设置，不绑定具体机器人话题。示例无人机配置保存在 `rvizweb_configs/uav1.rvizweb`。
+
+保存配置采用同目录临时文件原子替换，覆盖和删除前的副本保存在 `rvizweb_configs/backups/`。后端会校验配置版本、结构、文件名和大小；配置读取失败时前端保持当前状态不变。
+
 设置面板支持：
 
 - 保存当前前端状态为 `.rvizweb`
@@ -95,6 +101,13 @@ DELETE /api/v1/configs/{name}
 
 ## 启动
 
+后端使用 [uv](https://docs.astral.sh/uv/) 管理 Python 环境。首次安装或依赖变化后执行：
+
+```bash
+cd /home/amov/RVIZ-RQT-VISUAL
+./start.sh sync
+```
+
 本地启动：
 
 ```bash
@@ -112,7 +125,12 @@ cd /home/amov/RVIZ-RQT-VISUAL
 
 - ROS2 环境可用
 - Node.js 18+
-- Python 3.9+
+- Python 3.10+
+- uv
+
+启动脚本会读取项目根目录 `.env`，检查 `3000/8000` 端口，等待前后端健康检查，并把输出统一写入 `logs/`。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
+
+配置写入默认只允许本机和局域网地址。需要令牌时，在 `.env` 中将 `CONFIG_API_TOKEN` 与 `VITE_CONFIG_API_TOKEN` 设置成相同值。`CORS_ORIGINS` 应列出实际允许访问的前端地址。
 
 脚本会尝试 source：
 
@@ -195,7 +213,8 @@ npm run build
 后端语法检查：
 
 ```bash
-python3 -m py_compile backend/app/services/rosbridge.py
+cd backend
+uv run python -m compileall -q app
 ```
 
 ## 目录结构

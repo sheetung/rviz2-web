@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { debugLog } from '../utils/debug'
 
 export const useConnectionStore = defineStore('connection', () => {
   // 连接状态
@@ -79,14 +80,14 @@ export const useConnectionStore = defineStore('connection', () => {
         isConnected.value = true
         isConnecting.value = false
         reconnectAttempts.value = 0
-        console.log('WebSocket connected')
+        debugLog('WebSocket connected')
         ElMessage.success('已连接到 ROS2 服务')
       }
       
       websocket.value.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data)
-          console.debug(`[ConnectionStore] 📨 收到消息:`, message)
+          debugLog(`[ConnectionStore] 📨 收到消息:`, message)
           handleMessage(message)
         } catch (error) {
           console.error('[ConnectionStore] ❌ 解析消息失败:', error, event.data)
@@ -104,7 +105,7 @@ export const useConnectionStore = defineStore('connection', () => {
           console.warn('WebSocket closed unexpectedly:', event)
           attemptReconnect()
         } else {
-          console.log('WebSocket closed normally')
+          debugLog('WebSocket closed normally')
         }
       }
       
@@ -147,7 +148,7 @@ export const useConnectionStore = defineStore('connection', () => {
     }
     
     reconnectAttempts.value++
-    console.log(`Attempting to reconnect (${reconnectAttempts.value}/${maxReconnectAttempts.value})`)
+    debugLog(`Attempting to reconnect (${reconnectAttempts.value}/${maxReconnectAttempts.value})`)
     
     setTimeout(() => {
       connect()
@@ -174,40 +175,40 @@ export const useConnectionStore = defineStore('connection', () => {
   const handleMessage = (message) => {
     const { op, topic, id } = message
     
-    console.debug(`[ConnectionStore] 🔀 处理消息 - 操作: ${op}, 主题: ${topic || 'N/A'}`)
+    debugLog(`[ConnectionStore] 🔀 处理消息 - 操作: ${op}, 主题: ${topic || 'N/A'}`)
 
     // 根据操作类型处理消息
     switch (op) {
       case 'publish':
-        console.debug(`[ConnectionStore] 📢 发布消息到主题: ${topic}`)
+        debugLog(`[ConnectionStore] 📢 发布消息到主题: ${topic}`)
         handleTopicMessage(topic, message.msg)
         break
       case 'get_topics_result':
-        console.log(`[ConnectionStore] 📋 收到主题列表，数量: ${(message.topics || []).length}`)
+        debugLog(`[ConnectionStore] 📋 收到主题列表，数量: ${(message.topics || []).length}`)
         resolveRequest(id, message.topics || [])
         break
       case 'get_nodes_result':
-        console.log(`[ConnectionStore] 🏢 收到节点列表，数量: ${(message.nodes || []).length}`)
+        debugLog(`[ConnectionStore] 🏢 收到节点列表，数量: ${(message.nodes || []).length}`)
         resolveRequest(id, message.nodes || [])
         break
       case 'get_topic_types_result':
-        console.log(`[ConnectionStore] 🏷️ 收到主题类型映射`)
+        debugLog(`[ConnectionStore] 🏷️ 收到主题类型映射`)
         resolveRequest(id, message.topic_types || {})
         break
       case 'get_topic_frequencies_result':
-        console.log(`[ConnectionStore] 📊 收到主题频率信息`)
+        debugLog(`[ConnectionStore] 📊 收到主题频率信息`)
         resolveRequest(id, message.frequencies || {})
         break
       case 'get_services_result':
-        console.log(`[ConnectionStore] 🔧 收到服务列表，数量: ${(message.services || []).length}`)
+        debugLog(`[ConnectionStore] 🔧 收到服务列表，数量: ${(message.services || []).length}`)
         resolveRequest(id, message.services || [])
         break
       case 'get_service_types_result':
-        console.log(`[ConnectionStore] 🔧 收到服务类型映射`)
+        debugLog(`[ConnectionStore] 🔧 收到服务类型映射`)
         resolveRequest(id, message.service_types || {})
         break
       case 'get_params_result':
-        console.log(`[ConnectionStore] ⚙️ 收到参数列表，数量: ${(message.params || []).length}`)
+        debugLog(`[ConnectionStore] ⚙️ 收到参数列表，数量: ${(message.params || []).length}`)
         resolveRequest(id, message.params || [])
         break
       case 'error':
@@ -280,7 +281,7 @@ export const useConnectionStore = defineStore('connection', () => {
     const handlers = messageHandlers.value.get(topic)
 
     // 减少详细日志输出，只保留关键信息
-    console.debug(`[ConnectionStore] 🎯 处理主题消息: ${topic}`)
+    debugLog(`[ConnectionStore] 🎯 处理主题消息: ${topic}`)
 
     if (handlers && handlers.size > 0) {
       let handlerIndex = 0
@@ -313,7 +314,7 @@ export const useConnectionStore = defineStore('connection', () => {
   
   // 订阅主题
   const subscribeTopic = (topic, messageType, handler) => {
-    console.log(`[ConnectionStore] 🔔 subscribeTopic called: topic=${topic}, type=${messageType}, connected=${isConnected.value}`)
+    debugLog(`[ConnectionStore] 🔔 subscribeTopic called: topic=${topic}, type=${messageType}, connected=${isConnected.value}`)
 
     if (!isConnected.value) {
       console.warn('[ConnectionStore] ❌ Not connected to ROS')
@@ -325,7 +326,7 @@ export const useConnectionStore = defineStore('connection', () => {
       messageHandlers.value.set(topic, new Set())
     }
     messageHandlers.value.get(topic).add(handler)
-    console.log(`[ConnectionStore] ✅ Added handler for ${topic}, total handlers: ${messageHandlers.value.get(topic).size}`)
+    debugLog(`[ConnectionStore] ✅ Added handler for ${topic}, total handlers: ${messageHandlers.value.get(topic).size}`)
 
     // 如果还没有订阅这个主题，发送订阅请求
     if (!subscribedTopics.value.has(topic)) {
@@ -335,19 +336,19 @@ export const useConnectionStore = defineStore('connection', () => {
         type: messageType
       }
 
-      console.log(`[ConnectionStore] 📤 Sending subscription request:`, subscribeMsg)
+      debugLog(`[ConnectionStore] 📤 Sending subscription request:`, subscribeMsg)
 
       if (sendMessage(subscribeMsg)) {
         subscribedTopics.value.add(topic)
-        console.log(`[ConnectionStore] ✅ Subscribed to ${topic}`)
-        console.log(`[ConnectionStore] 📊 Current subscriptions: ${Array.from(subscribedTopics.value)}`)
+        debugLog(`[ConnectionStore] ✅ Subscribed to ${topic}`)
+        debugLog(`[ConnectionStore] 📊 Current subscriptions: ${Array.from(subscribedTopics.value)}`)
         return true
       } else {
         console.error(`[ConnectionStore] ❌ Failed to send subscription message for ${topic}`)
         return false
       }
     } else {
-      console.log(`[ConnectionStore] 📝 Already subscribed to ${topic}`)
+      debugLog(`[ConnectionStore] 📝 Already subscribed to ${topic}`)
       return true
     }
   }
@@ -370,7 +371,7 @@ export const useConnectionStore = defineStore('connection', () => {
             topic: topic
           }
           sendMessage(unsubscribeMsg)
-          console.log(`Unsubscribed from ${topic}`)
+          debugLog(`Unsubscribed from ${topic}`)
         }
       }
     }
@@ -387,7 +388,7 @@ export const useConnectionStore = defineStore('connection', () => {
     }
 
     if (advertisedTopics.value.has(topic)) {
-      console.log(`[ConnectionStore] 话题 ${topic} 已经声明过发布者`)
+      debugLog(`[ConnectionStore] 话题 ${topic} 已经声明过发布者`)
       return true
     }
 
@@ -397,11 +398,11 @@ export const useConnectionStore = defineStore('connection', () => {
       type: messageType
     }
 
-    console.log(`[ConnectionStore] 声明发布者:`, advertiseMsg)
+    debugLog(`[ConnectionStore] 声明发布者:`, advertiseMsg)
     const result = sendMessage(advertiseMsg)
     if (result) {
       advertisedTopics.value.add(topic)
-      console.log(`[ConnectionStore] ✅ 成功声明发布者: ${topic}`)
+      debugLog(`[ConnectionStore] ✅ 成功声明发布者: ${topic}`)
     } else {
       console.error(`[ConnectionStore] ❌ 声明发布者失败: ${topic}`)
     }
@@ -419,11 +420,11 @@ export const useConnectionStore = defineStore('connection', () => {
       topic: topic
     }
 
-    console.log(`[ConnectionStore] 取消声明发布者: ${topic}`)
+    debugLog(`[ConnectionStore] 取消声明发布者: ${topic}`)
     const result = sendMessage(unadvertiseMsg)
     if (result) {
       advertisedTopics.value.delete(topic)
-      console.log(`[ConnectionStore] ✅ 成功取消声明发布者: ${topic}`)
+      debugLog(`[ConnectionStore] ✅ 成功取消声明发布者: ${topic}`)
     }
     return result
   }
@@ -437,7 +438,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
     // 自动声明发布者（如果尚未声明）
     if (!advertisedTopics.value.has(topic)) {
-      console.log(`[ConnectionStore] 自动声明发布者: ${topic}`)
+      debugLog(`[ConnectionStore] 自动声明发布者: ${topic}`)
       if (!advertise(topic, messageType)) {
         console.error(`[ConnectionStore] ❌ 无法声明发布者: ${topic}`)
         return false
@@ -451,9 +452,9 @@ export const useConnectionStore = defineStore('connection', () => {
       msg: message
     }
 
-    console.log(`[ConnectionStore] 发布消息:`, publishMsg)
+    debugLog(`[ConnectionStore] 发布消息:`, publishMsg)
     const result = sendMessage(publishMsg)
-    console.log(`[ConnectionStore] 发布结果: ${result}`)
+    debugLog(`[ConnectionStore] 发布结果: ${result}`)
     return result
   }
   
@@ -463,7 +464,7 @@ export const useConnectionStore = defineStore('connection', () => {
   const getTopics = async () => {
     try {
       const topics = await sendApiRequest('get_topics')
-      console.log('获取到主题列表:', topics)
+      debugLog('获取到主题列表:', topics)
       return topics
     } catch (error) {
       console.error('获取主题列表失败:', error)
@@ -475,7 +476,7 @@ export const useConnectionStore = defineStore('connection', () => {
   const getNodes = async () => {
     try {
       const nodes = await sendApiRequest('get_nodes')
-      console.log('获取到节点列表:', nodes)
+      debugLog('获取到节点列表:', nodes)
       return nodes
     } catch (error) {
       console.error('获取节点列表失败:', error)
@@ -487,7 +488,7 @@ export const useConnectionStore = defineStore('connection', () => {
   const getTopicTypes = async () => {
     try {
       const topicTypes = await sendApiRequest('get_topic_types')
-      console.log('获取到主题类型:', topicTypes)
+      debugLog('获取到主题类型:', topicTypes)
       return topicTypes
     } catch (error) {
       console.error('获取主题类型失败:', error)
@@ -499,7 +500,7 @@ export const useConnectionStore = defineStore('connection', () => {
   const getTopicFrequencies = async () => {
     try {
       const frequencies = await sendApiRequest('get_topic_frequencies')
-      console.log('获取到主题频率:', frequencies)
+      debugLog('获取到主题频率:', frequencies)
       return frequencies
     } catch (error) {
       console.error('获取主题频率失败:', error)
@@ -511,7 +512,7 @@ export const useConnectionStore = defineStore('connection', () => {
   const getServices = async () => {
     try {
       const services = await sendApiRequest('get_services')
-      console.log('获取到服务列表:', services)
+      debugLog('获取到服务列表:', services)
       return services
     } catch (error) {
       console.error('获取服务列表失败:', error)
@@ -523,7 +524,7 @@ export const useConnectionStore = defineStore('connection', () => {
   const getServiceTypes = async () => {
     try {
       const serviceTypes = await sendApiRequest('get_service_types')
-      console.log('获取到服务类型:', serviceTypes)
+      debugLog('获取到服务类型:', serviceTypes)
       return serviceTypes
     } catch (error) {
       console.error('获取服务类型失败:', error)
@@ -535,7 +536,7 @@ export const useConnectionStore = defineStore('connection', () => {
   const getParams = async () => {
     try {
       const params = await sendApiRequest('get_params')
-      console.log('获取到参数列表:', params)
+      debugLog('获取到参数列表:', params)
       return params
     } catch (error) {
       console.error('获取参数列表失败:', error)

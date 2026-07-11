@@ -4,6 +4,7 @@
 
 import { ref, onUnmounted } from 'vue'
 import { useConnectionStore } from './useConnectionStore'
+import { debugLog } from '../utils/debug'
 
 export function useRosbridge() {
   const connectionStore = useConnectionStore()
@@ -16,7 +17,7 @@ export function useRosbridge() {
    * @param {Function} callback 消息回调函数
    */
   const subscribe = (topic, messageType, callback) => {
-    console.log(`[useRosbridge] 订阅请求: ${topic}, 连接状态: ${connectionStore.isConnected}`)
+    debugLog(`[useRosbridge] 订阅请求: ${topic}, 连接状态: ${connectionStore.isConnected}`)
     
     if (!connectionStore.isConnected) {
       console.warn(`[useRosbridge] ❌ 未连接到ROS bridge. 状态: ${connectionStore.connectionStatus}`)
@@ -24,7 +25,7 @@ export function useRosbridge() {
     }
     
     const success = connectionStore.subscribeTopic(topic, messageType, callback)
-    console.log(`[useRosbridge] connectionStore.subscribeTopic返回:`, success)
+    debugLog(`[useRosbridge] connectionStore.subscribeTopic返回:`, success)
     
     if (success) {
       const subscription = {
@@ -35,7 +36,7 @@ export function useRosbridge() {
       }
       
       subscribedTopics.value.set(topic, subscription)
-      console.log(`[useRosbridge] ✅ 订阅成功: ${topic}`)
+      debugLog(`[useRosbridge] ✅ 订阅成功: ${topic}`)
       return subscription
     } else {
       console.error(`[useRosbridge] ❌ 订阅失败: ${topic}`)
@@ -63,10 +64,10 @@ export function useRosbridge() {
     }
     
     if (subscription) {
-      console.log(`[useRosbridge] 取消订阅: ${topic}`)
+      debugLog(`[useRosbridge] 取消订阅: ${topic}`)
       const success = connectionStore.unsubscribeTopic(topic, subscription.callback)
       subscribedTopics.value.delete(topic)
-      console.log(`[useRosbridge] ✅ 取消订阅成功: ${topic}`)
+      debugLog(`[useRosbridge] ✅ 取消订阅成功: ${topic}`)
       return success
     } else {
       console.warn(`[useRosbridge] ⚠️ 未找到订阅: ${topic}`)

@@ -31,6 +31,15 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          three: ['three'],
+          element: ['element-plus', '@element-plus/icons-vue'],
+          vue: ['vue', 'vue-router', 'pinia']
+        }
+      }
+    }
   }
 })
