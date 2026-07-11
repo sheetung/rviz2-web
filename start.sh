@@ -26,6 +26,13 @@ load_env() {
   fi
 }
 
+load_ros() {
+  set +u
+  [[ -f /opt/ros/humble/setup.bash ]] && source /opt/ros/humble/setup.bash
+  [[ -f /home/amov/super_ros2_ws/install/setup.bash ]] && source /home/amov/super_ros2_ws/install/setup.bash
+  set -u
+}
+
 check_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing command: $1"
 }
@@ -74,6 +81,7 @@ start_local() {
   check_command ss
   check_command setsid
   load_env
+  load_ros
 
   local backend_port="${WEB_PORT:-8000}"
   local frontend_port="${FRONTEND_PORT:-3000}"
@@ -82,6 +90,7 @@ start_local() {
 
   [[ -d "$BACKEND_DIR/.venv" ]] || fail "Backend environment missing. Run: cd backend && uv sync"
   [[ -d "$FRONTEND_DIR/node_modules" ]] || fail "Frontend dependencies missing. Run: cd frontend && npm ci"
+  "$BACKEND_DIR/.venv/bin/python" -c "import rclpy" || fail "rclpy is unavailable; check the ROS2 setup files"
 
   trap cleanup INT TERM EXIT
 
