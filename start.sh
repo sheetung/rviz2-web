@@ -38,6 +38,16 @@ check_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing command: $1"
 }
 
+ensure_uv() {
+  command -v uv >/dev/null 2>&1 && return
+
+  check_command curl
+  log "uv not found; installing uv"
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  hash -r
+  command -v uv >/dev/null 2>&1 || fail "uv installation completed but uv is not available in PATH"
+}
+
 check_port() {
   local port="$1"
   if ss -ltn "sport = :$port" 2>/dev/null | grep -q LISTEN; then
@@ -84,16 +94,16 @@ cleanup() {
 }
 
 start_local() {
-  check_command uv
-  check_command npm
   check_command curl
+  ensure_uv
+  check_command npm
   check_command ss
   check_command setsid
   load_env
   load_ros
 
-  local backend_port="${WEB_PORT:-8000}"
-  local frontend_port="${FRONTEND_PORT:-3000}"
+  local backend_port="${BACKEND_PORT:?Set BACKEND_PORT in $ENV_FILE}"
+  local frontend_port="${FRONTEND_PORT:?Set FRONTEND_PORT in $ENV_FILE}"
   local frontend_public_host="${FRONTEND_PUBLIC_HOST:-127.0.0.1}"
   check_port "$backend_port"
   check_port "$frontend_port"
@@ -109,7 +119,7 @@ start_local() {
   log "Starting backend on $backend_port"
   (
     cd "$BACKEND_DIR"
-    exec setsid uv run --no-sync uvicorn app.main:app --host "${WEB_HOST:-0.0.0.0}" --port "$backend_port"
+    exec setsid uv run --no-sync uvicorn app.main:app --host "${BACKEND_HOST:?Set BACKEND_HOST in $ENV_FILE}" --port "$backend_port"
   ) >"$LOG_DIR/backend.log" 2>&1 &
   BACKEND_PID=$!
 
@@ -139,7 +149,7 @@ show_help() {
 
 case "${1:-local}" in
   sync)
-    check_command uv
+    ensure_uv
     check_command npm
     (
       cd "$BACKEND_DIR"

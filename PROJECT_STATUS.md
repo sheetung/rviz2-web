@@ -1,200 +1,154 @@
-# ROS2 Web Visualization 项目状态报告
+# RVizWeb 项目状态
 
-## 📋 项目完整性检查
+更新时间：2026-07-11
 
-**更新时间**: 2026-07-11
-**项目版本**: 1.0.1  
-**状态**: ✅ 可用，持续优化中
+## 总体结论
 
-## 后续计划
+当前工程可作为 ROS2 本地网络中的浏览器可视化与调试工具使用。核心链路已经形成：FastAPI/rclpy 后端加入 ROS2 图，浏览器通过 `/ws` 收发消息，Three.js 场景按 `.rvizweb` 配置展示数据。
 
-1. 前端依赖升级与安全审计：处理 `npm audit` 报告的 15 个既有漏洞，逐项验证 Vue、Vite、Element Plus 和 Three.js 的升级兼容性。
-2. 包体积优化：Element Plus 已拆为独立缓存包，但生产产物仍约 888 KB，需要继续检查样式与组件按需引入。
-3. TF 时间语义：当前 Fixed Frame 使用最新 `/tf`、`/tf_static` 变换；后续增加按 ROS 消息时间戳查询、历史缓存和插值。
-4. 自动化测试：覆盖 TF 链路、缺失 TF 状态、`.rvizweb` 原子保存与备份、权限限制以及 `start.sh` 启停清理。
+当前最可靠的运行方式是 `./start.sh sync` 后执行 `./start.sh local`。Dockerfile 尚未按当前工程完整验证；自动化测试覆盖也不足，因此不再使用“100% 完成”或未经验证的完成度百分比描述项目状态。
 
----
+## 已实现并在当前代码中保留的能力
 
----
+### 启动与配置
 
-## 🏗️ 架构概览
+- `start.sh` 支持 `sync`、`local`、`help`。
+- 缺少 uv 时可通过官方安装脚本自动安装。
+- 后端使用 uv 锁定依赖，前端使用 `npm ci`。
+- 启动时读取 `.env`，端口使用 `BACKEND_PORT` 与 `FRONTEND_PORT`。
+- 支持通过 `RVIZWEB_CONFIG` 选择启动配置，默认使用 `uav1.rvizweb`。
+- 前后端健康检查、日志归档和退出时进程清理已集成到启动脚本。
 
-### 技术栈实现
-- ✅ **后端**: Python + FastAPI + ROS2 + rclpy
-- ✅ **前端**: Vue.js 3 + JavaScript + Three.js + Element Plus  
-- ✅ **通信**: WebSocket (Rosbridge 协议)
-- ✅ **部署**: 单一 Docker 容器 + 本地开发支持
+### ROS2 与通信
 
-### 项目结构验证
-```
-ros-web-viz/
-├── ✅ backend/                    # Python FastAPI 后端 (完整)
-│   ├── ✅ app/                   # 应用核心
-│   │   ├── ✅ main.py           # 应用入口
-│   │   ├── ✅ core/             # 核心配置
-│   │   ├── ✅ api/v1/           # API 路由 
-│   │   ├── ✅ models/           # 数据模型
-│   │   ├── ✅ services/         # 业务逻辑
-│   │   └── ✅ utils/            # 工具函数
-│   ├── ✅ tests/                # 测试框架
-│   └── ✅ requirements.txt      # Python 依赖
-├── ✅ frontend/                   # Vue.js 前端 (完整)
-│   ├── ✅ src/
-│   │   ├── ✅ main.js           # 应用入口
-│   │   ├── ✅ App.vue           # 根组件
-│   │   ├── ✅ router/           # 路由配置
-│   │   ├── ✅ composables/      # Vue Composables
-│   │   ├── ✅ components/       # Vue 组件
-│   │   │   ├── ✅ common/       # 通用组件
-│   │   │   ├── ✅ RViz/         # RViz 可视化 (完整)
-│   │   │   ├── ✅ RQT/          # RQT 工具 (完整)
-│   │   │   └── ✅ Settings/     # 设置页面
-│   │   ├── ✅ services/         # 服务层
-│   │   └── ✅ utils/            # 工具函数
-│   ├── ✅ package.json          # 前端依赖
-│   └── ✅ vite.config.js        # 构建配置
-├── ✅ Dockerfile                 # 单一容器构建
-├── ✅ start.sh                   # 一键启动脚本
-└── ✅ PROJECT_GUIDE.md           # 项目指南
-```
+- 后端使用 rclpy 直接访问 ROS2 图。
+- FastAPI `/ws` 提供浏览器实时通信入口。
+- 支持话题发现、订阅、取消订阅和发布。
+- 提供节点、话题频率、系统状态和拓扑查询 API。
+- 支持 `/tf`、`/tf_static` 与 Fixed Frame 转换的前端链路。
 
----
+### 3D 可视化
 
-## 🎯 功能实现状态
+- PointCloud2 点云。
+- LaserScan 激光数据。
+- Odometry 位姿与轨迹。
+- Path 路径。
+- Marker 与 MarkerArray。
+- OccupancyGrid 地图。
+- PoseWithCovarianceStamped 位姿显示。
+- 网格、坐标轴、视角预设、相机状态及布局保存。
+- Displays 可从当前 ROS2 图选择话题，并保存每项显示配置。
 
-### ✅ RViz 可视化功能 (完成度 ~90%)
-- ✅ **3D 场景渲染** - Three.js 实现，支持相机控制
-- ✅ **点云渲染器** - sensor_msgs/PointCloud2 支持
-- ✅ **激光雷达渲染器** - sensor_msgs/LaserScan 支持  
-- ✅ **标记渲染器** - visualization_msgs/Marker 支持
-- ✅ **路径渲染器** - nav_msgs/Path 支持
-- ✅ **显示设置** - 背景、网格、坐标轴、渲染参数
-- ✅ **插件系统** - 可扩展的可视化插件架构
-- ✅ **主题订阅** - 动态订阅/取消订阅 ROS2 主题
-- ✅ **性能监控** - FPS、对象数、顶点数实时显示
- - ✅ **轨迹显示** - 支持“轨迹长度”滑块（10–100）
- - ✅ **日志精简** - 默认仅保留关键错误与提示
+### 目标与配置文件
 
-### ✅ RQT 工具面板 (进行中)
-- ✅ **主题监控器** - 实时主题状态、频率监控
-- 🚧 **节点图** - 可视化节点关系图可用，布局/交互优化中
-- ✅ **参数编辑器** - 节点参数查看和编辑
-- ✅ **服务调用器** - ROS2 服务调用界面
-- ✅ **系统信息** - CPU、内存、连接数等系统状态
-- 🚧 **数据图表** - 图表化界面（性能曲线、主题频率）进行中
+- 支持目标点预览和 `PoseStamped` 发布。
+- `.rvizweb` 可保存、读取和删除。
+- 配置写入包含名称、大小、版本和结构校验。
+- 覆盖与删除前创建备份，写入使用原子替换。
+- 配置写接口支持可选令牌。
 
-### ✅ 后端服务 (完成度 ~95%)
-- ✅ **FastAPI 应用** - 完整的 API 框架
-- ✅ **Rosbridge 服务** - WebSocket 通信桥梁
-- ✅ **ROS2 集成** - rclpy 客户端，支持主题、节点、服务
-- ✅ **消息转换** - ROS2 ↔ JSON 双向转换（含 PointCloud2/CompressedImage 优化）
-- ✅ **连接管理** - WebSocket 连接池和状态管理
-- ✅ **错误处理** - 统一异常处理和日志记录
-- ✅ **配置管理** - 环境变量和设置管理
- - ✅ **发布链路** - 实现 `advertise/unadvertise/publish` 到 ROS2
- - ✅ **QoS** - `/goal_pose`、`/initialpose` 使用 TRANSIENT_LOCAL（先发后订可见）
- - ✅ **类型修复** - `PoseWithCovarianceStamped` 的 `covariance` 严格 36 个 float
+### RQT 风格工具
 
-### ✅ 前端应用 (完成度 ~95%)
-- ✅ **Vue.js 框架** - 组件化开发，响应式状态管理
-- ✅ **Element Plus UI** - 现代化组件库
-- ✅ **Three.js 3D** - 高性能 3D 渲染
-- ✅ **WebSocket 客户端** - 实时通信，自动重连
-- ✅ **路由管理** - 多页面导航
-- ✅ **状态管理** - Pinia 状态存储
-- ✅ **工具函数** - 完整的辅助函数库
- - ✅ **导航工具** - 2D 目标点/位置估计发布端到端打通
- - ✅ **轨迹长度** - 控制面板滑块 10–100，场景实时同步
- - ✅ **日志降噪** - 屏蔽高频调试输出，可按需开启
+代码中包含话题监视、节点/话题拓扑图、参数编辑、服务调用、系统信息、日志和图表面板。各工具对不同 ROS2 发行版、自定义消息和大型系统的兼容程度仍需要持续实机验证。
 
-### ✅ 部署配置 (完成度 ~95%)
-- ✅ **Docker 支持** - 多阶段构建，单一容器部署
-- ✅ **本地开发** - 支持热重载的开发环境
-- ✅ **一键启动** - start.sh 脚本，支持本地和 Docker 模式
-- ✅ **环境配置** - 可配置的服务参数
-- ✅ **健康检查** - Docker 容器健康监控
+## 当前限制与已知偏差
 
----
+### 自动化测试不足
 
-## 🔧 支持的 ROS2 消息类型（核心）
+`backend/tests/` 当前只有 pytest 基础配置，没有覆盖核心行为的测试用例。前端也没有单元测试或端到端测试脚本。现有验证主要依靠：
 
-### 传感器消息
-- ✅ `sensor_msgs/msg/PointCloud2` - 点云数据
-- ✅ `sensor_msgs/msg/LaserScan` - 2D 激光雷达
-- ✅ `sensor_msgs/msg/Image` - 图像数据
-- ✅ `sensor_msgs/msg/CameraInfo` - 相机信息
+- `npm run lint:check`
+- `npm run build`
+- `uv run python -m compileall -q app`
+- 真实 ROS2 环境中的人工集成测试
 
-### 几何消息  
-- ✅ `geometry_msgs/msg/Twist` - 速度命令
-- ✅ `geometry_msgs/msg/Pose` - 位姿信息
-- ✅ `geometry_msgs/msg/Transform` - 变换矩阵
+因此文档不再声称存在“完整测试框架”或“100% API 覆盖”。
 
-### 可视化消息
-- ✅ `visualization_msgs/msg/Marker` - 3D 标记
-- ✅ `visualization_msgs/msg/MarkerArray` - 标记数组
+### Docker 尚非推荐路径
 
-### 导航消息
-- ✅ `nav_msgs/msg/Path` - 路径轨迹
-- ✅ `nav_msgs/msg/OccupancyGrid` - 栅格地图
-- ✅ `nav_msgs/msg/Odometry` - 里程计
-- ✅ `geometry_msgs/msg/PoseStamped` - 目标点（/goal_pose）
-- ✅ `geometry_msgs/msg/PoseWithCovarianceStamped` - 初始位姿（/initialpose）
+- `start.sh` 没有 `docker` 子命令。
+- 仓库没有 `docker-compose.yml`。
+- Dockerfile 保留了旧式单容器启动结构，尚需验证前端产物、后端依赖、环境变量和 DDS 网络。
+- `9090` 目前没有独立服务监听；浏览器使用后端端口上的 `/ws`。
 
----
+### 环境配置仍有历史项
 
-## 🚀 快速启动验证
+- `ROSBRIDGE_PORT` 当前只作为预留变量存在，没有实际监听者。
+- 后端 `Settings` 中仍保留部分旧的 `web_*`、rosbridge 和容量配置字段；启动入口实际以 `start.sh` 传给 Uvicorn 的 `BACKEND_HOST/BACKEND_PORT` 为准。
+- `frontend/vite.config.js` 的 `/api`、`/ws` 代理仍固定指向 `localhost:8000`，尚未跟随 `BACKEND_PORT`。
+- `LOG_LEVEL` 的端到端配置行为需要进一步统一验证。
 
-### 本地开发启动
+### ROS2 环境路径与发行版固定
+
+`start.sh` 当前写死尝试加载 ROS2 Humble 和 `/home/amov/super_ros2_ws`。在其他用户、工作空间或 ROS2 发行版上，需要调整脚本或预先加载环境。
+
+### TF 时间语义有限
+
+当前 Fixed Frame 主要使用前端维护的最新 TF 数据。尚未实现 RViz 等价的按消息时间戳查找、完整历史缓存与插值；高速运动或延迟消息场景可能出现瞬时缺链或位置偏差。
+
+### 前端历史组件较多
+
+工程中同时保留多套布局组件、示例话题常量和部分旧 RViz/RQT 组件。当前主界面并不一定使用所有文件。后续清理前需要通过入口与组件引用关系确认，不能仅按文件名删除。
+
+## 当前验证基线
+
+每次合入核心修改前至少应执行：
+
 ```bash
-cd /Users/pony.ai/Documents/文档/ros-web-viz
-./start.sh local
+bash -n start.sh
+
+cd frontend
+npm run lint:check
+npm run build
+
+cd ../backend
+uv run python -m compileall -q app
 ```
 
-### Docker 容器启动  
-```bash
-cd /Users/pony.ai/Documents/文档/ros-web-viz
-./start.sh docker
-```
+涉及 ROS2 的修改还应验证：
 
-更多使用说明与截图请见根目录 `README.md`（使用者指南）。
+1. `ros2 topic list -t` 能发现目标话题。
+2. 前端 Displays 能刷新并订阅话题。
+3. PointCloud2、Odometry、Path、Marker 和 TF 链路按修改范围正常显示。
+4. WebSocket 断开后能恢复连接与订阅。
+5. 配置保存、覆盖备份、读取和删除符合预期。
+6. `Ctrl+C` 后前后端进程均退出。
 
----
+## 优先级建议
 
-## 📊 代码质量指标
+### P0：配置与启动一致性
 
-### 文件统计
-- **Python 文件**: 13 个 (后端核心)
-- **Vue 组件**: 17 个 (前端界面)
-- **JavaScript 模块**: 6 个 (工具和服务)
-- **配置文件**: 4 个 (构建和依赖)
-- **文档文件**: 2 个 (指南和状态)
+- 删除或正式实现 `ROSBRIDGE_PORT`，避免让用户误以为需要开放 `9090`。
+- 将后端 `Settings` 的 `web_host/web_port` 与 `.env` 的 `BACKEND_HOST/BACKEND_PORT` 统一。
+- 让 ROS2 安装路径和工作空间路径可配置，避免绑定单台设备。
+- 明确 `LOG_LEVEL`、`DEBUG`、`FRONTEND_HOST` 的实际读取链路。
 
-### 功能覆盖
-- **RViz 可视化**: 100% 完成
-- **RQT 工具面板**: 100% 完成
-- **WebSocket 通信**: 100% 完成
-- **Docker 部署**: 100% 完成
-- **API 接口**: 100% 完成
+### P1：测试与稳定性
 
-### 架构设计
-- ✅ **模块化设计** - 清晰的目录结构和职责分离
-- ✅ **可扩展性** - 插件系统支持功能扩展
-- ✅ **可维护性** - 标准化的代码规范和注释
-- ✅ **可测试性** - 完整的测试框架配置
+- 为 `.rvizweb` 校验、原子保存、备份和令牌权限补充后端测试。
+- 为 TF 链查找、缺失 TF 状态和 Display 生命周期补充前端测试。
+- 增加 WebSocket 发布/订阅和重连的集成测试。
+- 在真实 ROS2 图中覆盖自定义消息、QoS 不匹配和高频点云。
 
----
+### P2：TF 与性能
 
-## 🎯 使用场景
+- 增加按 ROS 消息时间戳的 TF 历史缓存和插值。
+- 对大点云进行采样、限频、内存复用或 LOD 优化。
+- 评估 WebSocket 二进制传输或压缩，减少大消息的 JSON 开销。
+- 持续控制前端生产包体积并评估 Element Plus 按需引入。
 
-### 适用场景
-1. ✅ **ROS2 机器人可视化** - 实时数据显示和监控
-2. ✅ **远程机器人调试** - Web 端访问和控制
-3. ✅ **教学演示** - 直观的 ROS2 概念展示
-4. ✅ **开发调试** - 便捷的 ROS2 开发工具
-5. ✅ **系统监控** - 机器人系统状态监控
+### P3：部署与清理
 
-### 性能特点
-- ✅ **实时性** - WebSocket 低延迟通信
-- ✅ **可扩展性** - 插件化架构设计
-- ✅ **易部署** - 单一容器部署方案
-- ✅ **跨平台** - Web 端支持多平台访问
+- 决定是否正式维护 Docker；若维护，应重写并验证容器启动、健康检查和 DDS 网络说明。
+- 清理未引用的布局、示例话题和旧组件。
+- 将用户指南、开发指南和状态报告中的重复内容继续收敛。
+
+## 状态判定
+
+- 本地启动链路：可用，依赖固定 ROS2 路径。
+- ROS2 发现与 WebSocket 桥接：可用，需要网络与 DDS 环境正确。
+- 核心 3D 显示：可用，TF 时间语义仍有限。
+- `.rvizweb` 配置管理：已实现，自动化回归测试不足。
+- RQT 风格工具：已实现多项功能，需按具体工具实机验证。
+- Docker 部署：保留实现，当前未验证。
+- 自动化测试：不足，是当前主要工程风险之一。

@@ -86,7 +86,7 @@ RUN echo 'server { \
 # 创建启动脚本
 RUN echo '#!/bin/bash' > /app/start.sh && \
     echo 'source /opt/ros/humble/setup.bash' >> /app/start.sh && \
-    echo 'cd /app && python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &' >> /app/start.sh && \
+    echo 'cd /app && python3 -m uvicorn app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" &' >> /app/start.sh && \
     echo 'nginx -g "daemon off;" &' >> /app/start.sh && \
     echo 'sleep 5' >> /app/start.sh && \
     echo 'wait' >> /app/start.sh && \
@@ -96,8 +96,8 @@ RUN echo '#!/bin/bash' > /app/start.sh && \
 ENV PYTHONPATH=/app
 ENV ROS_DOMAIN_ID=0
 ENV ROSBRIDGE_PORT=9090
-ENV WEB_PORT=8000
-ENV WEB_HOST=0.0.0.0
+ENV BACKEND_PORT=8000
+ENV BACKEND_HOST=0.0.0.0
 # 强制使用 Fast DDS + UDPv4，禁用共享内存，避免容器/宿主机间SHM问题
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ENV FASTDDS_BUILTIN_TRANSPORTS=UDPv4

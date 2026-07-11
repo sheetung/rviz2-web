@@ -1,347 +1,237 @@
-# ROS2 Web Visualization 项目指南
+# RVizWeb 项目指南
 
-## 🎯 项目概述
+## 项目定位
 
-这是一个基于 **Vue.js + FastAPI** 的 ROS2 Web 可视化平台，专注于 RViz 基础功能，支持本地开发和 Docker 单一容器部署。
+RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、Three.js 和 Element Plus，后端使用 FastAPI 与 rclpy。浏览器通过 FastAPI 的 `/ws` WebSocket 与后端通信，后端直接加入 ROS2 图，不依赖独立的 rosbridge_server。
 
-### 核心特性
+当前工程以本地开发运行方式为主。用户操作说明与界面功能介绍见 `README.md`，本文档重点说明工程结构、配置、启动和维护方式。
 
-- ✅ **Web 端 RViz** - 3D 场景渲染与交互
-- ✅ **ROS2 集成** - 完整的 ROS2 消息支持  
-- ✅ **实时通信** - WebSocket 连接管理
-- ✅ **插件系统** - 可扩展的可视化插件
-- ✅ **单一容器** - 简化的 Docker 部署
-- ✅ **响应式设计** - 现代化 UI 界面
+## 当前架构
 
-### 技术栈
+```text
+浏览器
+  ├── HTTP /api/v1/*  ── FastAPI ── 配置文件与 ROS2 查询接口
+  └── WebSocket /ws  ── RosbridgeService ── rclpy ── ROS2 图
+```
 
-- **后端**: Python + FastAPI + ROS2 + rclpy
-- **前端**: Vue.js 3 + JavaScript + Three.js + Element Plus
-- **通信**: WebSocket (Rosbridge 协议)
-- **部署**: 单一 Docker 容器 或 本地开发
+- 前端：Vue 3、Vite、Three.js、Element Plus、Pinia。
+- 后端：Python 3.10–3.12、FastAPI、Uvicorn、rclpy。
+- Python 依赖：由 `backend/pyproject.toml`、`backend/uv.lock` 和 uv 管理。
+- 前端依赖：由 `frontend/package.json`、`frontend/package-lock.json` 和 npm 管理。
+- 可视化配置：保存在 `rvizweb_configs/*.rvizweb`。
 
-## 🚀 快速开始
+## 环境要求
 
-### 方式一：一键启动（推荐）
+- ROS2 环境，当前启动脚本默认尝试加载 ROS2 Humble。
+- Python 3.10–3.12。
+- Node.js 18 或更高版本。
+- npm、curl、`ss`、`setsid`。
+- uv；如果系统中没有，`start.sh` 会通过 uv 官方安装脚本安装。
+
+启动脚本会尝试加载：
+
+```text
+/opt/ros/humble/setup.bash
+/home/amov/super_ros2_ws/install/setup.bash
+```
+
+如果实际工作空间位于其他位置，需要修改 `start.sh` 的 `load_ros` 函数，或在启动脚本前自行加载正确的 ROS2 环境。
+
+## 环境配置
+
+项目根目录的 `.env` 是当前设备的运行配置，`.env.example` 是参考模板。首次部署可复制模板后按实际网络环境调整。
+
+主要变量：
+
+| 变量 | 用途 |
+| --- | --- |
+| `ROS_DOMAIN_ID` | ROS2 DDS 通信域；未设置该变量的 ROS2 设备默认使用 `0` |
+| `BACKEND_HOST` | FastAPI 绑定地址 |
+| `BACKEND_PORT` | FastAPI HTTP 与 `/ws` WebSocket 共用端口 |
+| `FRONTEND_PORT` | Vite 开发服务器端口 |
+| `FRONTEND_PUBLIC_HOST` | 启动完成后显示的前端访问主机或局域网 IP |
+| `CORS_ORIGINS` | 允许访问后端 API 的前端来源，使用英文逗号分隔 |
+| `CONFIG_API_TOKEN` | 配置写接口的可选令牌 |
+| `VITE_CONFIG_API_TOKEN` | 前端携带的配置令牌，应与 `CONFIG_API_TOKEN` 相同 |
+| `CONFIG_MAX_BYTES` | 单个 `.rvizweb` 文件的最大字节数 |
+| `CONFIG_NAME_MAX_LENGTH` | 配置文件名最大长度 |
+| `VITE_DEBUG` | 是否输出前端调试日志 |
+
+`ROSBRIDGE_PORT` 是历史遗留的预留变量。当前工程没有监听 `9090` 的独立 Rosbridge 服务，前端实际连接 `BACKEND_PORT` 上的 `/ws`。
+
+ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、目标话题和样式等用户状态属于 `.rvizweb` 配置。
+
+## 安装与启动
+
+在项目根目录安装或同步依赖：
 
 ```bash
-# 本地开发模式
+./start.sh sync
+```
+
+该命令会：
+
+1. 创建带 `--system-site-packages` 的 `backend/.venv`，以便访问系统 ROS2 Python 包。
+2. 使用 `uv sync --active` 同步后端依赖。
+3. 使用 `npm ci` 安装前端锁定依赖。
+
+启动前后端：
+
+```bash
 ./start.sh local
-
-# Docker 容器模式  
-./start.sh docker
 ```
 
-### 方式二：手动启动
+不传参数时默认也是 `local`。脚本会读取 `.env`、加载 ROS2 环境、检查端口和依赖、启动两个进程并等待健康检查。日志写入：
 
-#### 本地开发
+```text
+logs/backend.log
+logs/frontend.log
+```
+
+默认加载 `rvizweb_configs/uav1.rvizweb`。临时指定其他配置：
 
 ```bash
-# 后端启动
-cd backend
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# 前端启动 (新终端)
-cd frontend  
-npm install
-npm run dev
+RVIZWEB_CONFIG=default.rvizweb ./start.sh local
 ```
 
-#### Docker 部署
+配置名必须以 `.rvizweb` 结尾且文件必须存在。按 `Ctrl+C` 后，脚本会清理前后端进程组。
 
-```bash
-# 构建并运行
-docker build -t ros-web-viz .
-docker run -d -p 8000:8000 -p 9090:9090 ros-web-viz
+`start.sh` 当前只支持 `sync`、`local` 和 `help`，不支持 `docker` 子命令。
 
-# 当前仓库未提供 docker-compose.yml
+## 访问入口
+
+端口以 `.env` 为准。使用示例端口时：
+
+- 前端：`http://localhost:3000/`
+- 后端健康检查：`http://localhost:8000/health`
+- OpenAPI 文档：`http://localhost:8000/docs`
+- WebSocket：`ws://localhost:8000/ws`
+
+Vite 会将 `/api` 和 `/ws` 请求代理到本地后端，因此日常使用通常只需访问前端地址。
+
+注意：当前 `frontend/vite.config.js` 的代理目标仍固定为 `localhost:8000`。在代理配置改为读取环境变量之前，如果修改 `BACKEND_PORT`，还需要同步修改 Vite 代理目标，否则前端 API 与 WebSocket 请求无法到达后端。
+
+## 核心功能与消息类型
+
+当前 3D 场景主要处理：
+
+- `sensor_msgs/msg/PointCloud2`
+- `sensor_msgs/msg/LaserScan`
+- `nav_msgs/msg/Odometry`
+- `nav_msgs/msg/Path`
+- `nav_msgs/msg/OccupancyGrid`
+- `visualization_msgs/msg/Marker`
+- `visualization_msgs/msg/MarkerArray`
+- `geometry_msgs/msg/PoseWithCovarianceStamped`
+
+后端消息桥还包含 Image、CompressedImage、CameraInfo、Twist、TF 等类型的转换或发布支持，但“后端能转换”不等同于“3D 场景对该类型有完整渲染器”。新增类型时应分别检查后端类型映射、WebSocket 序列化和前端渲染逻辑。
+
+Fixed Frame 使用 `/tf` 和 `/tf_static`。当前以前端缓存的最新变换为主，尚未提供完整的按消息时间戳查询、历史缓存与插值语义。
+
+## `.rvizweb` 配置
+
+- `default.rvizweb`：通用界面配置，不应绑定特定机器人话题。
+- `uav1.rvizweb`：当前无人机示例配置，也是启动脚本默认配置。
+- `backups/`：覆盖或删除前保存的备份。
+
+配置保存使用同目录临时文件和原子替换，并校验文件名、大小、版本及结构。主要状态包括 Fixed Frame、Displays、点云与 Path 样式、相机、网格、坐标轴、布局、目标点和 odom 话题。
+
+配置 API：
+
+```text
+GET    /api/v1/configs
+GET    /api/v1/configs/{name}
+POST   /api/v1/configs/{name}
+DELETE /api/v1/configs/{name}
 ```
 
-### 访问地址
+## 后端接口
 
-- 🌐 **前端界面**: http://localhost:3000
-- 🔧 **后端 API**: http://localhost:8000  
-- 📚 **API 文档**: http://localhost:8000/docs
-- 🔌 **WebSocket**: ws://localhost:8000/ws
+主要 ROS2 查询接口位于 `/api/v1`：
 
-## 📁 项目结构
+- `/topics`、`/topics/frequencies`、`/topic-info`
+- `/topics/subscribe`、`/topics/unsubscribe`、`/topics/publish`
+- `/nodes`、`/status`
+- `/topology` 及节点/话题连接查询
+- `/visualization/*` 可视化状态和插件接口
 
-```
-ros-web-viz/
-├── backend/                    # Python FastAPI 后端
+完整参数与响应模型应以运行时 `/docs` 为准。
+
+## 目录结构
+
+```text
+RVIZ-RQT-VISUAL/
+├── backend/
 │   ├── app/
-│   │   ├── main.py            # 应用入口
-│   │   ├── core/              # 核心配置
-│   │   ├── api/v1/            # API 路由
-│   │   ├── models/            # 数据模型
-│   │   ├── services/          # 业务逻辑
-│   │   └── utils/             # 工具函数
-│   └── requirements.txt       # Python 依赖
-├── frontend/                   # Vue.js 前端
+│   │   ├── api/v1/          # configs、ros、viz API
+│   │   ├── core/            # Pydantic 环境配置
+│   │   ├── models/          # API 数据模型
+│   │   ├── services/        # ROS2、WebSocket、拓扑服务
+│   │   └── main.py          # FastAPI 入口
+│   ├── pyproject.toml
+│   └── uv.lock
+├── frontend/
 │   ├── src/
-│   │   ├── main.js           # 应用入口
-│   │   ├── App.vue           # 根组件
-│   │   ├── router/           # 路由配置
-│   │   ├── composables/      # Vue Composables
-│   │   ├── components/       # Vue 组件
-│   │   │   ├── common/       # 通用组件
-│   │   │   ├── RViz/         # RViz 可视化
-│   │   │   └── RQT/          # RQT 工具
-│   │   └── services/         # 服务层
-│   ├── package.json          # 前端依赖
-│   └── vite.config.js        # 构建配置
-├── Dockerfile                 # 单一容器构建
-├── start.sh                   # 一键启动脚本
-└── .env                       # 环境变量配置
+│   │   ├── components/RViz/ # 3D 场景与 Displays
+│   │   ├── components/RQT/  # 节点图、话题、参数、服务等工具
+│   │   ├── components/panels/
+│   │   ├── composables/     # WebSocket 与连接状态
+│   │   ├── services/        # HTTP API 封装
+│   │   └── utils/           # TF、调试与通用工具
+│   ├── package.json
+│   └── vite.config.js
+├── rvizweb_configs/
+├── .env
+├── .env.example
+├── Dockerfile
+└── start.sh
 ```
 
-## 🔧 核心功能
+## 开发与验证
 
-### 1. RViz 可视化
-
-**支持的消息类型**:
-- `sensor_msgs/msg/PointCloud2` - 点云数据
-- `sensor_msgs/msg/LaserScan` - 激光雷达数据  
-- `visualization_msgs/msg/Marker` - 3D 标记
-- `visualization_msgs/msg/MarkerArray` - 标记数组
-- `nav_msgs/msg/Path` - 路径数据
-- `geometry_msgs/msg/Twist` - 速度命令
-- `geometry_msgs/msg/PoseStamped` - 2D 目标点（/goal_pose）
-- `geometry_msgs/msg/PoseWithCovarianceStamped` - 2D 位置估计（/initialpose）
-
-**可视化功能**:
-- 🎮 相机控制 (轨道、缩放、平移)
-- 🎨 场景配置 (背景、网格、坐标轴)
-- 📊 性能监控 (FPS、对象数、顶点数)
-- 🔧 渲染设置 (阴影、抗锯齿、点大小)
- - 🧭 轨迹显示（轨迹长度 10–100 可调）
-
-### 2. 插件系统
-
-**内置插件**:
-- **点云渲染器** - 高性能点云显示
-- **激光雷达渲染器** - 2D/3D 激光雷达数据
-- **标记渲染器** - 几何标记与文本
-- **路径渲染器** - 路径轨迹显示
-
-**插件特性**:
-- ✅ 动态启用/禁用
-- ✅ 实时配置调整
-- ✅ 多消息类型支持
-- ✅ 可扩展架构
-
-### 3. 实时通信
-
-**WebSocket 功能**:
-- 🔄 主题订阅/取消订阅
-- 📤 消息发布
-- 📋 主题/节点列表获取
-- 🔗 自动重连机制
- - 📨 Rosbridge 协议：后端已实现 `advertise/unadvertise/publish`
- - QoS：`/goal_pose`、`/initialpose` 使用 `TRANSIENT_LOCAL`（先发后订）
-
-## 🛠️ 开发指南
-
-### 添加新的可视化插件
-
-1. **创建插件组件**
-```vue
-<!-- frontend/src/components/RViz/renderers/MyRenderer.vue -->
-<template>
-  <div><!-- 插件配置 UI --></div>
-</template>
-
-<script>
-export default {
-  name: 'MyRenderer',
-  // 插件实现逻辑
-}
-</script>
-```
-
-2. **注册插件**
-```javascript
-// 在 VisualizationPlugins.vue 中添加
-const newPlugin = {
-  id: 'my_renderer',
-  name: '我的渲染器',
-  description: '自定义渲染器描述',
-  supportedMessageTypes: ['custom_msgs/msg/MyMessage'],
-  // ...
-}
-```
-
-3. **实现渲染逻辑**
-```javascript
-// 在 Scene3D.vue 的 updateVisualization 方法中
-case 'custom_msgs/msg/MyMessage':
-  updateMyVisualization(topic, message)
-  break
-```
-
-### 添加新的 API 端点
-
-1. **定义数据模型**
-```python
-# backend/app/models/custom.py
-from pydantic import BaseModel
-
-class CustomData(BaseModel):
-    field1: str
-    field2: int
-```
-
-2. **创建 API 路由**
-```python  
-# backend/app/api/v1/custom.py
-from fastapi import APIRouter
-
-router = APIRouter()
-
-@router.get("/custom")
-async def get_custom_data():
-    return {"message": "Custom endpoint"}
-```
-
-3. **注册路由**
-```python
-# backend/app/main.py
-from .api.v1 import custom
-
-app.include_router(custom.router, prefix="/api/v1", tags=["Custom"])
-```
-
-## 🐳 部署说明
-
-### 本地开发环境
-
-**系统要求**:
-- Python 3.9+
-- Node.js 18+
-- ROS2 Humble (可选)
-
-**启动步骤**:
-1. 克隆项目: `git clone <repo>`
-2. 运行启动脚本: `./start.sh local`
-3. 访问 http://localhost:3000
-
-### Docker 生产部署
-
-**镜像特性**:
-- 📦 多阶段构建 (前端 + 后端)
-- 🏗️ 单一容器运行
-- 🔍 健康检查支持
-- 📊 性能优化
-
-**部署命令**:
-```bash
-# 快速部署
-./start.sh docker
-
-# 手动部署
-docker build -t ros-web-viz .
-docker run -d \
-  --name ros-web-viz \
-  -p 8000:8000 \
-  -p 9090:9090 \
-  -e ROS_DOMAIN_ID=0 \
-  ros-web-viz
-```
-
-## 🔧 配置选项
-
-### 环境变量
+前端检查：
 
 ```bash
-# ROS2 配置
-ROS_DOMAIN_ID=0                 # ROS2 域 ID
-ROS_DISCOVERY_SERVER=           # 发现服务器
-
-# 服务配置  
-WEB_HOST=0.0.0.0               # Web 服务主机
-WEB_PORT=8000                  # Web 服务端口
-ROSBRIDGE_PORT=9090            # 预留 Rosbridge 端口；前端默认连接 FastAPI /ws
-
-# 性能配置
-MAX_CONNECTIONS=100            # 最大连接数
-MESSAGE_BUFFER_SIZE=10000      # 消息缓冲区大小
-```
-
-### 前端配置
-
-```javascript
-// vite.config.js
-export default defineConfig({
-  server: {
-    proxy: {
-      '/api': 'http://localhost:8000',
-      '/ws': {
-        target: 'ws://localhost:8000',
-        ws: true
-      }
-    }
-  }
-})
-```
-
-## 🧪 测试
-
-```bash
-# 后端测试
-cd backend
-pytest tests/ -v
-
-# 前端检查  
 cd frontend
 npm run lint:check
-
-# 集成测试需另行提供测试编排文件
+npm run build
 ```
 
-## 📝 API 文档
-更多面向“使用者”的运行与操作截图，请参考根目录 `README.md`。
+后端基础检查：
 
-启动服务后访问: http://localhost:8000/docs
+```bash
+cd backend
+uv run python -m compileall -q app
+```
 
-**主要端点**:
-- `GET /api/v1/topics` - 获取主题列表
-- `POST /api/v1/topics/{topic}/subscribe` - 订阅主题
-- `GET /api/v1/nodes` - 获取节点列表
-- `GET /api/v1/status` - 系统状态
-- `WebSocket /ws` - 实时通信
+当前 `backend/tests/` 只有 pytest 基础配置，没有可依赖的完整自动化测试套件。涉及 ROS2 订阅、TF、发布和配置写入的修改仍需在真实 ROS2 环境中做集成验证。
 
-## 🎯 下一步开发
+## Docker 状态
 
-### 计划功能
-- [ ] RQT 工具面板完善
-- [ ] 配置管理界面  
-- [ ] 数据录制和回放
-- [ ] 用户认证系统
-- [ ] 移动端适配
+仓库保留了 `Dockerfile`，但当前 `start.sh` 不负责构建或运行容器，也没有 `docker-compose.yml`。Dockerfile 与本地 uv 工作流、当前配置语义和宿主机 ROS2/DDS 网络仍需单独验证，因此现阶段不要把 Docker 方式视为已验证的推荐启动路径。
 
-### 性能优化
-- [ ] 点云 LOD 渲染
-- [ ] WebGL 实例化渲染
-- [ ] 消息压缩传输
-- [ ] 多线程处理
+## 常见问题
 
-## 🤝 贡献指南
+### 前端看不到远端话题
 
-1. Fork 项目
-2. 创建功能分支: `git checkout -b feature/new-feature`
-3. 提交更改: `git commit -m 'Add new feature'`
-4. 推送分支: `git push origin feature/new-feature`
-5. 创建 Pull Request
+先在运行后端的终端确认：
 
-## 📄 许可证
+```bash
+ros2 topic list -t
+echo "${ROS_DOMAIN_ID:-0}"
+echo "${ROS_LOCALHOST_ONLY:-0}"
+```
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
+远端设备需要使用相同 Domain ID，且网络多播、防火墙和 DDS 配置允许互相发现。
 
----
+### 后端找不到 rclpy
 
-**🎉 项目现已完成基础架构，可直接运行体验！**
+重新执行 `./start.sh sync`，并确认脚本加载了正确的 ROS2 安装和工作空间。虚拟环境必须使用 `--system-site-packages` 创建。
 
-**问题反馈**: 如遇问题请创建 Issue 或查看启动日志
+### 端口已被占用
+
+修改 `.env` 中的 `FRONTEND_PORT` 时，同时更新 `CORS_ORIGINS` 中对应的前端来源。修改 `BACKEND_PORT` 时还必须同步修改 `frontend/vite.config.js` 中 `/api` 与 `/ws` 的代理目标；这是当前待统一的配置项。
+
+### 配置未按预期恢复
+
+检查 `logs/backend.log`、浏览器控制台以及配置文件中的 `version`、`fixedFrame`、`displays` 等字段。读取失败时前端会保留当前状态，不会用损坏配置覆盖界面。
