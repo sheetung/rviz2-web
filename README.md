@@ -57,13 +57,21 @@ Displays 添加话题时会读取当前 ROS2 图：
 rvizweb_configs/*.rvizweb
 ```
 
-默认配置为：
+通用配置为：
 
 ```text
 rvizweb_configs/default.rvizweb
 ```
 
-`default.rvizweb` 只包含通用界面设置，不绑定具体机器人话题。示例无人机配置保存在 `rvizweb_configs/uav1.rvizweb`。
+`default.rvizweb` 只包含通用界面设置，不绑定具体机器人话题。无人机配置保存在 `rvizweb_configs/uav1.rvizweb`。
+
+当前设备的 `start.sh` 明确指定 `uav1.rvizweb` 为启动配置。临时切换配置时可覆盖：
+
+```bash
+RVIZWEB_CONFIG=default.rvizweb ./start.sh local
+```
+
+启动脚本会检查配置文件是否存在以及是否使用 `.rvizweb` 后缀，然后通过 `VITE_RVIZWEB_CONFIG` 交给前端自动读取。
 
 保存配置采用同目录临时文件原子替换，覆盖和删除前的副本保存在 `rvizweb_configs/backups/`。后端会校验配置版本、结构、文件名和大小；配置读取失败时前端保持当前状态不变。
 
@@ -128,7 +136,7 @@ cd /home/amov/RVIZ-RQT-VISUAL
 - Python 3.10+
 - uv
 
-启动脚本会读取项目根目录 `.env`，检查 `3000/8000` 端口，等待前后端健康检查，并把输出统一写入 `logs/`。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
+启动脚本会读取项目根目录 `.env`，加载 ROS2 环境，检查默认 `.rvizweb` 配置和 `3000/8000` 端口，等待前后端健康检查，并把输出统一写入 `logs/`。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
 
 配置写入默认只允许本机和局域网地址。需要令牌时，在 `.env` 中将 `CONFIG_API_TOKEN` 与 `VITE_CONFIG_API_TOKEN` 设置成相同值。`CORS_ORIGINS` 应列出实际允许访问的前端地址。
 
@@ -143,16 +151,17 @@ cd /home/amov/RVIZ-RQT-VISUAL
 
 ```bash
 cd backend
-python3 -m venv --system-site-packages venv
-source venv/bin/activate
-pip install -r requirements.txt
-ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0} python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv venv --system-site-packages .venv
+VIRTUAL_ENV="$PWD/.venv" uv sync --active
+source /opt/ros/humble/setup.bash
+source /home/amov/super_ros2_ws/install/setup.bash
+uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ```bash
 cd frontend
-npm install
-CHOKIDAR_USEPOLLING=true npm run dev -- --host 0.0.0.0 --port 3000
+npm ci
+VITE_RVIZWEB_CONFIG=uav1.rvizweb npm run dev -- --host 0.0.0.0 --port 3000
 ```
 
 访问地址：
@@ -160,12 +169,6 @@ CHOKIDAR_USEPOLLING=true npm run dev -- --host 0.0.0.0 --port 3000
 - 前端：`http://localhost:3000/`
 - 后端 API：`http://localhost:8000/`
 - 后端文档：`http://localhost:8000/docs`
-
-Docker 模式需要 Docker：
-
-```bash
-./start.sh docker
-```
 
 ## 常见问题
 
@@ -244,6 +247,13 @@ RVIZ-RQT-VISUAL/
 - 新增可视化类型：优先扩展 `Scene3D.vue` 的订阅和渲染逻辑，再在 Displays 中补充对应的配置项。
 - 新增后端接口：放在 `backend/app/api/v1/`，前端统一通过 `frontend/src/services/api.js` 封装。
 - 配置项命名保持稳定，避免破坏已有 `.rvizweb` 文件。
+
+## 后续计划
+
+- 升级前端依赖并处理 `npm audit` 当前报告的 15 个既有漏洞。
+- 继续缩小 Element Plus 产物；当前已拆为独立缓存包，但体积仍约 888 KB。
+- 为 TF 增加基于消息时间戳的历史缓存和插值。目前使用每个坐标边的最新变换。
+- 增加 TF 链、配置原子保存、配置权限和启动脚本的自动化回归测试。
 
 ## 致谢
 
