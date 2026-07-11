@@ -214,31 +214,66 @@ export default {
       }
     }
 
+    const validateConfig = (config) => {
+      if (!config || typeof config !== 'object' || Array.isArray(config)) {
+        throw new Error('配置主体必须是对象')
+      }
+      if (typeof config.fixedFrame !== 'string' || !config.fixedFrame.trim()) {
+        throw new Error('Fixed Frame 不能为空')
+      }
+      if (!Array.isArray(config.displays)) {
+        throw new Error('Displays 必须是数组')
+      }
+      config.displays.forEach((display, index) => {
+        if (!display || typeof display.name !== 'string' || typeof display.messageType !== 'string') {
+          throw new Error(`第 ${index + 1} 个 Display 格式无效`)
+        }
+      })
+      return config
+    }
+
+    const apiErrorMessage = (error, fallback) => {
+      return error?.response?.data?.detail || error?.message || fallback
+    }
+
     const saveConfig = async () => {
-      emit('capture-scene-state')
-      await nextTick()
-      const name = normalizeConfigName(configName.value)
-      await configApi.saveConfig(name, buildConfig())
-      configName.value = name
-      selectedConfigName.value = name
-      await loadConfigFiles()
-      ElMessage.success(`配置已保存: ${name}`)
+      try {
+        emit('capture-scene-state')
+        await nextTick()
+        const name = normalizeConfigName(configName.value)
+        await configApi.saveConfig(name, validateConfig(buildConfig()))
+        configName.value = name
+        selectedConfigName.value = name
+        await loadConfigFiles()
+        ElMessage.success(`配置已保存: ${name}`)
+      } catch (error) {
+        ElMessage.error(apiErrorMessage(error, '保存配置失败'))
+      }
     }
 
     const loadSelectedConfig = async () => {
       if (!selectedConfigName.value) return
-      const data = await configApi.getConfig(selectedConfigName.value)
-      applyConfig(data.config || data)
-      configName.value = data.name || selectedConfigName.value
-      ElMessage.success(`配置已读取: ${selectedConfigName.value}`)
+      try {
+        const data = await configApi.getConfig(selectedConfigName.value)
+        const nextConfig = validateConfig(data.config || data)
+        applyConfig(nextConfig)
+        configName.value = data.name || selectedConfigName.value
+        ElMessage.success(`配置已读取: ${selectedConfigName.value}`)
+      } catch (error) {
+        ElMessage.error(`${apiErrorMessage(error, '读取配置失败')}，当前界面未修改`)
+      }
     }
 
     const deleteSelectedConfig = async () => {
       if (!selectedConfigName.value) return
-      await configApi.deleteConfig(selectedConfigName.value)
-      ElMessage.success(`配置已删除: ${selectedConfigName.value}`)
-      selectedConfigName.value = ''
-      await loadConfigFiles()
+      try {
+        await configApi.deleteConfig(selectedConfigName.value)
+        ElMessage.success(`配置已删除: ${selectedConfigName.value}`)
+        selectedConfigName.value = ''
+        await loadConfigFiles()
+      } catch (error) {
+        ElMessage.error(apiErrorMessage(error, '删除配置失败'))
+      }
     }
 
     const loadDefaultConfig = async () => {

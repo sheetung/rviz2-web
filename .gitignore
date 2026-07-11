@@ -56,3 +56,6 @@ frontend/dist/
 # RViz web local configs
 rvizweb_configs/*
 !rvizweb_configs/.gitkeep
+!rvizweb_configs/default.rvizweb
+!rvizweb_configs/uav1.rvizweb
+rvizweb_configs/backups/

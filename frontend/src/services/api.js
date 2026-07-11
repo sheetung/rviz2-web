@@ -14,6 +14,10 @@ const api = axios.create({
   }
 })
 
+const configWriteHeaders = import.meta.env.VITE_CONFIG_API_TOKEN
+  ? { 'X-Config-Token': import.meta.env.VITE_CONFIG_API_TOKEN }
+  : {}
+
 // 请求拦截器
 api.interceptors.request.use(
   (config) => {
@@ -137,8 +141,15 @@ export const vizApi = {
 export const configApi = {
   listConfigs: () => api.get('/configs'),
   getConfig: (name) => api.get(`/configs/${encodeURIComponent(name)}`),
-  saveConfig: (name, config) => api.post(`/configs/${encodeURIComponent(name)}`, { name, config }),
-  deleteConfig: (name) => api.delete(`/configs/${encodeURIComponent(name)}`)
+  saveConfig: (name, config) => api.post(
+    `/configs/${encodeURIComponent(name)}`,
+    { name, config },
+    { headers: configWriteHeaders }
+  ),
+  deleteConfig: (name) => api.delete(
+    `/configs/${encodeURIComponent(name)}`,
+    { headers: configWriteHeaders }
+  )
 }
 
 export default api
