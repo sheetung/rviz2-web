@@ -5,7 +5,7 @@
 from pathlib import Path
 
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from functools import lru_cache
 
@@ -14,6 +14,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 class Settings(BaseSettings):
     """应用配置"""
+
+    model_config = SettingsConfigDict(
+        env_file=PROJECT_ROOT / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
     
     # Web 服务配置
     web_host: str = Field(default="0.0.0.0", description="Web 服务主机")
@@ -39,10 +45,6 @@ class Settings(BaseSettings):
     config_api_token: str = Field(default="", description="配置写接口可选令牌")
     config_max_bytes: int = Field(default=1_048_576, ge=1024, le=10_485_760)
     config_name_max_length: int = Field(default=96, ge=8, le=200)
-
-    class Config:
-        env_file = PROJECT_ROOT / ".env"
-        env_file_encoding = "utf-8"
 
 @lru_cache()
 def get_settings() -> Settings:
