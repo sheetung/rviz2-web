@@ -4,6 +4,8 @@
 
 import { createRouter, createWebHistory } from 'vue-router'
 
+const appTitle = String(import.meta.env.VITE_APP_TITLE || 'RVizWeb').trim() || 'RVizWeb'
+
 const routes = [
   {
     path: '/',
@@ -22,7 +24,9 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   // 设置页面标题
   if (to.meta.title) {
-    document.title = `${to.meta.title} - ROS2 Web Visualization`
+    document.title = `${to.meta.title} - ${appTitle}`
+  } else {
+    document.title = appTitle
   }
   next()
 })

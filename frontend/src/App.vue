@@ -6,7 +6,7 @@
         <div class="app-logo">
           <div class="logo-icon"></div>
           <div class="app-identity">
-            <h1 class="app-title">RVizWeb</h1>
+            <h1 class="app-title">{{ appTitle }}</h1>
             <span class="app-subtitle">ROS2 Workbench</span>
           </div>
         </div>
@@ -35,6 +35,7 @@ export default {
   },
   setup() {
     const connectionStore = useConnectionStore()
+    const appTitle = String(import.meta.env.VITE_APP_TITLE || 'RVizWeb').trim() || 'RVizWeb'
     
     // 应用启动时初始化连接
     onMounted(() => {
@@ -46,7 +47,7 @@ export default {
       connectionStore.disconnect()
     })
     
-    return {}
+    return { appTitle }
   }
 }
 </script>

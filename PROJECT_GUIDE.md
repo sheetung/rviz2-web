@@ -50,6 +50,7 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 | `BACKEND_PORT` | FastAPI HTTP 与 `/ws` WebSocket 共用端口 |
 | `FRONTEND_PORT` | Vite 开发服务器端口 |
 | `FRONTEND_PUBLIC_HOST` | 启动完成后显示的前端访问主机或局域网 IP |
+| `VITE_APP_TITLE` | 浏览器标签页和页面左上角显示的应用标题 |
 | `CHOKIDAR_USEPOLLING` | 开发模式使用轮询代替 inotify；正常模式不读取该变量 |
 | `CHOKIDAR_INTERVAL` | 开发模式的文件轮询间隔，单位为毫秒 |
 | `CORS_ORIGINS` | 允许访问后端 API 的前端来源，使用英文逗号分隔 |
