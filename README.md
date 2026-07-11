@@ -221,6 +221,13 @@ uv run pytest -q
 uv run python -m compileall -q app
 ```
 
+前端 TF 单元测试：
+
+```bash
+cd frontend
+npm test
+```
+
 ## 目录结构
 
 ```text
@@ -253,8 +260,8 @@ RVIZ-RQT-VISUAL/
 
 - 升级前端依赖并处理 `npm audit` 当前报告的 15 个既有漏洞。
 - 继续缩小 Element Plus 产物；当前已拆为独立缓存包，但体积仍约 888 KB。
-- 为 TF 增加基于消息时间戳的历史缓存和插值。目前使用每个坐标边的最新变换。
-- 增加 TF 链、配置原子保存、配置权限和启动脚本的自动化回归测试。
+- 为 TF 增加严格的过去/未来外推错误状态，并继续覆盖 Display 生命周期。
+- 增加 WebSocket 重连和真实 ROS2 图的自动化集成测试。
 
 ## 致谢
 

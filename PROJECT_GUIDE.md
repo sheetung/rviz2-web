@@ -126,7 +126,7 @@ Vite 会将 `/api` 和 `/ws` 请求代理到本地后端，因此日常使用通
 
 后端消息桥还包含 Image、CompressedImage、CameraInfo、Twist、TF 等类型的转换或发布支持，但“后端能转换”不等同于“3D 场景对该类型有完整渲染器”。新增类型时应分别检查后端类型映射、WebSocket 序列化和前端渲染逻辑。
 
-Fixed Frame 使用 `/tf` 和 `/tf_static`。当前以前端缓存的最新变换为主，尚未提供完整的按消息时间戳查询、历史缓存与插值语义。
+Fixed Frame 使用 `/tf` 和 `/tf_static`。动态 TF 每个子坐标系保留最近 10 秒、最多 200 个样本；显示消息带有效时间戳时，平移使用线性插值，旋转使用四元数球面插值。早于或晚于缓存范围的查询当前使用最邻近样本，尚未提供 RViz/tf2 等价的外推错误语义。
 
 ## `.rvizweb` 配置
 
@@ -193,6 +193,7 @@ RVIZ-RQT-VISUAL/
 
 ```bash
 cd frontend
+npm test
 npm run lint:check
 npm run build
 ```

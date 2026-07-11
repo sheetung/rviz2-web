@@ -32,7 +32,7 @@ import { ElMessage } from 'element-plus'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { useConnectionStore } from '../../composables/useConnectionStore'
 import { ROS_TOPICS, getDefaultVisualizationTopics, getPositionTopics } from '../../config/rosTopics'
-import { TfBuffer, frameIdFromMessage } from '../../utils/tfBuffer'
+import { TfBuffer, frameIdFromMessage, messageTimestampMs } from '../../utils/tfBuffer'
 import { debugLog } from '../../utils/debug'
 
 export default {
@@ -94,7 +94,7 @@ export default {
         if (report) setDisplayStatus(topic)
         return true
       }
-      const transform = tfBuffer.lookupTransform(fixedFrameId, sourceFrame)
+      const transform = tfBuffer.lookupTransform(fixedFrameId, sourceFrame, messageTimestampMs(message))
       if (!transform) {
         object.visible = false
         if (report) setDisplayStatus(topic, `缺少 ${sourceFrame} → ${fixedFrameId} 的 TF`)
@@ -153,7 +153,7 @@ export default {
         setDisplayStatus(topic)
         return { position, orientation }
       }
-      const transform = tfBuffer.lookupTransform(fixedFrameId, sourceFrame)
+      const transform = tfBuffer.lookupTransform(fixedFrameId, sourceFrame, messageTimestampMs(message))
       if (!transform) {
         setDisplayStatus(topic, `缺少 ${sourceFrame} → ${fixedFrameId} 的 TF`)
         return null

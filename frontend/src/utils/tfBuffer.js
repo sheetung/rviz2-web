@@ -2,6 +2,17 @@ import * as THREE from 'three'
 
 const normalizeFrame = (frame = '') => String(frame).replace(/^\/+/, '')
 
+const stampToMilliseconds = stamp => {
+  if (!stamp) return null
+  const seconds = Number(stamp.sec ?? stamp._sec ?? stamp.secs ?? stamp._secs ?? 0)
+  const nanoseconds = Number(
+    stamp.nanosec ?? stamp._nanosec ?? stamp.nsec ?? stamp._nsec ?? stamp.nsecs ?? stamp._nsecs ?? 0
+  )
+  if (!Number.isFinite(seconds) || !Number.isFinite(nanoseconds)) return null
+  const milliseconds = seconds * 1000 + nanoseconds / 1e6
+  return milliseconds > 0 ? milliseconds : null
+}
+
 const transformToMatrix = (transform = {}) => {
   const translation = transform.translation || transform._translation || {}
   const rotation = transform.rotation || transform._rotation || {}
@@ -19,9 +30,25 @@ const transformToMatrix = (transform = {}) => {
   return new THREE.Matrix4().compose(position, quaternion, new THREE.Vector3(1, 1, 1))
 }
 
+const interpolateMatrices = (from, to, ratio) => {
+  const fromPosition = new THREE.Vector3()
+  const fromRotation = new THREE.Quaternion()
+  const toPosition = new THREE.Vector3()
+  const toRotation = new THREE.Quaternion()
+  from.decompose(fromPosition, fromRotation, new THREE.Vector3())
+  to.decompose(toPosition, toRotation, new THREE.Vector3())
+  return new THREE.Matrix4().compose(
+    fromPosition.lerp(toPosition, ratio),
+    fromRotation.slerp(toRotation, ratio),
+    new THREE.Vector3(1, 1, 1)
+  )
+}
+
 export class TfBuffer {
-  constructor() {
+  constructor({ historyDurationMs = 10_000, maxSamplesPerFrame = 200 } = {}) {
     this.transforms = new Map()
+    this.historyDurationMs = historyDurationMs
+    this.maxSamplesPerFrame = maxSamplesPerFrame
   }
 
   updateMessage(message, isStatic = false) {
@@ -32,16 +59,53 @@ export class TfBuffer {
       const child = normalizeFrame(stamped.child_frame_id || stamped._child_frame_id)
       const transform = stamped.transform || stamped._transform
       if (!parent || !child || !transform || parent === child) return
-      this.transforms.set(child, {
-        parent,
-        matrix: transformToMatrix(transform),
-        isStatic,
-        updatedAt: Date.now()
-      })
+
+      const timestamp = stampToMilliseconds(header.stamp || header._stamp) ?? Date.now()
+      const existing = this.transforms.get(child)
+      const entry = existing?.parent === parent && existing?.isStatic === isStatic
+        ? existing
+        : { parent, isStatic, samples: [] }
+      const sample = { timestamp, matrix: transformToMatrix(transform) }
+
+      if (isStatic) {
+        entry.samples = [sample]
+      } else {
+        const duplicateIndex = entry.samples.findIndex(item => item.timestamp === timestamp)
+        if (duplicateIndex >= 0) entry.samples[duplicateIndex] = sample
+        else entry.samples.push(sample)
+        entry.samples.sort((left, right) => left.timestamp - right.timestamp)
+
+        const newestTimestamp = entry.samples.at(-1).timestamp
+        const oldestAllowed = newestTimestamp - this.historyDurationMs
+        entry.samples = entry.samples
+          .filter(item => item.timestamp >= oldestAllowed)
+          .slice(-this.maxSamplesPerFrame)
+      }
+      this.transforms.set(child, entry)
     })
   }
 
-  lookupTransform(targetFrame, sourceFrame) {
+  matrixAt(entry, timestamp = null) {
+    const samples = entry.samples
+    if (!samples?.length) return null
+    if (entry.isStatic || timestamp === null || !Number.isFinite(timestamp)) {
+      return samples.at(-1).matrix.clone()
+    }
+    if (timestamp <= samples[0].timestamp) return samples[0].matrix.clone()
+    if (timestamp >= samples.at(-1).timestamp) return samples.at(-1).matrix.clone()
+
+    for (let index = 1; index < samples.length; index += 1) {
+      const after = samples[index]
+      if (after.timestamp < timestamp) continue
+      const before = samples[index - 1]
+      const duration = after.timestamp - before.timestamp
+      if (duration <= 0) return after.matrix.clone()
+      return interpolateMatrices(before.matrix, after.matrix, (timestamp - before.timestamp) / duration)
+    }
+    return samples.at(-1).matrix.clone()
+  }
+
+  lookupTransform(targetFrame, sourceFrame, timestamp = null) {
     const target = normalizeFrame(targetFrame)
     const source = normalizeFrame(sourceFrame)
     if (!target || !source) return null
@@ -52,9 +116,11 @@ export class TfBuffer {
       if (!adjacency.has(from)) adjacency.set(from, [])
       adjacency.get(from).push({ frame: to, matrix })
     }
-    this.transforms.forEach(({ parent, matrix }, child) => {
-      addEdge(child, parent, matrix)
-      addEdge(parent, child, matrix.clone().invert())
+    this.transforms.forEach((entry, child) => {
+      const matrix = this.matrixAt(entry, timestamp)
+      if (!matrix) return
+      addEdge(child, entry.parent, matrix)
+      addEdge(entry.parent, child, matrix.clone().invert())
     })
 
     const queue = [{ frame: source, matrix: new THREE.Matrix4() }]
@@ -76,4 +142,9 @@ export class TfBuffer {
 export const frameIdFromMessage = message => {
   const header = message?.header || message?._header || {}
   return normalizeFrame(header.frame_id || header._frame_id)
+}
+
+export const messageTimestampMs = message => {
+  const header = message?.header || message?._header || {}
+  return stampToMilliseconds(header.stamp || header._stamp)
 }

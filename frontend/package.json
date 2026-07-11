@@ -1,10 +1,12 @@
 {
   "name": "ros-web-viz-frontend",
   "version": "1.0.0",
+  "type": "module",
   "description": "ROS2 Web Visualization Frontend with Vue.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "node --test tests/*.test.js",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.jsx,.ts,.tsx --fix",
     "lint:check": "eslint . --ext .vue,.js,.jsx,.ts,.tsx",
