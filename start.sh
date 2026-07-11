@@ -147,18 +147,24 @@ show_help() {
   printf '  local  Start both services (default)\n'
 }
 
-case "${1:-local}" in
-  sync)
-    ensure_uv
-    check_command npm
-    (
-      cd "$BACKEND_DIR"
-      [[ -d .venv ]] || uv venv --system-site-packages .venv
-      VIRTUAL_ENV="$BACKEND_DIR/.venv" uv sync --active
-    )
-    (cd "$FRONTEND_DIR" && npm ci)
-    ;;
-  local) start_local ;;
-  help|-h|--help) show_help ;;
-  *) show_help; exit 2 ;;
-esac
+main() {
+  case "${1:-local}" in
+    sync)
+      ensure_uv
+      check_command npm
+      (
+        cd "$BACKEND_DIR"
+        [[ -d .venv ]] || uv venv --system-site-packages .venv
+        VIRTUAL_ENV="$BACKEND_DIR/.venv" uv sync --active
+      )
+      (cd "$FRONTEND_DIR" && npm ci)
+      ;;
+    local) start_local ;;
+    help|-h|--help) show_help ;;
+    *) show_help; return 2 ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

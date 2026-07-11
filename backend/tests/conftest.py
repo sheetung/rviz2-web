@@ -4,11 +4,9 @@ pytest 配置文件
 
 import pytest
 import asyncio
-from typing import AsyncGenerator, Generator
+from typing import Generator
 from unittest.mock import Mock
 
-from fastapi.testclient import TestClient
-from app.main import app
 from app.core.config import get_settings
 
 
@@ -18,12 +16,6 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
-
-
-@pytest.fixture
-def client() -> TestClient:
-    """创建测试客户端"""
-    return TestClient(app)
 
 
 @pytest.fixture
@@ -44,14 +36,6 @@ def mock_rosbridge_service():
         "active_connections": 0
     }
     return mock_service
-
-
-@pytest.fixture
-async def async_client() -> AsyncGenerator[TestClient, None]:
-    """创建异步测试客户端"""
-    async with TestClient(app) as client:
-        yield client
-
 
 # 测试数据
 @pytest.fixture

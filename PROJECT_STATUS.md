@@ -53,16 +53,17 @@
 
 ## 当前限制与已知偏差
 
-### 自动化测试不足
+### 自动化测试仍需扩展
 
-`backend/tests/` 当前只有 pytest 基础配置，没有覆盖核心行为的测试用例。前端也没有单元测试或端到端测试脚本。现有验证主要依靠：
+`backend/tests/` 已覆盖配置原子保存、备份、写入权限、路径安全和启动脚本基础行为。前端仍没有单元测试或端到端测试脚本，ROS2 实时链路也缺少自动化集成测试。现有验证主要依靠：
 
+- `uv run pytest -q`
 - `npm run lint:check`
 - `npm run build`
 - `uv run python -m compileall -q app`
 - 真实 ROS2 环境中的人工集成测试
 
-因此文档不再声称存在“完整测试框架”或“100% API 覆盖”。
+因此当前测试可以防止配置存储与启动脚本的基础回归，但不能视为完整 API、前端或 ROS2 覆盖。
 
 ### Docker 尚非推荐路径
 
@@ -102,6 +103,7 @@ npm run lint:check
 npm run build
 
 cd ../backend
+uv run pytest -q
 uv run python -m compileall -q app
 ```
 
@@ -151,4 +153,4 @@ uv run python -m compileall -q app
 - `.rvizweb` 配置管理：已实现，自动化回归测试不足。
 - RQT 风格工具：已实现多项功能，需按具体工具实机验证。
 - Docker 部署：保留实现，当前未验证。
-- 自动化测试：不足，是当前主要工程风险之一。
+- 自动化测试：配置与启动脚本已有基础覆盖，前端、TF 与 ROS2 集成覆盖仍不足。

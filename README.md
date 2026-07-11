@@ -217,6 +217,7 @@ npm run build
 
 ```bash
 cd backend
+uv run pytest -q
 uv run python -m compileall -q app
 ```
 

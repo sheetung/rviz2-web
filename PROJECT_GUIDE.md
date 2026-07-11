@@ -201,10 +201,11 @@ npm run build
 
 ```bash
 cd backend
+uv run pytest -q
 uv run python -m compileall -q app
 ```
 
-当前 `backend/tests/` 只有 pytest 基础配置，没有可依赖的完整自动化测试套件。涉及 ROS2 订阅、TF、发布和配置写入的修改仍需在真实 ROS2 环境中做集成验证。
+当前后端测试覆盖 `.rvizweb` 原子保存、覆盖/删除备份、写入来源与令牌权限、路径校验，以及 `start.sh` 的基础命令行为。ROS2 订阅、TF 和发布链路仍需在真实 ROS2 环境中做集成验证。
 
 ## Docker 状态
 

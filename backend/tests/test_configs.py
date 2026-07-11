@@ -1,0 +1,114 @@
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
+from starlette.requests import Request
+
+from app.api.v1 import configs
+
+
+def _payload(fixed_frame: str = "map") -> configs.ConfigPayload:
+    return configs.ConfigPayload(
+        name="test.rvizweb",
+        config=configs.FrontendConfig(fixedFrame=fixed_frame, displays=[]),
+    )
+
+
+def _request(host: str) -> Request:
+    return Request({"type": "http", "client": (host, 12345), "headers": []})
+
+
+@pytest.fixture
+def config_storage(tmp_path, monkeypatch):
+    config_dir = tmp_path / "rvizweb_configs"
+    backup_dir = config_dir / "backups"
+    settings = SimpleNamespace(
+        config_api_token="",
+        config_max_bytes=1_048_576,
+        config_name_max_length=96,
+    )
+    monkeypatch.setattr(configs, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(configs, "BACKUP_DIR", backup_dir)
+    monkeypatch.setattr(configs, "get_settings", lambda: settings)
+    return config_dir, backup_dir, settings
+
+
+@pytest.mark.asyncio
+async def test_save_uses_atomic_replace_and_leaves_no_temp_file(config_storage, monkeypatch):
+    config_dir, _, _ = config_storage
+    replacements = []
+    real_replace = configs.os.replace
+
+    def tracked_replace(source, destination):
+        replacements.append((source, destination))
+        real_replace(source, destination)
+
+    monkeypatch.setattr(configs.os, "replace", tracked_replace)
+
+    result = await configs.save_config("flight", _payload())
+
+    saved = configs._read_validated(config_dir / "flight.rvizweb")
+    assert result == {"name": "flight.rvizweb", "status": "saved"}
+    assert saved.config.fixedFrame == "map"
+    assert len(replacements) == 1
+    assert replacements[0][1] == config_dir / "flight.rvizweb"
+    assert not list(config_dir.glob(".flight.rvizweb.*"))
+
+
+@pytest.mark.asyncio
+async def test_overwrite_and_delete_create_backups(config_storage):
+    config_dir, backup_dir, _ = config_storage
+
+    await configs.save_config("flight", _payload("map"))
+    await configs.save_config("flight", _payload("odom"))
+
+    overwrite_backups = list(backup_dir.glob("flight.*.rvizweb.bak"))
+    assert len(overwrite_backups) == 1
+    assert configs._read_validated(overwrite_backups[0]).config.fixedFrame == "map"
+
+    result = await configs.delete_config("flight")
+
+    assert result == {"name": "flight.rvizweb", "status": "deleted"}
+    assert not (config_dir / "flight.rvizweb").exists()
+    assert len(list(backup_dir.glob("flight.*.rvizweb.bak"))) == 2
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "192.168.1.20", "10.0.0.2"])
+def test_private_and_loopback_clients_can_write(config_storage, host):
+    configs._require_config_write_access(_request(host))
+
+
+def test_public_client_cannot_write(config_storage):
+    with pytest.raises(HTTPException) as error:
+        configs._require_config_write_access(_request("8.8.8.8"))
+    assert error.value.status_code == 403
+
+
+def test_config_token_is_required_when_enabled(config_storage):
+    _, _, settings = config_storage
+    settings.config_api_token = "secret"
+
+    with pytest.raises(HTTPException) as error:
+        configs._require_config_write_access(_request("127.0.0.1"), "wrong")
+    assert error.value.status_code == 401
+
+    configs._require_config_write_access(_request("127.0.0.1"), "secret")
+
+
+@pytest.mark.parametrize("name", ["../escape", "/absolute", "bad name", "link/child"])
+def test_invalid_config_names_are_rejected(config_storage, name):
+    with pytest.raises(HTTPException) as error:
+        configs._config_path(name)
+    assert error.value.status_code == 400
+
+
+def test_symlink_config_is_rejected(config_storage):
+    config_dir, _, _ = config_storage
+    config_dir.mkdir(parents=True)
+    target = config_dir / "target.rvizweb"
+    target.write_text("{}", encoding="utf-8")
+    (config_dir / "link.rvizweb").symlink_to(target)
+
+    with pytest.raises(HTTPException) as error:
+        configs._config_path("link")
+    assert error.value.status_code == 400
