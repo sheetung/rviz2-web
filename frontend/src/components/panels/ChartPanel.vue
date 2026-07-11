@@ -394,7 +394,6 @@
 <script>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { VideoPause, VideoPlay, Delete, Plus, Close, Search, ArrowRight, ArrowLeft, List, Refresh, View, Hide } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { useRosbridge } from '../../composables/useRosbridge'
 
 export default {

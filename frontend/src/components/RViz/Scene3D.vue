@@ -28,7 +28,6 @@
 <script>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as THREE from 'three'
-import { ElMessage } from 'element-plus'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { useConnectionStore } from '../../composables/useConnectionStore'
 import { ROS_TOPICS, getDefaultVisualizationTopics, getPositionTopics } from '../../config/rosTopics'

@@ -148,7 +148,6 @@
 <script>
 import { ref, computed, onMounted, watch } from 'vue'
 import { Refresh, Aim, Folder } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { ROS_TOPICS } from '../../config/rosTopics'
 

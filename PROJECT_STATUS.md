@@ -19,6 +19,7 @@
 - 支持通过 `RVIZWEB_CONFIG` 选择启动配置，默认使用 `uav1.rvizweb`。
 - 前后端健康检查、日志归档和退出时进程清理已集成到启动脚本。
 - 前端已升级到 Vite 8、Axios 1.18、Vue 3.5 和 Element Plus 2.14；当前 `npm audit` 为 0 项漏洞。
+- Element Plus 已改为组件、服务和样式按需引入；生产 JS 从约 973 KB 降至 342 KB，CSS 从约 356 KB 降至 111 KB。
 
 ### ROS2 与通信
 
@@ -141,7 +142,7 @@ uv run python -m compileall -q app
 - 评估 TF 外推容差和错误展示，使行为更接近 tf2/RViz。
 - 对大点云进行采样、限频、内存复用或 LOD 优化。
 - 评估 WebSocket 二进制传输或压缩，减少大消息的 JSON 开销。
-- 持续控制前端生产包体积并评估 Element Plus 按需引入。
+- 持续监控 Three.js 与主布局包体积，并结合实际路由评估进一步异步拆分。
 
 ### P3：部署与清理
 

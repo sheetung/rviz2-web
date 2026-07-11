@@ -67,7 +67,6 @@
 
 <script>
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import { configApi } from '../../services/api'
 
 export default {

@@ -422,7 +422,6 @@
  */
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { Refresh, Search, Setting, Aim, Plus, Minus, Grid, Document, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { useRosbridge } from '../../../composables/useRosbridge'
 import { createHierarchicalLayout } from '../utils/GraphLayout.js'
 import { GraphInteractionController } from '../utils/GraphInteraction.js'

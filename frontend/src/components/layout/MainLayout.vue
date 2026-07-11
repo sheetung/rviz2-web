@@ -192,7 +192,6 @@ import { ref, nextTick, defineAsyncComponent } from 'vue'
 import {
   ArrowDown
 } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 
 // 引入面板组件
 import Scene3D from '../RViz/Scene3D.vue'

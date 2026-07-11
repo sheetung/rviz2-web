@@ -296,7 +296,6 @@
 
 <script>
 import { computed, ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
 import { Plus, CopyDocument, Delete, View, Hide } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { rosApi } from '../../services/api'

@@ -4,7 +4,6 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
 import { debugLog } from '../utils/debug'
 
 export const useConnectionStore = defineStore('connection', () => {
