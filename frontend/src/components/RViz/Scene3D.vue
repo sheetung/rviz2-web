@@ -54,6 +54,7 @@ export default {
     let renderer = null
     let controls = null
     let animationId = null
+    let containerResizeObserver = null
     
     // 场景对象
     let gridHelper = null
@@ -282,6 +283,13 @@ export default {
         renderer.shadowMap.enabled = true
         renderer.shadowMap.type = THREE.PCFSoftShadowMap
         containerRef.value.appendChild(renderer.domElement)
+
+        if (window.ResizeObserver) {
+          containerResizeObserver = new ResizeObserver(() => {
+            onWindowResize()
+          })
+          containerResizeObserver.observe(containerRef.value)
+        }
         
         // 创建轨道控制器
         const { OrbitControls } = await import('three/examples/jsm/controls/OrbitControls.js')
@@ -671,6 +679,7 @@ export default {
       
       const width = containerRef.value.clientWidth
       const height = containerRef.value.clientHeight
+      if (width <= 0 || height <= 0 || !perspectiveCamera || !orthographicCamera) return
       
       const aspect = width / height
       perspectiveCamera.aspect = aspect
@@ -2436,6 +2445,8 @@ export default {
       
       window.removeEventListener('resize', onWindowResize)
       window.removeEventListener('keydown', onKeyDown)
+      containerResizeObserver?.disconnect()
+      containerResizeObserver = null
       clearSelection()
       
       // 清理所有ROS订阅

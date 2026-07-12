@@ -5,11 +5,7 @@
       <div class="controls-left">
         <el-button size="small" @click="showTopicSelector = !showTopicSelector" :type="showTopicSelector ? 'primary' : 'default'">
           <el-icon><Plus /></el-icon>
-          添加数据源
-        </el-button>
-        <el-button size="small" @click="debugRosConnection" type="info">
-          <el-icon><Refresh /></el-icon>
-          调试连接
+          添加曲线
         </el-button>
 
         <el-button-group size="small">
@@ -18,11 +14,11 @@
               <VideoPause v-if="!isPaused" />
               <VideoPlay v-else />
             </el-icon>
-            {{ isPaused ? '继续' : '暂停' }}
+            {{ isPaused ? '继续实时' : '暂停显示' }}
           </el-button>
-          <el-button @click="clearChart">
+          <el-button :disabled="dataSeries.length === 0" @click="clearChart">
             <el-icon><Delete /></el-icon>
-            清除
+            清空数据
           </el-button>
         </el-button-group>
       </div>
@@ -39,31 +35,41 @@
       </div>
 
       <div class="controls-right">
-        <el-button size="small" @click="showLegendPanel = !showLegendPanel" :type="showLegendPanel ? 'primary' : 'default'">
-          <el-icon><List /></el-icon>
-          图例
-        </el-button>
         <el-button size="small" @click="resetZoom">
           <el-icon><Refresh /></el-icon>
-          重置缩放
+          回到实时
+        </el-button>
+      </div>
+    </div>
+
+    <div v-if="dataSeries.length > 0" class="series-strip">
+      <div
+        v-for="series in dataSeries"
+        :key="series.id"
+        class="series-chip"
+        :class="{ disabled: !series.visible }"
+        :title="`${series.topic} / ${series.fieldPath}`"
+      >
+        <span class="series-color" :style="{ backgroundColor: series.color }"></span>
+        <span class="series-chip-name">{{ series.name }}</span>
+        <el-button size="small" text @click="toggleSeriesVisibility(series.id)">
+          <el-icon><View v-if="series.visible" /><Hide v-else /></el-icon>
+        </el-button>
+        <el-button size="small" text @click="removeDataSeries(series.id)">
+          <el-icon><Close /></el-icon>
         </el-button>
       </div>
     </div>
 
     <!-- 主内容区 -->
-    <div class="chart-main" :class="{
-      'with-left-sidebar': showTopicSelector,
-      'with-right-sidebar': showLegendPanel,
-      'with-both-sidebars': showTopicSelector && showLegendPanel
-    }">
+    <div class="chart-main" :class="{ 'with-left-sidebar': showTopicSelector }">
 
       <!-- 左侧主题选择面板 -->
       <div v-if="showTopicSelector" class="topic-selector-panel">
         <div class="panel-header">
-          <h4>选择数据源</h4>
-          <span v-if="showLegendPanel" class="panel-tip">可同时使用图例面板</span>
+          <h4>选择 Topic 和字段</h4>
           <div class="panel-header-actions">
-            <el-button size="small" @click="loadTopics" type="primary">
+            <el-button size="small" @click="loadTopics(true)" type="primary">
               <el-icon><Refresh /></el-icon>
               刷新
             </el-button>
@@ -155,9 +161,14 @@
                   </div>
                   <div class="field-actions">
                     <span v-if="field.isParsing" class="field-status parsing">⟳</span>
-                    <span v-else-if="isFieldSelected(topic.value, field.path)" class="field-status selected">✓</span>
-                    <span v-else-if="!isFieldPlottable(field.type)" class="field-status disabled">🚫</span>
-                    <span v-else class="field-status available">+</span>
+                    <input
+                      v-else-if="isFieldPlottable(field.type)"
+                      type="checkbox"
+                      :checked="isFieldSelected(topic.value, field.path)"
+                      :aria-label="`绘制 ${field.name}`"
+                      @click.stop="addDataSeries(topic.value, field, topic.messageType)"
+                    />
+                    <span v-else class="field-status disabled">—</span>
                   </div>
                 </div>
               </div>
@@ -287,59 +298,19 @@
             </g>
           </g>
 
-          <!-- 简化的内嵌图例 -->
-          <g class="legend" v-if="!showLegendPanel && visibleDataSeries.length > 0">
-            <g v-for="(series, index) in visibleDataSeries.slice(0, 3)" :key="`legend-${series.id}`">
-              <rect
-                :x="currentMargin.left + index * 80"
-                :y="5"
-                width="12"
-                height="12"
-                :fill="series.color"
-              />
-              <text
-                :x="currentMargin.left + index * 80 + 16"
-                :y="15"
-                class="legend-text"
-              >
-                {{ series.name.length > 8 ? series.name.substring(0, 8) + '...' : series.name }}
-              </text>
-            </g>
-            <text v-if="visibleDataSeries.length > 3" :x="currentMargin.left + 3 * 80" :y="15" class="legend-text">
-              +{{ visibleDataSeries.length - 3 }}更多
-            </text>
-          </g>
-
-          <!-- 当前值显示 -->
-          <g class="current-values" v-if="visibleDataSeries.length > 0">
-            <rect
-              :x="chartSize.width - currentMargin.right - 100"
-              :y="currentMargin.top"
-              width="95"
-              :height="Math.min(60 + visibleDataSeries.length * 15, 150)"
-              fill="rgba(255, 255, 255, 0.9)"
-              stroke="#ddd"
-              rx="4"
-            />
-            <text
-              :x="chartSize.width - currentMargin.right - 95"
-              :y="currentMargin.top + 15"
-              class="current-value-title"
-            >
-              当前值
-            </text>
-            <g v-for="(series, index) in visibleDataSeries.slice(0, 8)" :key="`current-${series.id}`">
-              <text
-                :x="chartSize.width - currentMargin.right - 95"
-                :y="currentMargin.top + 30 + index * 15"
-                :fill="series.color"
-                class="current-value-text"
-              >
-                {{ series.name.length > 6 ? series.name.substring(0, 6) + '...' : series.name }}: {{ getCurrentValue(series) }}
-              </text>
-            </g>
-          </g>
         </svg>
+
+        <div v-if="dataSeries.length === 0 && chartReady" class="chart-empty-state">
+          <div class="empty-chart-icon">∿</div>
+          <strong>尚未添加曲线</strong>
+          <span>从 ROS Topic 中选择数值字段开始实时绘图</span>
+          <el-button type="primary" size="small" @click="showTopicSelector = true">
+            <el-icon><Plus /></el-icon>
+            添加第一条曲线
+          </el-button>
+        </div>
+
+        <div v-else-if="chartReady" class="chart-interaction-hint">滚轮缩放时间轴 · 拖动查看历史 · “回到实时”复位</div>
 
         <div v-if="!chartReady" class="chart-loading">
           <div class="loading-spinner"></div>
@@ -347,53 +318,13 @@
         </div>
       </div>
 
-      <!-- 右侧图例面板 -->
-      <div v-if="showLegendPanel" class="legend-panel">
-        <div class="panel-header">
-          <h4>图例管理</h4>
-          <span v-if="showTopicSelector" class="panel-tip">可同时使用数据源面板</span>
-          <el-button size="small" text @click="showLegendPanel = false">
-            <el-icon><Close /></el-icon>
-          </el-button>
-        </div>
-        <div class="panel-content">
-          <div class="legend-list">
-            <div
-              v-for="series in dataSeries"
-              :key="series.id"
-              class="legend-item"
-              :class="{ 'disabled': !series.visible }"
-            >
-              <div class="legend-item-main">
-                <div class="color-indicator" :style="{ backgroundColor: series.color }"></div>
-                <span class="series-name" :title="series.fullName">{{ series.name }}</span>
-                <div class="legend-controls">
-                  <el-button size="small" text @click="toggleSeriesVisibility(series.id)">
-                    <el-icon>
-                      <View v-if="series.visible" />
-                      <Hide v-else />
-                    </el-icon>
-                  </el-button>
-                  <el-button size="small" text @click="removeDataSeries(series.id)">
-                    <el-icon><Close /></el-icon>
-                  </el-button>
-                </div>
-              </div>
-              <div class="legend-item-details">
-                <span class="topic-info">{{ series.topic }}</span>
-                <span class="field-info">{{ series.fieldPath }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>
 
 <script>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { VideoPause, VideoPlay, Delete, Plus, Close, Search, ArrowRight, ArrowLeft, List, Refresh, View, Hide } from '@element-plus/icons-vue'
+import { VideoPause, VideoPlay, Delete, Plus, Close, Search, ArrowRight, ArrowLeft, Refresh, View, Hide } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
 
 export default {
@@ -407,7 +338,6 @@ export default {
     Search,
     ArrowRight,
     ArrowLeft,
-    List,
     Refresh,
     View,
     Hide
@@ -456,8 +386,9 @@ export default {
 
     // 控制状态
     const isPaused = ref(false)
+    const pausedAt = ref(null)
+    const renderNow = ref(Date.now())
     const showTopicSelector = ref(false)
-    const showLegendPanel = ref(false)
     
     // 频率检测和采样管理
     const topicFrequencies = ref(new Map()) // 存储每个topic的实际频率
@@ -470,7 +401,7 @@ export default {
 
     // 缩放和平移状态
     const zoomLevel = ref(1)
-    const panOffset = ref({ x: 0, y: 0 })
+    const panOffsetMs = ref(0)
     const isPanning = ref(false)
     const panStart = ref({ x: 0, y: 0 })
 
@@ -508,12 +439,36 @@ export default {
       )
     })
 
+    const getViewRange = () => {
+      const duration = (timeWindow.value * 1000) / zoomLevel.value
+      const referenceTime = pausedAt.value ?? renderNow.value
+      const end = referenceTime - panOffsetMs.value
+      return { start: end - duration, end, duration }
+    }
+
+    const formatRelativeTime = (milliseconds, viewDuration) => {
+      if (Math.abs(milliseconds) < 50) {
+        return viewDuration >= 60000 ? '0min' : '0s'
+      }
+
+      if (viewDuration >= 60000) {
+        const minutes = milliseconds / 60000
+        return `${minutes.toFixed(Math.abs(minutes) < 10 ? 1 : 0)}min`
+      }
+
+      const seconds = milliseconds / 1000
+      return `${seconds.toFixed(Math.abs(seconds) < 10 ? 1 : 0)}s`
+    }
+
     // 计算Y轴刻度
     const yTicks = computed(() => {
       if (visibleDataSeries.value.length === 0) return []
 
+      const viewRange = getViewRange()
       const allValues = visibleDataSeries.value.flatMap(series =>
-        series.data.map(point => point.value)
+        series.data
+          .filter(point => point.time >= viewRange.start && point.time <= viewRange.end)
+          .map(point => point.value)
       )
 
       if (allValues.length === 0) return []
@@ -545,20 +500,18 @@ export default {
 
     // 计算X轴刻度
     const xTicks = computed(() => {
-      const now = Date.now()
+      const viewRange = getViewRange()
       const ticks = []
-      const timeWindowMs = timeWindow.value * 1000
       const currentMargins = currentMargin.value
       const chartWidth = chartSize.value.width - currentMargins.left - currentMargins.right
       
-      // 根据栅格间距计算合适的刻度数量
-      const gridX = gridSpacing.value.x
-      const tickCount = Math.max(6, Math.floor(chartWidth / gridX))
+      // 保证每个时间标签有足够间距，避免宽屏上刻度过密。
+      const tickCount = Math.max(4, Math.min(8, Math.floor(chartWidth / 90)))
 
       for (let i = 0; i < tickCount; i++) {
-        const time = now - timeWindowMs * (1 - i / (tickCount - 1))
+        const time = viewRange.start + viewRange.duration * (i / (tickCount - 1))
         const x = currentMargins.left + chartWidth * (i / (tickCount - 1))
-        const label = new Date(time).toLocaleTimeString().slice(0, 8)
+        const label = formatRelativeTime(time - viewRange.end, viewRange.duration)
         ticks.push({ x, label, time })
       }
 
@@ -570,12 +523,10 @@ export default {
 
     // 坐标转换
     const getX = (timestamp) => {
-      const now = Date.now()
-      const timeWindowMs = timeWindow.value * 1000
-      const startTime = now - timeWindowMs
+      const viewRange = getViewRange()
       const currentMargins = currentMargin.value
       const chartWidth = chartSize.value.width - currentMargins.left - currentMargins.right
-      const ratio = Math.max(0, Math.min(1, (timestamp - startTime) / timeWindowMs))
+      const ratio = Math.max(0, Math.min(1, (timestamp - viewRange.start) / viewRange.duration))
       return currentMargins.left + chartWidth * ratio
     }
 
@@ -593,12 +544,10 @@ export default {
     const getLinePath = (data) => {
       if (data.length < 2) return ''
 
-      const now = Date.now()
-      const timeWindowMs = timeWindow.value * 1000
-      const startTime = now - timeWindowMs
+      const viewRange = getViewRange()
       
       // 过滤时间窗口内的数据
-      const validData = data.filter(point => point.time >= startTime && point.time <= now)
+      const validData = data.filter(point => point.time >= viewRange.start && point.time <= viewRange.end)
 
       if (validData.length < 2) return ''
 
@@ -626,23 +575,14 @@ export default {
       return path
     }
 
-    // 获取当前值
-    const getCurrentValue = (series) => {
-      if (series.data.length === 0) return 'N/A'
-      const latestPoint = series.data[series.data.length - 1]
-      return latestPoint.value.toFixed(2)
-    }
-
     // 获取时间窗口内可见的数据点（只返回末端点用于高亮）
     const getVisibleDataPoints = (data) => {
       if (data.length === 0) return []
       
-      const now = Date.now()
-      const timeWindowMs = timeWindow.value * 1000
-      const startTime = now - timeWindowMs
+      const viewRange = getViewRange()
       
       // 过滤时间窗口内的数据
-      const validData = data.filter(point => point.time >= startTime && point.time <= now)
+      const validData = data.filter(point => point.time >= viewRange.start && point.time <= viewRange.end)
       
       // 只返回最后一个点用于末端高亮
       return validData.length > 0 ? [validData[validData.length - 1]] : []
@@ -650,7 +590,15 @@ export default {
 
     // 控制方法
     const pauseChart = () => {
-      isPaused.value = !isPaused.value
+      if (isPaused.value) {
+        isPaused.value = false
+        pausedAt.value = null
+        panOffsetMs.value = 0
+        renderNow.value = Date.now()
+      } else {
+        isPaused.value = true
+        pausedAt.value = renderNow.value
+      }
     }
 
     const clearChart = () => {
@@ -662,6 +610,8 @@ export default {
     const onTimeWindowChange = (newWindow) => {
       console.log(`[ChartPanel] 时间窗口变化: ${timeWindow.value}s -> ${newWindow}s`)
       timeWindow.value = newWindow
+      zoomLevel.value = 1
+      panOffsetMs.value = 0
       
       // 重置所有采样计数器，适应新的时间窗口
       samplingCounters.value.clear()
@@ -674,7 +624,10 @@ export default {
 
     const resetZoom = () => {
       zoomLevel.value = 1
-      panOffset.value = { x: 0, y: 0 }
+      panOffsetMs.value = 0
+      isPaused.value = false
+      pausedAt.value = null
+      renderNow.value = Date.now()
     }
 
 
@@ -682,10 +635,14 @@ export default {
     const handleZoom = (event) => {
       event.preventDefault()
       const delta = event.deltaY > 0 ? 0.9 : 1.1
-      zoomLevel.value = Math.max(0.1, Math.min(10, zoomLevel.value * delta))
+      zoomLevel.value = Math.max(1, Math.min(10, zoomLevel.value * delta))
     }
 
     const startPan = (event) => {
+      if (!isPaused.value) {
+        isPaused.value = true
+        pausedAt.value = renderNow.value
+      }
       isPanning.value = true
       panStart.value = { x: event.clientX, y: event.clientY }
     }
@@ -693,8 +650,10 @@ export default {
     const handlePan = (event) => {
       if (!isPanning.value) return
       const deltaX = event.clientX - panStart.value.x
-      const deltaY = event.clientY - panStart.value.y
-      panOffset.value = { x: deltaX, y: deltaY }
+      const chartWidth = Math.max(1, chartSize.value.width - currentMargin.value.left - currentMargin.value.right)
+      const viewDuration = (timeWindow.value * 1000) / zoomLevel.value
+      panOffsetMs.value = Math.max(0, panOffsetMs.value + (deltaX / chartWidth) * viewDuration)
+      panStart.value = { x: event.clientX, y: event.clientY }
     }
 
     const endPan = () => {
@@ -1488,9 +1447,8 @@ export default {
       console.log(`Subscribing to topic: ${topicName}, type: ${messageType}`)
 
       const subscription = rosbridge.subscribe(topicName, messageType, (message) => {
-        if (isPaused.value) return
-
         const timestamp = Date.now()
+        if (!isPaused.value) renderNow.value = timestamp
 
         // 如果是未知类型且还没有解析过字段，尝试解析消息结构
         if (!parsedTopicFields.value.has(topicName) || isFieldsParsingOrEmpty(topicName)) {
@@ -1733,18 +1691,18 @@ export default {
         // 如果容器尺寸为0，尝试使用父容器尺寸
         if (rect.width === 0 || rect.height === 0) {
           console.warn(`[ChartPanel] 容器尺寸异常: ${rect.width}x${rect.height}，使用父容器尺寸`)
-          newWidth = parentRect ? Math.max(parentRect.width - 16, 400) : 800  // 减去margin
-          newHeight = parentRect ? Math.max(parentRect.height - 16, 300) : 600
+          newWidth = parentRect ? Math.max(parentRect.width - 8, 300) : 800
+          newHeight = parentRect ? Math.max(parentRect.height - 8, 160) : 320
         } else {
-          newWidth = Math.max(rect.width, 400)
-          newHeight = Math.max(rect.height, 300)
+          newWidth = Math.max(rect.width, 300)
+          newHeight = Math.max(rect.height, 160)
         }
 
         // console.log(`[ChartPanel] 正常模式 - 容器尺寸: ${rect.width}x${rect.height}, 使用尺寸: ${newWidth}x${newHeight}`)
 
       // 强制最小尺寸
-      newWidth = Math.max(newWidth, 400)
-      newHeight = Math.max(newHeight, 300)
+      newWidth = Math.max(newWidth, 300)
+      newHeight = Math.max(newHeight, 160)
         
         chartSize.value = {
           width: newWidth,
@@ -1757,7 +1715,7 @@ export default {
 
 
     // 加载真实的topic数据
-    const loadTopics = async () => {
+    const loadTopics = async (notifySuccess = false) => {
       try {
         console.log('[ChartPanel] 开始加载真实的ROS topics...')
 
@@ -1770,7 +1728,7 @@ export default {
 
           if (!rosbridge.isConnected) {
             console.error('[ChartPanel] ROS连接失败')
-            ElMessage.error('ROS连接失败，请检查服务器状态和网络连接')
+            if (notifySuccess) ElMessage.error('ROS连接失败，请检查服务器状态和网络连接')
             availableTopics.value = []
             return
           }
@@ -1789,7 +1747,7 @@ export default {
 
         if (!topicsData || !Array.isArray(topicsData) || topicsData.length === 0) {
           console.error('[ChartPanel] 没有获取到任何topic')
-          ElMessage.warning('当前ROS系统中没有发现任何topic，请检查ROS节点是否正在运行')
+          if (notifySuccess) ElMessage.warning('当前ROS系统中没有发现任何topic，请检查ROS节点是否正在运行')
           availableTopics.value = []
           return
         }
@@ -1805,7 +1763,7 @@ export default {
 
         if (!topicTypesMap || Object.keys(topicTypesMap).length === 0) {
           console.error('[ChartPanel] 没有获取到topic类型信息')
-          ElMessage.warning('无法获取topic类型信息')
+          if (notifySuccess) ElMessage.warning('无法获取topic类型信息')
           availableTopics.value = []
           return
         }
@@ -2016,14 +1974,16 @@ export default {
           console.error(`[ChartPanel] 在 ${topics.length} 个topic中没有找到支持的消息类型`)
           console.error('[ChartPanel] 不支持的类型:', Array.from(unsupportedTypes))
 
-          ElMessage.warning(`没有找到支持的消息类型。不支持的类型包括: ${Array.from(unsupportedTypes).slice(0, 3).join(', ')}`)
-        } else {
+          if (notifySuccess) {
+            ElMessage.warning(`没有找到支持的消息类型。不支持的类型包括: ${Array.from(unsupportedTypes).slice(0, 3).join(', ')}`)
+          }
+        } else if (notifySuccess) {
           ElMessage.success(`发现 ${supportedTopicCount} 个支持的topic（${activeTopicCount} 个活跃，${supportedTopicCount - activeTopicCount} 个无数据传输）`)
         }
 
       } catch (error) {
         console.error('[ChartPanel] 加载topic失败:', error)
-        ElMessage.error(`获取topic列表失败: ${error.message}`)
+        if (notifySuccess) ElMessage.error(`获取topic列表失败: ${error.message}`)
         availableTopics.value = []
       }
     }
@@ -2032,6 +1992,12 @@ export default {
     // 在外层声明变量，以便在onUnmounted中清理
     let resizeObserver = null
     let sizeCheckInterval = null
+    let cleanupInterval = null
+    let topicRefreshInterval = null
+    let initialTopicLoadTimeout = null
+    let chartClockInterval = null
+    let resizeTimeout = null
+    let handleResize = null
 
     onMounted(async () => {
       await nextTick()
@@ -2039,8 +2005,7 @@ export default {
       chartReady.value = true
 
       // 简化resize处理，提高响应速度
-      let resizeTimeout = null
-      const handleResize = () => {
+      handleResize = () => {
         // 减少防抖延迟，提高响应速度
         if (resizeTimeout) {
           clearTimeout(resizeTimeout)
@@ -2088,7 +2053,10 @@ export default {
       }
 
       // 定期清理过期数据
-      setInterval(cleanupDataSeries, 5000)
+      cleanupInterval = setInterval(cleanupDataSeries, 5000)
+      chartClockInterval = setInterval(() => {
+        if (!isPaused.value) renderNow.value = Date.now()
+      }, 250)
 
       // 初始化ROS连接
       console.log('[ChartPanel] 初始化ROS连接...')
@@ -2102,12 +2070,12 @@ export default {
       }
 
       // 等待连接建立后加载topic数据
-      setTimeout(() => {
+      initialTopicLoadTimeout = setTimeout(() => {
         loadTopics()
       }, 2000)
 
       // 定期刷新topic列表（每30秒）
-      setInterval(loadTopics, 30000)
+      topicRefreshInterval = setInterval(loadTopics, 30000)
     })
 
     onUnmounted(() => {
@@ -2118,8 +2086,10 @@ export default {
       subscriptions.clear()
 
       // 移除事件监听器
-      window.removeEventListener('resize', handleResize)
-      window.removeEventListener('orientationchange', handleResize)
+      if (handleResize) {
+        window.removeEventListener('resize', handleResize)
+        window.removeEventListener('orientationchange', handleResize)
+      }
       
       // 移除全屏状态监听器
 
@@ -2134,6 +2104,11 @@ export default {
         clearInterval(sizeCheckInterval)
         console.log('[ChartPanel] 尺寸检查定时器已清理')
       }
+      if (cleanupInterval) clearInterval(cleanupInterval)
+      if (topicRefreshInterval) clearInterval(topicRefreshInterval)
+      if (initialTopicLoadTimeout) clearTimeout(initialTopicLoadTimeout)
+      if (chartClockInterval) clearInterval(chartClockInterval)
+      if (resizeTimeout) clearTimeout(resizeTimeout)
     })
 
     // 调试ROS连接的函数
@@ -2171,7 +2146,7 @@ export default {
           if (topics && topics.length > 0) {
             ElMessage.success(`成功获取到 ${topics.length} 个topic`)
             console.log('10. 手动触发loadTopics...')
-            loadTopics()
+            loadTopics(true)
           } else {
             ElMessage.warning('ROS连接正常，但没有找到任何topic')
           }
@@ -2197,7 +2172,6 @@ export default {
       // 状态
       isPaused,
       showTopicSelector,
-      showLegendPanel,
       timeWindow,
 
       // 主题管理
@@ -2226,7 +2200,6 @@ export default {
       getX,
       getY,
       getLinePath,
-      getCurrentValue,
       getVisibleDataPoints,
 
       // 控制方法
@@ -2283,23 +2256,26 @@ export default {
 <style scoped>
 .chart-panel {
   width: 100%;
-  height: 100vh; /* 使用视口高度确保全尺寸 */
-  min-height: 500px; /* 最小高度 */
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden; /* 防止滚动条 */
 }
 
 .chart-controls {
-  height: 45px;
+  min-height: 40px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  padding: 4px 8px;
   background: rgba(15, 23, 42, 0.8);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  gap: 10px;
+  overflow-x: auto;
 }
 
 .controls-left,
@@ -2310,8 +2286,54 @@ export default {
   gap: 8px;
 }
 
+.series-strip {
+  flex: 0 0 auto;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  overflow-x: auto;
+  background: #111820;
+  border-bottom: 1px solid #2d3742;
+}
+
+.series-chip {
+  flex: 0 0 auto;
+  max-width: 420px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 8px;
+  background: #1b242d;
+  border: 1px solid #34414d;
+  border-radius: 4px;
+  color: #dce7f3;
+  font-size: 11px;
+}
+
+.series-chip.disabled {
+  opacity: 0.48;
+}
+
+.series-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.series-chip-name {
+  min-width: 0;
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Courier New', monospace;
+}
+
 .controls-center {
-  flex: 1;
+  flex: 0 0 auto;
   justify-content: center;
 }
 
@@ -2341,12 +2363,53 @@ export default {
   background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 8px;
-  margin: 8px;
+  border-radius: 4px;
+  margin: 4px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  min-height: 400px; /* 确保有足够的高度 */
+  min-height: 0;
   width: 100%; /* 确保宽度填满 */
   height: 100%; /* 使用父容器的100%高度，自适应全屏 */
+}
+
+.chart-empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: #94a3b8;
+  background: rgba(12, 17, 23, 0.82);
+}
+
+.chart-empty-state strong {
+  color: #dce7f3;
+  font-size: 14px;
+}
+
+.chart-empty-state span {
+  font-size: 12px;
+}
+
+.empty-chart-icon {
+  color: #46bdf0;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.chart-interaction-hint {
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  z-index: 4;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.58);
+  color: #7f91a3;
+  font-size: 10px;
+  pointer-events: none;
 }
 
 
@@ -2357,8 +2420,8 @@ export default {
   background: rgba(15, 23, 42, 0.9);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 8px;
-  margin: 8px;
+  border-radius: 4px;
+  margin: 4px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   display: flex;
   flex-direction: column;

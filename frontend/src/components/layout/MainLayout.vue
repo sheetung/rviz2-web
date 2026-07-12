@@ -41,12 +41,33 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
+              <el-button size="small" :type="showChartDock ? 'primary' : 'default'" @click="showChartDock = !showChartDock">
+                数据图表
+              </el-button>
             </div>
           </div>
           <div class="scene-content">
             <Scene3D ref="scene3dRef" @display-status="onDisplayStatus" @tool-change="onSceneToolChange" />
           </div>
         </div>
+
+        <template v-if="showChartDock">
+          <div
+            class="chart-dock-resize-handle"
+            @mousedown="startChartDockResize"
+            @touchstart="startChartDockResize"
+          >
+            <span></span>
+          </div>
+          <WorkbenchPanel
+            id="chart"
+            title="数据图表"
+            panel-class="chart-dock-panel"
+            :style="getChartDockStyle()"
+          >
+            <ChartPanel :compact="true" />
+          </WorkbenchPanel>
+        </template>
       </section>
 
       <div
@@ -170,22 +191,6 @@
               @view-preset="onViewPreset"
             />
           </WorkbenchPanel>
-          <div
-            class="side-panel-resize-handle"
-            @mousedown="startSidePanelResize($event, 'controller')"
-            @touchstart="startSidePanelResize($event, 'controller')"
-          >
-            <span></span>
-          </div>
-
-          <WorkbenchPanel
-            id="chart"
-            title="数据图表"
-            panel-class="chart-mini-panel"
-            :style="getSidePanelStyle('chart')"
-          >
-            <ChartPanel :compact="true" />
-          </WorkbenchPanel>
         </div>
       </aside>
     </div>
@@ -214,7 +219,7 @@ const DEFAULT_SIDE_PANEL_HEIGHTS = {
   topics: 560,
   settings: 360,
   controller: 520,
-  chart: 420
+  chart: 300
 }
 
 const SIDE_PANEL_MIN_HEIGHTS = {
@@ -223,7 +228,7 @@ const SIDE_PANEL_MIN_HEIGHTS = {
   topics: 320,
   settings: 260,
   controller: 320,
-  chart: 240
+  chart: 220
 }
 
 export default {
@@ -243,6 +248,7 @@ export default {
     const scene3dRef = ref(null)
     const topicConfigRef = ref(null)
     const activeSceneTool = ref('move')
+    const showChartDock = ref(false)
 
     // 传统布局控制状态
     const sceneWidth = ref(68)
@@ -319,6 +325,40 @@ export default {
     const getSidePanelStyle = (panelId) => ({
       height: `${sidePanelHeights.value[panelId] || DEFAULT_SIDE_PANEL_HEIGHTS[panelId]}px`
     })
+
+    const getChartDockStyle = () => ({
+      height: `${Math.max(220, Math.min(480, sidePanelHeights.value.chart || DEFAULT_SIDE_PANEL_HEIGHTS.chart))}px`
+    })
+
+    const startChartDockResize = (event) => {
+      event.preventDefault()
+      const startY = event.type === 'mousedown' ? event.clientY : event.touches[0].clientY
+      const startHeight = sidePanelHeights.value.chart || DEFAULT_SIDE_PANEL_HEIGHTS.chart
+
+      const handleResize = (moveEvent) => {
+        moveEvent.preventDefault()
+        const clientY = moveEvent.type === 'mousemove' ? moveEvent.clientY : moveEvent.touches[0].clientY
+        const nextHeight = Math.max(220, Math.min(480, startHeight - (clientY - startY)))
+        sidePanelHeights.value = { ...sidePanelHeights.value, chart: Math.round(nextHeight) }
+        syncSidePanelHeightsToSettings()
+      }
+
+      const stopResize = () => {
+        document.removeEventListener('mousemove', handleResize)
+        document.removeEventListener('mouseup', stopResize)
+        document.removeEventListener('touchmove', handleResize)
+        document.removeEventListener('touchend', stopResize)
+        document.body.style.userSelect = ''
+        document.body.style.cursor = ''
+      }
+
+      document.addEventListener('mousemove', handleResize)
+      document.addEventListener('mouseup', stopResize)
+      document.addEventListener('touchmove', handleResize, { passive: false })
+      document.addEventListener('touchend', stopResize)
+      document.body.style.userSelect = 'none'
+      document.body.style.cursor = 'row-resize'
+    }
 
     const startSidePanelResize = (event, panelId) => {
       event.preventDefault()
@@ -817,12 +857,15 @@ export default {
       scene3dRef,
       topicConfigRef,
       activeSceneTool,
+      showChartDock,
       settingsSnapshot,
       displaySnapshot,
       sceneWidth,
       sidePanelHeights,
       startSplitterResize,
       getSidePanelStyle,
+      getChartDockStyle,
+      startChartDockResize,
       startSidePanelResize,
       resetView,
       activateSceneTool,
@@ -883,8 +926,13 @@ export default {
   min-height: 0;
 }
 
+.scene-section {
+  display: flex;
+  flex-direction: column;
+}
+
 .scene-panel {
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -892,6 +940,32 @@ export default {
   background: #151b22;
   border: 1px solid #2d3742;
   border-radius: 6px;
+}
+
+.chart-dock-panel {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.chart-dock-resize-handle {
+  flex: 0 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  user-select: none;
+}
+
+.chart-dock-resize-handle span {
+  width: 70px;
+  height: 4px;
+  border-radius: 999px;
+  background: #33404c;
+}
+
+.chart-dock-resize-handle:hover span {
+  width: 100px;
+  background: #5c7a95;
 }
 
 .scene-header {
