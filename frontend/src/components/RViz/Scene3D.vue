@@ -135,6 +135,9 @@ export default {
     const refreshFixedFrameObjects = () => {
       transformFrameRequest = null
       latestDisplayMessages.forEach(({ messageType, message }, topic) => {
+        // Hidden/removed Displays are unsubscribed. Their last message may still
+        // be cached, but a TF update must never recreate their visualization.
+        if (!rosSubscriptions.has(topic)) return
         if ((messageType || '').includes('Odometry')) {
           updateOdometry(topic, message)
         } else if ((messageType || '').includes('MarkerArray')) {
@@ -1168,6 +1171,8 @@ export default {
     // 取消ROS主题订阅
     const unsubscribeFromRosTopic = (topicName) => {
       const subscription = rosSubscriptions.get(topicName)
+      latestDisplayMessages.delete(topicName)
+      pendingPointClouds.delete(topicName)
       if (subscription) {
         try {
           // debugLog(`[Scene3D] 取消订阅主题: ${topicName}`)
