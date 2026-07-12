@@ -39,6 +39,21 @@
                 <el-button size="small" @click="toggleAxes" :type="sceneShowAxes ? 'primary' : 'default'" class="tool-btn" title="切换坐标轴">
                   <el-icon :size="14"><Connection /></el-icon>
                 </el-button>
+                <el-button size="small" class="tool-btn" title="截图并下载" @click="captureSceneScreenshot">
+                  <el-icon :size="14"><Camera /></el-icon>
+                </el-button>
+                <el-button
+                  size="small"
+                  class="tool-btn"
+                  :type="isSceneRecording ? 'danger' : 'default'"
+                  :title="isSceneRecording ? '结束录像并下载' : '开始录像'"
+                  @click="toggleSceneRecording"
+                >
+                  <el-icon :size="14">
+                    <VideoPause v-if="isSceneRecording" />
+                    <VideoCamera v-else />
+                  </el-icon>
+                </el-button>
                 <el-dropdown trigger="click" @command="setSceneViewPreset">
                   <el-button size="small" class="tool-btn" title="视角预设">
                     <el-icon :size="14"><View /></el-icon>
@@ -62,7 +77,12 @@
             </div>
           </div>
           <div class="scene-content">
-            <Scene3D ref="scene3dRef" @display-status="onDisplayStatus" @tool-change="onSceneToolChange" />
+            <Scene3D
+              ref="scene3dRef"
+              @display-status="onDisplayStatus"
+              @tool-change="onSceneToolChange"
+              @recording-change="isSceneRecording = $event"
+            />
           </div>
         </div>
 
@@ -222,7 +242,7 @@
 <script>
 import { ref, nextTick, defineAsyncComponent } from 'vue'
 import {
-  ArrowDown, Aim, Search, Refresh, View, VideoCamera, MapLocation, Flag, DataAnalysis, Grid, Connection
+  ArrowDown, Aim, Search, Refresh, View, VideoCamera, VideoPause, Camera, MapLocation, Flag, DataAnalysis, Grid, Connection
 } from '@element-plus/icons-vue'
 
 // 引入面板组件
@@ -263,6 +283,8 @@ export default {
     Refresh,
     View,
     VideoCamera,
+    VideoPause,
+    Camera,
     MapLocation,
     Flag,
     DataAnalysis,
@@ -282,6 +304,7 @@ export default {
     const topicConfigRef = ref(null)
     const activeSceneTool = ref('move')
     const showChartDock = ref(false)
+    const isSceneRecording = ref(false)
     const settingsCollapsed = ref(true)
     const controllerCollapsed = ref(true)
 
@@ -526,6 +549,18 @@ export default {
     const resetView = () => {
       if (scene3dRef.value) {
         scene3dRef.value.resetCamera()
+      }
+    }
+
+    const captureSceneScreenshot = () => {
+      scene3dRef.value?.captureScreenshot?.()
+    }
+
+    const toggleSceneRecording = () => {
+      if (isSceneRecording.value) {
+        scene3dRef.value?.stopRecording?.()
+      } else {
+        scene3dRef.value?.startRecording?.()
       }
     }
 
@@ -938,6 +973,7 @@ export default {
       topicConfigRef,
       activeSceneTool,
       showChartDock,
+      isSceneRecording,
       settingsCollapsed,
       controllerCollapsed,
       setPanelCollapsed,
@@ -951,6 +987,8 @@ export default {
       startChartDockResize,
       startSidePanelResize,
       resetView,
+      captureSceneScreenshot,
+      toggleSceneRecording,
       activateSceneTool,
       onSceneToolChange,
       focusSelectedObject,

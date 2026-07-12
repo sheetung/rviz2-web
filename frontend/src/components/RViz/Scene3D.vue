@@ -36,7 +36,7 @@ import { getThemeColor } from '../../utils/theme'
 
 export default {
   name: 'Scene3D',
-  emits: ['object-selected', 'camera-moved', 'display-status', 'tool-change'],
+  emits: ['object-selected', 'camera-moved', 'display-status', 'tool-change', 'recording-change'],
   setup(props, { emit }) {
     const rosbridge = useRosbridge()
     const connectionStore = useConnectionStore()
@@ -54,6 +54,109 @@ export default {
     let renderer = null
     let controls = null
     let animationId = null
+    let mediaRecorder = null
+    let recordingStream = null
+    let recordingChunks = []
+
+    const createCaptureFilename = (extension) => {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')
+      return `rvizweb_${stamp}.${extension}`
+    }
+
+    const downloadBlob = (blob, filename) => {
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    }
+
+    const captureScreenshot = () => {
+      if (!renderer || !scene || !camera) {
+        ElMessage.warning('3D场景尚未就绪')
+        return false
+      }
+      renderer.render(scene, camera)
+      renderer.domElement.toBlob(blob => {
+        if (!blob) {
+          ElMessage.error('截图生成失败')
+          return
+        }
+        downloadBlob(blob, createCaptureFilename('png'))
+        ElMessage.success('截图已生成')
+      }, 'image/png')
+      return true
+    }
+
+    const getRecordingMimeType = () => {
+      const candidates = [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm'
+      ]
+      return candidates.find(type => MediaRecorder.isTypeSupported(type)) || ''
+    }
+
+    const releaseRecordingStream = () => {
+      recordingStream?.getTracks().forEach(track => track.stop())
+      recordingStream = null
+    }
+
+    const startRecording = () => {
+      if (mediaRecorder?.state === 'recording') return true
+      const canvas = renderer?.domElement
+      if (!canvas || typeof canvas.captureStream !== 'function' || typeof MediaRecorder === 'undefined') {
+        ElMessage.error('当前浏览器不支持画布录像')
+        return false
+      }
+
+      try {
+        recordingChunks = []
+        recordingStream = canvas.captureStream(30)
+        const mimeType = getRecordingMimeType()
+        mediaRecorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : undefined)
+        mediaRecorder.ondataavailable = event => {
+          if (event.data?.size > 0) recordingChunks.push(event.data)
+        }
+        mediaRecorder.onerror = () => {
+          releaseRecordingStream()
+          emit('recording-change', false)
+          ElMessage.error('录像过程发生错误')
+        }
+        mediaRecorder.onstop = () => {
+          const outputType = mediaRecorder?.mimeType || mimeType || 'video/webm'
+          if (recordingChunks.length > 0) {
+            downloadBlob(new Blob(recordingChunks, { type: outputType }), createCaptureFilename('webm'))
+            ElMessage.success('录像已生成')
+          } else {
+            ElMessage.warning('录像中没有可用画面')
+          }
+          recordingChunks = []
+          releaseRecordingStream()
+          mediaRecorder = null
+          emit('recording-change', false)
+        }
+        mediaRecorder.start(250)
+        emit('recording-change', true)
+        ElMessage.success('开始录制点云视图')
+        return true
+      } catch (error) {
+        releaseRecordingStream()
+        mediaRecorder = null
+        emit('recording-change', false)
+        ElMessage.error(`无法开始录像: ${error.message}`)
+        return false
+      }
+    }
+
+    const stopRecording = () => {
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') return false
+      mediaRecorder.stop()
+      return true
+    }
     let containerResizeObserver = null
     
     // 场景对象
@@ -2464,6 +2567,8 @@ export default {
     })
     
     onUnmounted(() => {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop()
+      releaseRecordingStream()
       // 清理资源
       if (animationId) {
         cancelAnimationFrame(animationId)
@@ -3865,6 +3970,9 @@ export default {
       setAxesVisible,
       getCameraState,
       applyCameraState,
+      captureScreenshot,
+      startRecording,
+      stopRecording,
       setBackgroundColor,
       updateRenderSettings,
       // ROS集成方法
