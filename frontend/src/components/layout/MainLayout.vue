@@ -999,12 +999,7 @@ export default {
   min-height: 0;
   display: grid;
   gap: 0;
-  padding: 10px;
-  background: var(--bg-surface);
-}
-
-.scene-section,
-.side-section {
+    padding: 6px;
   min-width: 0;
   min-height: 0;
 }
@@ -1012,11 +1007,13 @@ export default {
 .scene-section {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
 .scene-panel {
-  flex: 1 1 auto;
-  min-height: 40vh;
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1057,14 +1054,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 0 10px 0 12px;
-  background: var(--bg-header);
-  border-bottom: 1px solid var(--border);
-  color: var(--text-primary);
-}
-
-.scene-header h3 {
+    gap: 8px;
+    padding: 0 8px 0 10px;
   margin: 0;
   font-size: 13px;
   font-weight: 600;
@@ -1073,10 +1064,7 @@ export default {
 .scene-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
+    gap: 6px;
   padding: 3px 0;
 }
 
@@ -1087,9 +1075,8 @@ export default {
 }
 
 .resize-handle {
-  width: 10px;
-  min-width: 10px;
-  height: 100%;
+    width: 8px;
+    min-width: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1137,8 +1124,7 @@ export default {
 }
 
 .side-panel-resize-handle {
-  flex: 0 0 12px;
-  display: flex;
+    flex: 0 0 8px;
   align-items: center;
   justify-content: center;
   cursor: row-resize;

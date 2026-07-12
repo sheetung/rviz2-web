@@ -134,17 +134,16 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-  padding: 0 10px;
-  user-select: none;
-}
+    gap: 6px;
+    padding: 0 8px;
+    user-select: none;
+  }
 
-.workbench-panel.is-collapsed .workbench-panel-header {
-  border-bottom: none;
-}
-
-.workbench-panel-header.clickable {
-  cursor: pointer;
+  .workbench-panel-content {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 8px;
 }
 
 .workbench-panel-header.clickable:hover h5 {

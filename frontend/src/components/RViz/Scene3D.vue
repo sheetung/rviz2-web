@@ -418,6 +418,7 @@ export default {
         const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0x2e7d32 })
         const armMaterial = new THREE.MeshLambertMaterial({ color: 0x455a64 })
         const rotorMaterial = new THREE.MeshLambertMaterial({ color: 0x90a4ae, transparent: true, opacity: 0.75 })
+        const frontRotorMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000, transparent: true, opacity: 0.75 })
         const lidarMaterial = new THREE.MeshLambertMaterial({ color: 0x1e88e5 })
         const accentMaterial = new THREE.MeshLambertMaterial({ color: 0xff7043 })
 
@@ -439,7 +440,7 @@ export default {
         robotModel.add(armB)
 
         // Horizontal discs represent the combined motors and propellers.
-        const rotorGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.035, 40)
+        const rotorGeometry = new THREE.CylinderGeometry(0.32, 0.32, 0.035, 40)
         const rotorOffset = 0.58
         const rotorPositions = [
           { x: rotorOffset, y: rotorOffset },
@@ -449,7 +450,9 @@ export default {
         ]
 
         rotorPositions.forEach(pos => {
-          const rotor = new THREE.Mesh(rotorGeometry, rotorMaterial)
+          const isFrontRotor = pos.x > 0
+          const material = isFrontRotor ? frontRotorMaterial : rotorMaterial
+          const rotor = new THREE.Mesh(rotorGeometry, material)
           rotor.position.set(pos.x, pos.y, 0.04)
           rotor.rotation.x = Math.PI / 2
           robotModel.add(rotor)
@@ -462,18 +465,12 @@ export default {
         lidar.rotation.x = Math.PI / 2
         robotModel.add(lidar)
 
-        // Forward direction marker along +X.
-        const arrowGeometry = new THREE.ConeGeometry(0.09, 0.24, 16)
-        const arrow = new THREE.Mesh(arrowGeometry, accentMaterial)
-        arrow.position.set(0.34, 0, 0.04)
-        arrow.rotation.z = -Math.PI / 2
-        robotModel.add(arrow)
-
         const robotAxes = new THREE.AxesHelper(0.45)
         robotAxes.position.set(0, 0, 0.16)
         robotModel.add(robotAxes)
 
         robotModel.position.set(0, 0, 0)
+        robotModel.scale.set(0.5, 0.5, 0.5)
         robotModel.userData = {
           type: 'uav',
           lastUpdate: Date.now()
