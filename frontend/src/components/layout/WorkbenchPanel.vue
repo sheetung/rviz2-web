@@ -72,7 +72,7 @@ export default {
       localCollapsed: this.defaultCollapsed
     }
   },
-  setup(props, { emit }) {
+  setup(props) {
     const isControlled = computed(() => typeof props.collapsed === 'boolean')
 
     return { isControlled }

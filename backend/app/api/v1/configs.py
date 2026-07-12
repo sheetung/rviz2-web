@@ -33,11 +33,27 @@ class DisplayConfig(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
 
 
+class LayoutConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    sceneWidth: float = Field(default=68, ge=20, le=90)
+    panelHeights: Dict[str, float] = Field(default_factory=dict)
+    collapsedPanels: Dict[str, bool] = Field(default_factory=dict)
+
+
+class AppearanceConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    theme: Literal["dark", "light"] = "dark"
+
+
 class FrontendConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     fixedFrame: str = Field(default="map", min_length=1, max_length=256)
     displays: List[DisplayConfig] = Field(default_factory=list, max_length=256)
+    layout: LayoutConfig = Field(default_factory=LayoutConfig)
+    appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
 
 
 class ConfigPayload(BaseModel):

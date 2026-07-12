@@ -94,6 +94,7 @@ RVIZWEB_CONFIG=default.rvizweb ./start.sh local
 - 保存当前前端状态为 `.rvizweb`
 - 读取已有配置
 - 删除配置
+- 切换深色或浅色主题，并随配置保存
 - 自动兼容用户输入的 `.rviz` 后缀并保存为 `.rvizweb`
 
 配置文件主要包含：
@@ -105,6 +106,8 @@ RVIZWEB_CONFIG=default.rvizweb ./start.sh local
 - `scene.camera`
 - `layout.sceneWidth`
 - `layout.panelHeights`
+- `layout.collapsedPanels`
+- `appearance.theme`
 - `goal.topic`
 - `goal.x/y/z`
 - `position.odomTopic`

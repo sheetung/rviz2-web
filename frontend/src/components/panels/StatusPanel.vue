@@ -397,22 +397,22 @@ export default {
 
 .status-item.status-good {
   border-color: var(--success);
-  background: rgba(61, 214, 140, 0.1);
+  background: var(--success-soft);
 }
 
 .status-item.status-warning {
   border-color: var(--warning);
-  background: rgba(240, 180, 41, 0.1);
+  background: var(--warning-soft);
 }
 
 .status-item.status-critical {
   border-color: var(--danger);
-  background: rgba(240, 113, 120, 0.1);
+  background: var(--danger-surface);
 }
 
 .status-item.status-inactive {
   border-color: var(--text-muted);
-  background: rgba(130, 146, 163, 0.1);
+  background: var(--muted-surface);
   opacity: 0.7;
 }
 

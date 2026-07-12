@@ -164,7 +164,8 @@
             panel-class="settings-mini-panel"
             :style="getSidePanelStyle('settings')"
             collapsible
-            v-model:collapsed="settingsCollapsed"
+            :collapsed="settingsCollapsed"
+            @update:collapsed="setPanelCollapsed('settings', $event)"
           >
             <AsyncSettingsPanel
               :settings-snapshot="settingsSnapshot"
@@ -195,7 +196,8 @@
             panel-class="controller-mini-panel"
             :style="getSidePanelStyle('controller')"
             collapsible
-            v-model:collapsed="controllerCollapsed"
+            :collapsed="controllerCollapsed"
+            @update:collapsed="setPanelCollapsed('controller', $event)"
           >
             <Scene3DController
               :compact="true"
@@ -232,6 +234,7 @@ import WorkbenchPanel from './WorkbenchPanel.vue'
 import ChartPanel from '../panels/ChartPanel.vue'
 const AsyncSettingsPanel = defineAsyncComponent(() => import('../panels/SettingsPanel.vue'))
 import ExpectedGoalPanel from '../panels/ExpectedGoalPanel.vue'
+import { getThemeColor } from '../../utils/theme'
 
 const DEFAULT_SIDE_PANEL_HEIGHTS = {
   gps: 220,
@@ -306,7 +309,14 @@ export default {
       },
       layout: {
         sceneWidth: 68,
-        panelHeights: { ...DEFAULT_SIDE_PANEL_HEIGHTS }
+        panelHeights: { ...DEFAULT_SIDE_PANEL_HEIGHTS },
+        collapsedPanels: {
+          settings: true,
+          controller: true
+        }
+      },
+      appearance: {
+        theme: 'dark'
       },
       goal: {
         topic: '',
@@ -339,6 +349,30 @@ export default {
       }
     })
     const displaySnapshot = ref([])
+
+    const normalizeTheme = (theme) => theme === 'light' ? 'light' : 'dark'
+
+    const applyTheme = (theme) => {
+      const nextTheme = normalizeTheme(theme)
+      settingsSnapshot.value.appearance.theme = nextTheme
+      document.documentElement.dataset.theme = nextTheme
+      nextTick(() => {
+        scene3dRef.value?.updateSettings?.({
+          type: 'scene',
+          backgroundColor: getThemeColor('--scene-background')
+        })
+      })
+    }
+
+    const setPanelCollapsed = (panelId, collapsed) => {
+      const nextCollapsed = collapsed === true
+      if (panelId === 'settings') settingsCollapsed.value = nextCollapsed
+      if (panelId === 'controller') controllerCollapsed.value = nextCollapsed
+      settingsSnapshot.value.layout.collapsedPanels = {
+        ...settingsSnapshot.value.layout.collapsedPanels,
+        [panelId]: nextCollapsed
+      }
+    }
 
     const normalizeSidePanelHeights = (panelHeights = {}) => {
       return Object.keys(DEFAULT_SIDE_PANEL_HEIGHTS).reduce((heights, panelId) => {
@@ -661,6 +695,8 @@ export default {
         if (Object.prototype.hasOwnProperty.call(settings, 'camera')) {
           settingsSnapshot.value.scene.camera = settings.camera
         }
+      } else if (settings.type === 'appearance') {
+        applyTheme(settings.theme)
       } else if (settings.type === 'layout') {
         if (typeof settings.sceneWidth === 'number') {
           const nextWidth = Math.max(42, Math.min(78, settings.sceneWidth))
@@ -673,6 +709,14 @@ export default {
         if (settings.panelHeights) {
           sidePanelHeights.value = normalizeSidePanelHeights(settings.panelHeights)
           syncSidePanelHeightsToSettings()
+        }
+        if (settings.collapsedPanels) {
+          if (typeof settings.collapsedPanels.settings === 'boolean') {
+            setPanelCollapsed('settings', settings.collapsedPanels.settings)
+          }
+          if (typeof settings.collapsedPanels.controller === 'boolean') {
+            setPanelCollapsed('controller', settings.collapsedPanels.controller)
+          }
         }
       } else if (settings.type === 'goal') {
         onGoalUpdate(settings.goal || settings)
@@ -883,6 +927,10 @@ export default {
       }
       settingsSnapshot.value.layout.sceneWidth = Number(sceneWidth.value.toFixed(2))
       syncSidePanelHeightsToSettings()
+      settingsSnapshot.value.layout.collapsedPanels = {
+        settings: settingsCollapsed.value,
+        controller: controllerCollapsed.value
+      }
     }
 
     return {
@@ -892,6 +940,7 @@ export default {
       showChartDock,
       settingsCollapsed,
       controllerCollapsed,
+      setPanelCollapsed,
       settingsSnapshot,
       displaySnapshot,
       sceneWidth,

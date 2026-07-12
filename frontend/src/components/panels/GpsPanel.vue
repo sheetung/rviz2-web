@@ -400,7 +400,7 @@ export default {
 
 .status-active .status-dot {
   background: var(--success);
-  box-shadow: 0 0 6px rgba(61, 214, 140, 0.5);
+  box-shadow: 0 0 6px var(--success-glow);
 }
 
 .status-inactive .status-dot {

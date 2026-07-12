@@ -197,7 +197,7 @@
                        patternUnits="userSpaceOnUse">
                 <path :d="`M ${gridSpacing.x} 0 L 0 0 0 ${gridSpacing.y}`"
                       fill="none"
-                      stroke="#f0f0f0"
+                      stroke="var(--text-primary)"
                       stroke-width="1"/>
               </pattern>
             </defs>
@@ -217,7 +217,7 @@
             :y1="currentMargin.top"
             :x2="currentMargin.left"
             :y2="chartSize.height - currentMargin.bottom"
-            stroke="#333"
+            stroke="var(--border)"
             stroke-width="2"
           />
           <g v-for="(tick, index) in yTicks" :key="`y-${index}`">
@@ -226,7 +226,7 @@
               :y1="tick.y"
               :x2="currentMargin.left"
               :y2="tick.y"
-              stroke="#333"
+              stroke="var(--border)"
               stroke-width="1"
             />
             <text
@@ -247,7 +247,7 @@
             :y1="chartSize.height - currentMargin.bottom"
             :x2="chartSize.width - currentMargin.right"
             :y2="chartSize.height - currentMargin.bottom"
-            stroke="#333"
+            stroke="var(--border)"
             stroke-width="2"
           />
           <g v-for="(tick, index) in xTicks" :key="`x-${index}`">
@@ -256,7 +256,7 @@
               :y1="chartSize.height - currentMargin.bottom"
               :x2="tick.x"
               :y2="chartSize.height - currentMargin.bottom + 5"
-              stroke="#333"
+              stroke="var(--border)"
               stroke-width="1"
             />
             <text
@@ -427,9 +427,11 @@ export default {
 
     // 预定义颜色
     const predefinedColors = [
-      '#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399',
-      'var(--accent-strong)', 'var(--success)', '#ffaa00', '#ff4757', '#74b9ff',
-      '#fd79a8', '#a29bfe', '#6c5ce7', '#00b894', '#00cec9'
+      'var(--chart-series-1)', 'var(--chart-series-2)', 'var(--chart-series-3)',
+      'var(--chart-series-4)', 'var(--chart-series-5)', 'var(--chart-series-6)',
+      'var(--chart-series-7)', 'var(--chart-series-8)', 'var(--chart-series-9)',
+      'var(--chart-series-10)', 'var(--chart-series-11)', 'var(--chart-series-12)',
+      'var(--chart-series-13)', 'var(--chart-series-14)', 'var(--chart-series-15)'
     ]
     let colorIndex = 0
 
@@ -2281,10 +2283,10 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 4px 8px;
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--surface-glass);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid var(--neutral-10);
+  box-shadow: 0 2px 10px var(--shadow-color-10);
   gap: 10px;
   overflow-x: auto;
 }
@@ -2371,12 +2373,12 @@ export default {
   flex: 1;
   overflow: hidden;
   position: relative;
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--surface-chart);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--neutral-10);
   border-radius: 4px;
   margin: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 16px var(--shadow-color-20);
   min-height: 0;
   width: 100%; /* 确保宽度填满 */
   height: 100%; /* 使用父容器的100%高度，自适应全屏 */
@@ -2392,7 +2394,7 @@ export default {
   justify-content: center;
   gap: 7px;
   color: var(--text-secondary);
-  background: rgba(12, 17, 23, 0.82);
+  background: var(--surface-overlay);
 }
 
 .chart-empty-state strong {
@@ -2420,7 +2422,7 @@ export default {
   z-index: 4;
   padding: 3px 6px;
   border-radius: 3px;
-  background: rgba(0, 0, 0, 0.58);
+  background: var(--surface-hint);
   color: var(--text-muted);
   font-size: 10px;
   pointer-events: none;
@@ -2431,12 +2433,12 @@ export default {
 .topic-selector-panel,
 .legend-panel {
   width: 280px;
-  background: rgba(15, 23, 42, 0.9);
+  background: var(--surface-glass-strong);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--neutral-10);
   border-radius: 4px;
   margin: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 16px var(--shadow-color-20);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2444,8 +2446,8 @@ export default {
 
 .panel-header {
   height: 40px;
-  background: rgba(15, 23, 42, 0.95);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  background: var(--surface-glass-solid);
+  border-bottom: 1px solid var(--neutral-10);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2493,9 +2495,9 @@ export default {
   gap: 12px;
   margin-bottom: 12px;
   padding: 8px;
-  background: rgba(148, 163, 184, 0.05);
+  background: var(--neutral-05);
   border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--neutral-10);
 }
 
 .stats-item {
@@ -2550,18 +2552,18 @@ export default {
 .topic-item {
   margin-bottom: 8px;
   border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--neutral-10);
   transition: all 0.2s ease;
 }
 
 .topic-item:hover {
-  border-color: rgba(148, 163, 184, 0.3);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-color: var(--neutral-30);
+  box-shadow: 0 2px 8px var(--shadow-color-10);
 }
 
 .topic-item.inactive {
   opacity: 0.6;
-  background: rgba(148, 163, 184, 0.05);
+  background: var(--neutral-05);
 }
 
 .topic-name {
@@ -2609,14 +2611,14 @@ export default {
 .topic-type {
   font-size: 10px;
   color: var(--text-muted);
-  background: rgba(148, 163, 184, 0.2);
+  background: var(--neutral-20);
   padding: 1px 4px;
   border-radius: 3px;
   align-self: flex-start;
 }
 
 .topic-name:hover {
-  background: rgba(59, 130, 246, 0.2);
+  background: var(--viz-blue-20);
 }
 
 .expand-icon {
@@ -2633,7 +2635,7 @@ export default {
   margin-left: auto;
   font-size: 10px;
   color: var(--text-muted);
-  background: rgba(148, 163, 184, 0.2);
+  background: var(--neutral-20);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -2643,8 +2645,8 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: rgba(30, 41, 59, 0.6);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: var(--surface-glass-muted);
+  border-bottom: 1px solid var(--neutral-20);
   margin-bottom: 8px;
 }
 
@@ -2654,7 +2656,7 @@ export default {
 }
 
 .back-button:hover {
-  color: #3b82f6 !important;
+  color: var(--viz-blue) !important;
 }
 
 .fields-title {
@@ -2673,7 +2675,7 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 6px 8px;
-  background: rgba(59, 130, 246, 0.1);
+  background: var(--viz-blue-10);
   border-radius: 6px;
   margin-bottom: 3px;
   cursor: pointer;
@@ -2702,55 +2704,55 @@ export default {
 }
 
 .field-item:hover {
-  background: rgba(59, 130, 246, 0.3);
+  background: var(--viz-blue-30);
   transform: translateX(4px);
 }
 
 .field-item.selected {
-  background: rgba(0, 212, 255, 0.2);
-  border: 1px solid rgba(0, 212, 255, 0.5);
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+  background: var(--accent-strong-20);
+  border: 1px solid var(--accent-strong-50);
+  box-shadow: 0 0 8px var(--accent-strong-30);
 }
 
 .field-item.selected:hover {
-  background: rgba(0, 212, 255, 0.3);
+  background: var(--accent-strong-30);
 }
 
 /* 可绘制的字段样式 */
 .field-item.plottable {
-  background: rgba(34, 197, 94, 0.1);
-  border-color: rgba(34, 197, 94, 0.2);
+  background: var(--viz-green-10);
+  border-color: var(--viz-green-20);
 }
 
 .field-item.plottable:hover {
-  background: rgba(34, 197, 94, 0.2);
-  border-color: rgba(34, 197, 94, 0.4);
+  background: var(--viz-green-20);
+  border-color: var(--viz-green-40);
 }
 
 /* 不可绘制的字段样式 */
 .field-item.non-plottable {
-  background: rgba(148, 163, 184, 0.1);
+  background: var(--neutral-10);
   color: var(--text-muted);
   cursor: not-allowed;
   opacity: 0.6;
-  border-color: rgba(148, 163, 184, 0.2);
+  border-color: var(--neutral-20);
 }
 
 .field-item.non-plottable:hover {
-  background: rgba(148, 163, 184, 0.15);
+  background: var(--neutral-15);
   transform: none;
-  border-color: rgba(148, 163, 184, 0.3);
+  border-color: var(--neutral-30);
 }
 
 .field-item.disabled {
-  background: rgba(148, 163, 184, 0.1);
+  background: var(--neutral-10);
   color: var(--text-muted);
   cursor: not-allowed;
   opacity: 0.5;
 }
 
 .field-item.disabled:hover {
-  background: rgba(148, 163, 184, 0.1);
+  background: var(--neutral-10);
   transform: none;
 }
 
@@ -2770,63 +2772,63 @@ export default {
 
 /* 字段类型分类样式 */
 .field-type.numeric {
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.2);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: var(--viz-green);
+  background: var(--viz-green-20);
+  border: 1px solid var(--viz-green-30);
 }
 
 .field-type.pointcloud {
-  color: #3b82f6;
-  background: rgba(59, 130, 246, 0.2);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: var(--viz-blue);
+  background: var(--viz-blue-20);
+  border: 1px solid var(--viz-blue-30);
 }
 
 .field-type.image {
-  color: #8b5cf6;
-  background: rgba(139, 92, 246, 0.2);
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: var(--viz-purple);
+  background: var(--viz-purple-20);
+  border: 1px solid var(--viz-purple-30);
 }
 
 .field-type.geometry {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.2);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--viz-orange);
+  background: var(--viz-orange-20);
+  border: 1px solid var(--viz-orange-30);
 }
 
 .field-type.sensor {
-  color: #06b6d4;
-  background: rgba(6, 182, 212, 0.2);
-  border: 1px solid rgba(6, 182, 212, 0.3);
+  color: var(--viz-cyan);
+  background: var(--viz-cyan-20);
+  border: 1px solid var(--viz-cyan-30);
 }
 
 .field-type.navigation {
-  color: #84cc16;
-  background: rgba(132, 204, 22, 0.2);
-  border: 1px solid rgba(132, 204, 22, 0.3);
+  color: var(--viz-lime);
+  background: var(--viz-lime-20);
+  border: 1px solid var(--viz-lime-30);
 }
 
 .field-type.text {
   color: var(--text-muted);
-  background: rgba(100, 116, 139, 0.2);
-  border: 1px solid rgba(100, 116, 139, 0.3);
+  background: var(--neutral-20);
+  border: 1px solid var(--neutral-30);
 }
 
 .field-type.time {
-  color: #f97316;
-  background: rgba(249, 115, 22, 0.2);
-  border: 1px solid rgba(249, 115, 22, 0.3);
+  color: var(--viz-deep-orange);
+  background: var(--viz-deep-orange-20);
+  border: 1px solid var(--viz-deep-orange-30);
 }
 
 .field-type.computed {
-  color: #ec4899;
-  background: rgba(236, 72, 153, 0.2);
-  border: 1px solid rgba(236, 72, 153, 0.3);
+  color: var(--viz-pink);
+  background: var(--viz-pink-20);
+  border: 1px solid var(--viz-pink-30);
 }
 
 .field-type.unknown {
   color: var(--text-secondary);
-  background: rgba(148, 163, 184, 0.2);
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: var(--neutral-20);
+  border: 1px solid var(--neutral-30);
 }
 
 .field-status {
@@ -2837,39 +2839,39 @@ export default {
 }
 
 .field-status.selected {
-  color: #22c55e;
+  color: var(--viz-green);
 }
 
 .field-status.disabled {
-  color: #ef4444;
+  color: var(--viz-red);
 }
 
 .field-status.available {
-  color: #3b82f6;
+  color: var(--viz-blue);
   opacity: 0.7;
 }
 
 .field-status.parsing {
-  color: #f59e0b;
+  color: var(--viz-orange);
   animation: spin 1s linear infinite;
 }
 
 /* 解析中的字段样式 */
 .field-item.parsing {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.3);
-  color: #f59e0b;
+  background: var(--viz-orange-10);
+  border-color: var(--viz-orange-30);
+  color: var(--viz-orange);
 }
 
 .field-item.parsing:hover {
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--viz-orange-15);
   transform: none;
 }
 
 .field-type.parsing {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.2);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--viz-orange);
+  background: var(--viz-orange-20);
+  border: 1px solid var(--viz-orange-30);
 }
 
 .parsing-spinner {
@@ -2883,14 +2885,14 @@ export default {
 }
 
 .legend-item {
-  background: rgba(148, 163, 184, 0.1);
+  background: var(--neutral-10);
   border-radius: 6px;
   padding: 8px;
   transition: all 0.2s;
 }
 
 .legend-item:hover {
-  background: rgba(148, 163, 184, 0.2);
+  background: var(--neutral-20);
 }
 
 .legend-item.disabled {
@@ -2990,13 +2992,13 @@ export default {
 
 .data-point-end {
   opacity: 1;
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 0 3px var(--shadow-color-30));
 }
 
 .data-point-end:hover {
   opacity: 1;
   r: 5;
-  filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 0 5px var(--shadow-color-50));
 }
 
 .chart-loading {
@@ -3015,7 +3017,7 @@ export default {
 .loading-spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid rgba(148, 163, 184, 0.3);
+  border: 2px solid var(--neutral-30);
   border-top: 2px solid var(--accent-strong);
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -3027,18 +3029,18 @@ export default {
 }
 
 .panel-content::-webkit-scrollbar-track {
-  background: rgba(148, 163, 184, 0.1);
+  background: var(--neutral-10);
   border-radius: 3px;
 }
 
 .panel-content::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
+  background: var(--neutral-40);
   border-radius: 3px;
   transition: background 0.3s;
 }
 
 .panel-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.6);
+  background: var(--neutral-60);
 }
 
 /* 紧凑模式样式 */

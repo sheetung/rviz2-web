@@ -4,7 +4,8 @@
   "config": {
     "fixedFrame": "map",
     "scene": { "showGrid": true, "showAxes": true, "viewPreset": "iso", "camera": { "position": { "x": 0, "y": -14, "z": 10 }, "target": { "x": 0, "y": 0, "z": 0 }, "up": { "x": 0, "y": 0, "z": 1 }, "zoom": 1 } },
-    "layout": { "sceneWidth": 68, "panelHeights": {} },
+    "layout": { "sceneWidth": 68, "panelHeights": {}, "collapsedPanels": { "settings": true, "controller": true } },
+    "appearance": { "theme": "dark" },
     "goal": { "topic": "/goal_pose", "x": 0, "y": 0, "z": 0 },
     "position": { "odomTopic": "", "showTrajectory": true, "trajectoryLength": 100 },
     "laser": { "laserType": "3d", "laserScanTopic": "", "pointCloudTopic": "", "showLaserPoints": true, "showLaserLines": true, "showIntensity": false, "laserPointSize": 0.15, "pointSize": 0.03, "pointOpacity": 0.8 },

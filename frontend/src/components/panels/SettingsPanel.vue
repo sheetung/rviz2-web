@@ -28,6 +28,20 @@
 
     <section class="settings-section">
       <div class="section-heading">
+        <h4>外观</h4>
+        <span>随配置保存</span>
+      </div>
+      <div class="field-row">
+        <label>主题</label>
+        <el-select v-model="selectedTheme" size="small">
+          <el-option label="深色" value="dark" />
+          <el-option label="浅色" value="light" />
+        </el-select>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="section-heading">
         <h4>当前配置</h4>
         <span>预览</span>
       </div>
@@ -59,6 +73,10 @@
         <div class="summary-item">
           <span class="summary-label">Layout</span>
           <span class="summary-value">{{ layoutSummary }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Theme</span>
+          <span class="summary-value">{{ selectedTheme === 'light' ? '浅色' : '深色' }}</span>
         </div>
       </div>
     </section>
@@ -115,7 +133,14 @@ export default {
     const layoutSummary = computed(() => {
       const sceneWidth = props.settingsSnapshot.layout?.sceneWidth || 68
       const panelCount = Object.keys(props.settingsSnapshot.layout?.panelHeights || {}).length
-      return `点云 ${Math.round(sceneWidth)}% / 高度 ${panelCount || 5} 项`
+      const collapsedCount = Object.values(props.settingsSnapshot.layout?.collapsedPanels || {})
+        .filter(Boolean).length
+      return `点云 ${Math.round(sceneWidth)}% / 高度 ${panelCount || 5} 项 / 折叠 ${collapsedCount} 项`
+    })
+
+    const selectedTheme = computed({
+      get: () => props.settingsSnapshot.appearance?.theme === 'light' ? 'light' : 'dark',
+      set: (theme) => emit('settings-update', { type: 'appearance', theme })
     })
 
     const displayCount = computed(() => props.displaySnapshot.length)
@@ -159,7 +184,13 @@ export default {
       emit('settings-update', {
         type: 'layout',
         sceneWidth: cfg.layout?.sceneWidth || 68,
-        panelHeights: cfg.layout?.panelHeights || null
+        panelHeights: cfg.layout?.panelHeights || null,
+        collapsedPanels: cfg.layout?.collapsedPanels || null
+      })
+
+      emit('settings-update', {
+        type: 'appearance',
+        theme: cfg.appearance?.theme || 'dark'
       })
 
       emit('settings-update', {
@@ -296,6 +327,7 @@ export default {
       configSummary,
       sceneSummary,
       layoutSummary,
+      selectedTheme,
       displayCount,
       saveConfig,
       loadSelectedConfig,

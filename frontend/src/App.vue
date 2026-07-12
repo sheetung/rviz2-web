@@ -92,6 +92,95 @@ export default {
   --border-subtle: rgba(148, 163, 184, 0.15);
   --radius-md: 6px;
 
+  /* Translucent surfaces and effects */
+  --surface-glass: rgba(15, 23, 42, 0.8);
+  --surface-glass-strong: rgba(15, 23, 42, 0.9);
+  --surface-glass-solid: rgba(15, 23, 42, 0.95);
+  --surface-glass-muted: rgba(15, 23, 42, 0.6);
+  --surface-glass-soft: rgba(15, 23, 42, 0.4);
+  --surface-glass-faint: rgba(15, 23, 42, 0.3);
+  --surface-chart: rgba(0, 0, 0, 0.8);
+  --surface-overlay: rgba(12, 17, 23, 0.82);
+  --surface-tooltip: rgba(0, 0, 0, 0.7);
+  --surface-hint: rgba(0, 0, 0, 0.58);
+  --neutral-05: rgba(148, 163, 184, 0.05);
+  --neutral-10: rgba(148, 163, 184, 0.1);
+  --neutral-15: rgba(148, 163, 184, 0.15);
+  --neutral-20: rgba(148, 163, 184, 0.2);
+  --neutral-30: rgba(148, 163, 184, 0.3);
+  --neutral-40: rgba(148, 163, 184, 0.4);
+  --neutral-60: rgba(148, 163, 184, 0.6);
+  --text-inverse-muted: rgba(255, 255, 255, 0.8);
+  --text-inverse-faint: rgba(255, 255, 255, 0.3);
+  --shadow-color-10: rgba(0, 0, 0, 0.1);
+  --shadow-color-20: rgba(0, 0, 0, 0.2);
+  --shadow-color-30: rgba(0, 0, 0, 0.3);
+  --shadow-color-35: rgba(0, 0, 0, 0.35);
+  --shadow-color-50: rgba(0, 0, 0, 0.5);
+
+  /* Semantic visualization colors */
+  --viz-blue: #3b82f6;
+  --viz-blue-10: rgba(59, 130, 246, 0.1);
+  --viz-blue-20: rgba(59, 130, 246, 0.2);
+  --viz-blue-30: rgba(59, 130, 246, 0.3);
+  --viz-blue-40: rgba(59, 130, 246, 0.4);
+  --viz-cyan: #06b6d4;
+  --viz-cyan-20: rgba(6, 182, 212, 0.2);
+  --viz-cyan-30: rgba(6, 182, 212, 0.3);
+  --viz-green: #22c55e;
+  --viz-green-10: rgba(34, 197, 94, 0.1);
+  --viz-green-20: rgba(34, 197, 94, 0.2);
+  --viz-green-30: rgba(34, 197, 94, 0.3);
+  --viz-green-40: rgba(34, 197, 94, 0.4);
+  --viz-orange: #f59e0b;
+  --viz-orange-10: rgba(245, 158, 11, 0.1);
+  --viz-orange-15: rgba(245, 158, 11, 0.15);
+  --viz-orange-20: rgba(245, 158, 11, 0.2);
+  --viz-orange-30: rgba(245, 158, 11, 0.3);
+  --viz-purple: #8b5cf6;
+  --viz-purple-20: rgba(139, 92, 246, 0.2);
+  --viz-purple-30: rgba(139, 92, 246, 0.3);
+  --viz-lime: #84cc16;
+  --viz-lime-20: rgba(132, 204, 22, 0.2);
+  --viz-lime-30: rgba(132, 204, 22, 0.3);
+  --viz-deep-orange: #f97316;
+  --viz-deep-orange-20: rgba(249, 115, 22, 0.2);
+  --viz-deep-orange-30: rgba(249, 115, 22, 0.3);
+  --viz-pink: #ec4899;
+  --viz-pink-20: rgba(236, 72, 153, 0.2);
+  --viz-pink-30: rgba(236, 72, 153, 0.3);
+  --viz-red: #ef4444;
+  --accent-strong-20: rgba(0, 212, 255, 0.2);
+  --accent-strong-30: rgba(0, 212, 255, 0.3);
+  --accent-strong-50: rgba(0, 212, 255, 0.5);
+  --danger-soft: rgba(240, 113, 120, 0.18);
+  --success-soft: rgba(61, 214, 140, 0.1);
+  --success-glow: rgba(61, 214, 140, 0.5);
+  --warning-soft: rgba(240, 180, 41, 0.1);
+  --danger-surface: rgba(240, 113, 120, 0.1);
+  --muted-surface: rgba(130, 146, 163, 0.1);
+
+  /* Chart palette and 3D axes */
+  --chart-series-1: #409eff;
+  --chart-series-2: #67c23a;
+  --chart-series-3: #e6a23c;
+  --chart-series-4: #f56c6c;
+  --chart-series-5: #909399;
+  --chart-series-6: #00d4ff;
+  --chart-series-7: #00ff88;
+  --chart-series-8: #ffaa00;
+  --chart-series-9: #ff4757;
+  --chart-series-10: #74b9ff;
+  --chart-series-11: #fd79a8;
+  --chart-series-12: #a29bfe;
+  --chart-series-13: #6c5ce7;
+  --chart-series-14: #00b894;
+  --chart-series-15: #00cec9;
+  --axis-x: #ff0000;
+  --axis-y: #00ff00;
+  --axis-z: #0000ff;
+  --scene-background: #2c3e50;
+
   --el-color-primary: var(--accent-strong);
   --el-color-success: var(--success);
   --el-color-warning: var(--warning);
@@ -113,6 +202,65 @@ export default {
   --el-border-color-extra-light: var(--border-muted);
   --el-border-radius-base: var(--radius-sm);
   --el-fill-color-blank: var(--bg-input);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-app: #f3f6f9;
+  --bg-surface: #e9eef3;
+  --bg-panel: #ffffff;
+  --bg-header: #f5f7fa;
+  --bg-elevated: #f8fafc;
+  --bg-input: #ffffff;
+  --border: #cbd5df;
+  --border-strong: #91a2b3;
+  --border-muted: #dbe3ea;
+  --text-primary: #17212b;
+  --text-secondary: #526170;
+  --text-muted: #718096;
+  --accent: #087ea4;
+  --accent-strong: #007fa3;
+  --accent-soft: #dff3fb;
+  --success: #168a55;
+  --warning: #9a6700;
+  --danger: #c93745;
+  --info: #2368a2;
+  --handle: #aab8c5;
+  --handle-hover: #6f879c;
+  --scrollbar-thumb: #9eacb9;
+  --bg-hover: #e5edf4;
+  --bg-active: #dbe6ef;
+  --accent-dark: #086b8c;
+  --accent-mid: #087ea4;
+  --accent-glow: #075f7c;
+  --bg-subtle: rgba(71, 85, 105, 0.08);
+  --border-subtle: rgba(71, 85, 105, 0.18);
+  --surface-glass: rgba(255, 255, 255, 0.88);
+  --surface-glass-strong: rgba(255, 255, 255, 0.94);
+  --surface-glass-solid: rgba(255, 255, 255, 0.98);
+  --surface-glass-muted: rgba(255, 255, 255, 0.76);
+  --surface-glass-soft: rgba(255, 255, 255, 0.64);
+  --surface-glass-faint: rgba(255, 255, 255, 0.52);
+  --surface-chart: #ffffff;
+  --surface-overlay: rgba(248, 250, 252, 0.9);
+  --neutral-05: rgba(71, 85, 105, 0.05);
+  --neutral-10: rgba(71, 85, 105, 0.1);
+  --neutral-15: rgba(71, 85, 105, 0.15);
+  --neutral-20: rgba(71, 85, 105, 0.2);
+  --neutral-30: rgba(71, 85, 105, 0.3);
+  --neutral-40: rgba(71, 85, 105, 0.4);
+  --neutral-60: rgba(71, 85, 105, 0.6);
+  --success-soft: rgba(22, 138, 85, 0.1);
+  --success-glow: rgba(22, 138, 85, 0.35);
+  --warning-soft: rgba(154, 103, 0, 0.1);
+  --danger-surface: rgba(201, 55, 69, 0.1);
+  --muted-surface: rgba(113, 128, 150, 0.1);
+  --scene-background: #edf2f7;
+}
+
+:root:not([data-theme]),
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 * {
@@ -272,14 +420,14 @@ body {
   --el-button-hover-bg-color: var(--accent-mid);
   --el-button-hover-border-color: var(--accent);
   --el-button-hover-text-color: var(--text-inverse);
-  --el-button-active-bg-color: #147296;
-  --el-button-active-border-color: #147296;
+  --el-button-active-bg-color: var(--accent-dark);
+  --el-button-active-border-color: var(--accent-dark);
 }
 
 .el-button--success {
-  --el-button-bg-color: #1f8a5b;
-  --el-button-border-color: #27a36c;
-  --el-button-hover-bg-color: #27a36c;
+  --el-button-bg-color: color-mix(in srgb, var(--success) 60%, var(--bg-app));
+  --el-button-border-color: color-mix(in srgb, var(--success) 75%, var(--bg-app));
+  --el-button-hover-bg-color: color-mix(in srgb, var(--success) 75%, var(--bg-app));
   --el-button-hover-border-color: var(--success);
 }
 
@@ -302,7 +450,7 @@ body {
 .el-popper {
   background: var(--bg-header) !important;
   border: 1px solid var(--border) !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+  box-shadow: 0 8px 24px var(--shadow-color-35) !important;
   color: var(--text-primary) !important;
 }
 

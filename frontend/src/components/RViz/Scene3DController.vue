@@ -439,7 +439,7 @@ export default {
   height: 100%;
   overflow-y: auto;
   padding: 16px;
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--surface-glass-soft);
   border-radius: 8px;
 }
 
@@ -481,7 +481,7 @@ export default {
 
 .laser-settings,
 .pointcloud-settings {
-  background: rgba(15, 23, 42, 0.3);
+  background: var(--surface-glass-faint);
   padding: 12px;
   border-radius: 6px;
 }
@@ -518,7 +518,7 @@ export default {
 }
 
 .position-info {
-  background: rgba(15, 23, 42, 0.3);
+  background: var(--surface-glass-faint);
   padding: 12px;
   border-radius: 6px;
   margin-top: 12px;
@@ -556,13 +556,13 @@ export default {
 }
 
 :deep(.el-select .el-input__wrapper) {
-  background-color: rgba(15, 23, 42, 0.6) !important;
-  border-color: rgba(148, 163, 184, 0.3) !important;
+  background-color: var(--surface-glass-muted) !important;
+  border-color: var(--neutral-30) !important;
 }
 
 :deep(.el-input__wrapper) {
-  background-color: rgba(15, 23, 42, 0.6) !important;
-  border-color: rgba(148, 163, 184, 0.3) !important;
+  background-color: var(--surface-glass-muted) !important;
+  border-color: var(--neutral-30) !important;
 }
 
 :deep(.el-input__inner) {
@@ -570,7 +570,7 @@ export default {
 }
 
 :deep(.el-slider__runway) {
-  background-color: rgba(148, 163, 184, 0.3) !important;
+  background-color: var(--neutral-30) !important;
 }
 
 :deep(.el-slider__bar) {
@@ -578,6 +578,6 @@ export default {
 }
 
 :deep(.el-button) {
-  border-color: rgba(148, 163, 184, 0.3) !important;
+  border-color: var(--neutral-30) !important;
 }
 </style>

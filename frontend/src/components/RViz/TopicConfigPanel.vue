@@ -298,6 +298,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { Plus, CopyDocument, Delete, View, Hide } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
+import { getThemeColor } from '../../utils/theme'
 import { rosApi } from '../../services/api'
 import { ROS_TOPICS } from '../../config/rosTopics'
 
@@ -356,7 +357,7 @@ export default {
       if (isPathMessageType(messageType || '')) {
         return {
           lineWidth: 2,
-          color: '#00ff00'
+          color: getThemeColor('--axis-y')
         }
       }
       return {}
@@ -723,7 +724,7 @@ export default {
 
 .status-dot.error {
   background: var(--danger);
-  box-shadow: 0 0 0 2px rgba(240, 113, 120, 0.18);
+  box-shadow: 0 0 0 2px var(--danger-soft);
 }
 
 .display-error {

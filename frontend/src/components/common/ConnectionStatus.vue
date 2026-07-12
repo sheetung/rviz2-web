@@ -171,7 +171,7 @@ export default {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 16px 40px var(--shadow-color-35);
   z-index: 3000;
 }
 

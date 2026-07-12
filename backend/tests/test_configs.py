@@ -112,3 +112,30 @@ def test_symlink_config_is_rejected(config_storage):
     with pytest.raises(HTTPException) as error:
         configs._config_path("link")
     assert error.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_theme_and_collapsed_panels_round_trip(config_storage):
+    config_dir, _, _ = config_storage
+    payload = configs.ConfigPayload(
+        name="light.rvizweb",
+        config=configs.FrontendConfig(
+            fixedFrame="map",
+            displays=[],
+            layout=configs.LayoutConfig(
+                sceneWidth=64,
+                collapsedPanels={"settings": False, "controller": True},
+            ),
+            appearance=configs.AppearanceConfig(theme="light"),
+        ),
+    )
+
+    await configs.save_config("light", payload)
+    saved = configs._read_validated(config_dir / "light.rvizweb")
+
+    assert saved.config.appearance.theme == "light"
+    assert saved.config.layout.sceneWidth == 64
+    assert saved.config.layout.collapsedPanels == {
+        "settings": False,
+        "controller": True,
+    }

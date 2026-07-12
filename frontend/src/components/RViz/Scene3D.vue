@@ -33,6 +33,7 @@ import { useConnectionStore } from '../../composables/useConnectionStore'
 import { ROS_TOPICS, getDefaultVisualizationTopics, getPositionTopics } from '../../config/rosTopics'
 import { TfBuffer, frameIdFromMessage, messageTimestampMs } from '../../utils/tfBuffer'
 import { debugLog } from '../../utils/debug'
+import { getThemeColor } from '../../utils/theme'
 
 export default {
   name: 'Scene3D',
@@ -253,7 +254,7 @@ export default {
       try {
         // 创建场景
         scene = new THREE.Scene()
-        scene.background = new THREE.Color(0x2c3e50)
+        scene.background = new THREE.Color(getThemeColor('--scene-background'))
         
         // 创建相机 - 设置为俯视XY平面的视角
         const aspect = containerRef.value.clientWidth / containerRef.value.clientHeight
@@ -387,15 +388,15 @@ export default {
         }
 
         // X轴标签 (红色) - 水平方向
-        const xSprite = createLabelSprite('X', '#FF0000', new THREE.Vector3(2.5, 0, 0))
+        const xSprite = createLabelSprite('X', getThemeColor('--axis-x'), new THREE.Vector3(2.5, 0, 0))
         scene.add(xSprite)
 
         // Y轴标签 (绿色) - 向上方向
-        const ySprite = createLabelSprite('Y', '#00FF00', new THREE.Vector3(0, 2.5, 0))
+        const ySprite = createLabelSprite('Y', getThemeColor('--axis-y'), new THREE.Vector3(0, 2.5, 0))
         scene.add(ySprite)
 
         // Z轴标签 (蓝色) - 深度方向
-        const zSprite = createLabelSprite('Z', '#0000FF', new THREE.Vector3(0, 0, 2.5))
+        const zSprite = createLabelSprite('Z', getThemeColor('--axis-z'), new THREE.Vector3(0, 0, 2.5))
         scene.add(zSprite)
 
         debugLog('坐标系标签已创建')
@@ -1052,7 +1053,7 @@ export default {
           } else if (color && typeof color === 'object' && 'r' in color) {
             threeColor = new THREE.Color(color.r, color.g, color.b)
           } else {
-            threeColor = new THREE.Color(color || '#2c3e50')
+            threeColor = new THREE.Color(color || getThemeColor('--scene-background'))
           }
           
           scene.background = threeColor
@@ -1060,7 +1061,7 @@ export default {
         } catch (error) {
           console.error('Failed to set background color:', error)
           // 设置默认颜色
-          scene.background = new THREE.Color('#2c3e50')
+          scene.background = new THREE.Color(getThemeColor('--scene-background'))
         }
       } else {
         console.warn('Scene not initialized when trying to set background color')
@@ -2981,6 +2982,9 @@ export default {
 
         case 'scene':
           // 更新场景设置
+          if (settings.backgroundColor) {
+            setBackgroundColor(settings.backgroundColor)
+          }
           if (settings.showGrid !== undefined) {
             setGridVisible(settings.showGrid)
           }
@@ -3879,7 +3883,7 @@ export default {
 }
 
 .scene3d-container:focus {
-  box-shadow: inset 0 0 0 2px rgba(0, 212, 255, 0.5);
+  box-shadow: inset 0 0 0 2px var(--accent-strong-50);
 }
 
 .loading-overlay {
@@ -3905,7 +3909,7 @@ export default {
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
+  border: 3px solid var(--text-inverse-faint);
   border-top: 3px solid var(--accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -3930,14 +3934,14 @@ export default {
 }
 
 .hint-content {
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--surface-tooltip);
   backdrop-filter: blur(5px);
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-inverse-muted);
   padding: 6px 10px;
   border-radius: 4px;
   font-family: 'Courier New', monospace;
   font-size: 11px;
-  border: 1px solid rgba(0, 212, 255, 0.3);
+  border: 1px solid var(--accent-strong-30);
   display: flex;
   align-items: center;
   gap: 8px;
