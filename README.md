@@ -2,7 +2,7 @@
 
 ![RVizWeb](img/1.png)
 
-RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、里程计、路径、Marker、地图等数据，并提供无人机位姿显示、期望目标输入和 RViz 风格的 Displays 管理。项目由 Vue 3 + Three.js 前端和 FastAPI + rclpy 后端组成。
+RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、里程计、路径、Marker 等数据，并提供无人机位姿显示、期望目标输入、实时数据图表和 RViz 风格的 Displays 管理。项目由 Vue 3 + Three.js 前端和 FastAPI + rclpy 后端组成。
 
 当前版本以配置文件驱动前端状态：话题、Fixed Frame、Displays、点云大小、Path 样式、视角、网格/坐标轴、目标点和面板比例都可以保存到 `rvizweb_configs/*.rvizweb`。`.env` 只保存端口、日志级别、`ROS_DOMAIN_ID` 等运行环境配置，不保存 ROS 话题名，前端代码也不提供内置话题兜底。
 
@@ -23,6 +23,11 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - `nav_msgs/msg/OccupancyGrid`
   - 自动订阅 `/tf` 和 `/tf_static`，将显示数据转换到选定的 Fixed Frame。
   - 找不到 TF 链时隐藏错误坐标的数据，并在对应 Display 显示原因。
+- RViz 风格工具与相机：
+  - 顶部工具栏提供移动相机、选择、聚焦、2D 位姿估计和 2D 目标。
+  - Orbit 操作为左键旋转、中键平移、右键拖动或滚轮缩放。
+  - 快捷键为 `M` 移动、`S` 选择、`F` 聚焦、`P` 2D 位姿、`G` 2D 目标、`Esc` 取消。
+  - 选中对象后显示青色包围框；俯视预设使用正交相机。
 - 点云与路径样式：
   - PointCloud2 支持按话题设置 `Point Size`。
   - Path 支持按话题设置线宽和颜色。
@@ -37,7 +42,16 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
 - 布局与视图：
   - 右侧面板支持手动拖拽高度。
   - 点云视图和右侧功能区比例可保存。
+  - 3D 画布会跟随分栏和底部 Dock 尺寸实时调整，避免拖拽后留下空白区域。
   - 网格、坐标轴、视角预设和相机状态可保存。
+- 数据图表：
+  - 以 3D 视图下方的可调高度 Dock 显示，启动时默认收起。
+  - 从当前 ROS2 图中选择 Topic 的数值字段，支持多曲线显隐和删除。
+  - 支持 10 秒到 10 分钟时间范围、滚轮缩放、拖动查看历史和回到实时。
+  - 暂停只冻结画面，后台仍继续缓存数据。
+  - X 轴显示相对时间：短窗口使用秒，1 分钟及以上自动切换为分钟。
+
+> 地图文件设置入口当前暂时隐藏。`nav_msgs/msg/OccupancyGrid` 的底层显示与原有配置字段仍保留，便于后续恢复。
 
 ## 话题读取
 
@@ -228,6 +242,13 @@ cd frontend
 npm run build
 ```
 
+前端静态检查：
+
+```bash
+cd frontend
+npm run lint:check
+```
+
 后端语法检查：
 
 ```bash
@@ -236,7 +257,7 @@ uv run pytest -q
 uv run python -m compileall -q app
 ```
 
-前端 TF 单元测试：
+前端单元测试（当前主要覆盖 TF 缓存与插值）：
 
 ```bash
 cd frontend
@@ -254,7 +275,7 @@ RVIZ-RQT-VISUAL/
 ├── frontend/                 # Vue 3 + Three.js 前端
 │   └── src/
 │       ├── components/RViz/  # 3D 场景、Displays、控制器
-│       ├── components/panels # 设置、位置信息、期望目标等右侧面板
+│       ├── components/panels # 设置、位置信息、期望目标和数据图表
 │       ├── components/layout # 主布局与面板容器
 │       ├── composables/      # ROS bridge 连接与状态
 │       └── services/         # 后端 API 封装
