@@ -132,17 +132,23 @@ DELETE /api/v1/configs/{name}
 
 ## 启动
 
-后端使用 [uv](https://docs.astral.sh/uv/) 管理 Python 环境。首次安装或依赖变化后执行：
+首次使用前，先复制环境配置示例文件并根据实际情况修改：
 
 ```bash
 cd /home/amov/RVIZ-RQT-VISUAL
+cp .env.example .env
+# 编辑 .env，按需修改端口、ROS_DOMAIN_ID 等配置
+```
+
+后端使用 [uv](https://docs.astral.sh/uv/) 管理 Python 环境。首次安装或依赖变化后执行：
+
+```bash
 ./start.sh sync
 ```
 
 正常本地启动：
 
 ```bash
-cd /home/amov/RVIZ-RQT-VISUAL
 ./start.sh local
 ```
 

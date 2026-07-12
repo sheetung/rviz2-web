@@ -42,6 +42,7 @@ install/
 log/
 
 # IDE
+.claude/
 .vscode/
 .idea/
 *.swp
