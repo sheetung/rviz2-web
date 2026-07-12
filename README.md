@@ -135,7 +135,7 @@ DELETE /api/v1/configs/{name}
 首次使用前，先复制环境配置示例文件并根据实际情况修改：
 
 ```bash
-cd /home/amov/RVIZ-RQT-VISUAL
+cd <your_workspace>/rviz2-web
 cp .env.example .env
 # 编辑 .env，按需修改端口、ROS_DOMAIN_ID 等配置
 ```
@@ -183,21 +183,23 @@ VITE_APP_TITLE=RVizWeb
 
 配置写入默认只允许本机和局域网地址。需要令牌时，在 `.env` 中将 `CONFIG_API_TOKEN` 与 `VITE_CONFIG_API_TOKEN` 设置成相同值。`CORS_ORIGINS` 应列出实际允许访问的前端地址。
 
-脚本会尝试 source：
+脚本会按 `.env` 中 `ROS2_SETUP_PATHS` 的顺序依次 source 各个 setup.bash 文件：
 
 ```bash
-/opt/ros/humble/setup.bash
-/home/amov/super_ros2_ws/install/setup.bash
+source /opt/ros/humble/setup.bash
+source <your_workspace>/install/setup.bash
 ```
 
 分别启动：
+
+> 一般不推荐分别启动
 
 ```bash
 cd backend
 uv venv --system-site-packages .venv
 VIRTUAL_ENV="$PWD/.venv" uv sync --active
 source /opt/ros/humble/setup.bash
-source /home/amov/super_ros2_ws/install/setup.bash
+source <your_workspace>/install/setup.bash
 uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 

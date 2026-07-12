@@ -29,8 +29,10 @@ load_env() {
 
 load_ros() {
   set +u
-  [[ -f /opt/ros/humble/setup.bash ]] && source /opt/ros/humble/setup.bash
-  [[ -f /home/amov/super_ros2_ws/install/setup.bash ]] && source /home/amov/super_ros2_ws/install/setup.bash
+  local setup_file
+  for setup_file in ${ROS2_SETUP_PATHS:-}; do
+    [[ -f "$setup_file" ]] && source "$setup_file"
+  done
   set -u
 }
 
