@@ -4,6 +4,8 @@
 
 ![RVizWeb](img/2.png)
 
+[English](./README_en.md)
+
 RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、里程计、路径、Marker 等数据，并提供无人机位姿显示、期望目标输入、实时数据图表和 RViz 风格的 Displays 管理。项目由 Vue 3 + Three.js 前端和 FastAPI + rclpy 后端组成。
 
 ## 功能
