@@ -11,7 +11,9 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
 - RViz 风格 Displays：
   - 从当前 ROS2 图读取话题并添加显示项。
   - 用眼睛图标控制显示/隐藏。
-  - 支持添加、删除、修改话题和消息类型。
+  - 支持添加、删除和修改话题；已添加 Display 的消息类型自动跟随 ROS2 话题，不单独编辑。
+  - Add 弹窗支持 `By topic` 和 `By display type`；类型列表只包含当前 ROS2 图中确实存在话题的类型。
+  - 隐藏或删除 Display 时同步清理消息缓存，TF 更新不会重新创建已隐藏对象。
   - 每个 Display 可保存独立配置。
 - 3D 可视化：
   - `sensor_msgs/msg/PointCloud2`
@@ -28,9 +30,12 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - Orbit 操作为左键旋转、中键平移、右键拖动或滚轮缩放。
   - 快捷键为 `M` 移动、`S` 选择、`F` 聚焦、`P` 2D 位姿、`G` 2D 目标、`Esc` 取消。
   - 选中对象后显示青色包围框；俯视预设使用正交相机。
+  - 工具栏支持将当前 3D 画布截图为 PNG。
+  - 支持以 30 FPS 录制 3D 画布，再次点击结束并下载 WebM；根据浏览器能力选择 VP9、VP8 或普通 WebM。
 - 点云与路径样式：
   - PointCloud2 支持按话题设置 `Point Size`。
   - Path 支持按话题设置线宽和颜色。
+  - MarkerArray 支持颜色覆盖和透明度设置；颜色留空时使用消息自身颜色。
 - 无人机位姿：
   - 位置面板中选择 odom 话题作为无人机模型位姿来源。
   - 当前 odom 订阅会被保护，避免 Displays 隐藏同名话题后无人机模型停止跟随。
@@ -39,6 +44,7 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - `展示` 只在点云视图中预览目标。
   - `发布` 才向配置的话题发布 `geometry_msgs/msg/PoseStamped`。
   - 默认方向为 `+X`。
+  - 发布状态实时读取当前 WebSocket 连接，不会因组件初始化时的旧状态误报未连接。
 - 布局与视图：
   - 右侧面板支持手动拖拽高度。
   - 点云视图和右侧功能区比例可保存。
@@ -77,7 +83,7 @@ rvizweb_configs/*.rvizweb
 rvizweb_configs/default.rvizweb
 ```
 
-`default.rvizweb` 只包含通用界面设置，不绑定具体机器人话题。无人机配置保存在 `rvizweb_configs/uav1.rvizweb`。
+`default.rvizweb` 只包含通用界面设置，不绑定具体机器人话题。无人机配置保存在本机的 `rvizweb_configs/uav1.rvizweb`；该个人配置被 `.gitignore` 忽略，不提交到仓库。
 
 当前设备的 `start.sh` 明确指定 `uav1.rvizweb` 为启动配置。临时切换配置时可覆盖：
 
@@ -235,6 +241,10 @@ ros2 topic list -t
 ### 修改配置后没有生效
 
 保存配置前会捕获当前视角、布局比例和面板高度。读取配置后会恢复 Fixed Frame、Displays、视图、网格、坐标轴、目标点、odom 话题和布局。
+
+### 截图或录像没有下载
+
+截图和录像使用浏览器下载能力，请确认站点具有下载权限。录像依赖 `MediaRecorder` 和 `canvas.captureStream()`，推荐使用当前版本的 Chrome、Edge 或 Firefox。录像文件使用 WebM 格式，不包含工具栏和右侧面板。
 
 ## 验证
 
