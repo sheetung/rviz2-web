@@ -248,8 +248,11 @@ export function useRosbridge() {
     publishTwist,
     publishPose,
     
-    // 状态
-    isConnected: connectionStore.isConnected,
+    // 状态必须动态读取 Store。直接赋值会保存 composable 创建时的布尔快照，
+    // 导致后续已经连上 WebSocket，发布路径仍误判为未连接。
+    get isConnected() {
+      return connectionStore.isConnected
+    },
     subscribedTopics: subscribedTopics.value
   }
 }
