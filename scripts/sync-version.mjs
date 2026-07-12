@@ -18,6 +18,10 @@ const jsonFiles = [
   resolve(root, 'frontend/package-lock.json')
 ]
 const pyprojectPath = resolve(root, 'backend/pyproject.toml')
+const uvLockPath = resolve(root, 'backend/uv.lock')
+const readmePath = resolve(root, 'README.md')
+const readmeEnPath = resolve(root, 'README_en.md')
+const projectStatusPath = resolve(root, 'PROJECT_STATUS.md')
 
 const mismatches = []
 for (const path of jsonFiles) {
@@ -41,6 +45,37 @@ if (currentPythonVersion !== version) mismatches.push(pyprojectPath)
 if (!checkOnly) {
   writeFileSync(pyprojectPath, pyproject.replace(/^version = "[^"]+"/m, `version = "${version}"`))
   writeFileSync(versionPath, `${version}\n`)
+}
+
+const textFiles = [
+  {
+    path: uvLockPath,
+    pattern: /(name = "rviz-web-backend"\r?\nversion = ")[^"]+("\r?\n)/,
+    replacement: `$1${version}$2`
+  },
+  {
+    path: readmePath,
+    pattern: /(当前正式版本：`v)[^`]+(`)/,
+    replacement: `$1${version}$2`
+  },
+  {
+    path: readmeEnPath,
+    pattern: /(Current release: `v)[^`]+(`)/,
+    replacement: `$1${version}$2`
+  },
+  {
+    path: projectStatusPath,
+    pattern: /(工程版本：`v)[^`]+(`)/,
+    replacement: `$1${version}$2`
+  }
+]
+
+for (const { path, pattern, replacement } of textFiles) {
+  const content = readFileSync(path, 'utf8')
+  const current = content.match(pattern)?.[0]
+  const updated = content.replace(pattern, replacement)
+  if (!current || !current.includes(version)) mismatches.push(path)
+  if (!checkOnly) writeFileSync(path, updated)
 }
 
 if (checkOnly && mismatches.length > 0) {
