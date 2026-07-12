@@ -62,6 +62,7 @@
                   <el-button
                     size="small"
                     class="tool-btn"
+                    :class="{ 'recording-active': isSceneRecording }"
                     :type="isSceneRecording ? 'danger' : 'default'"
                     :title="isSceneRecording ? '结束录像并下载' : '开始录像'"
                     @click="toggleSceneRecording"
@@ -1242,6 +1243,15 @@ export default {
 .dropdown-caret {
   margin-left: 1px !important;
   font-size: 10px;
+}
+
+:deep(.recording-active),
+:deep(.recording-active:hover),
+:deep(.recording-active:focus) {
+  color: #fff !important;
+  background: var(--danger) !important;
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 2px var(--danger-soft);
 }
 
 @media (max-width: 1100px) {
