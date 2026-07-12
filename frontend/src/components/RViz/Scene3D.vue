@@ -6,7 +6,6 @@
     @mousedown="onMouseDown"
     @mousemove="onMouseMove"
     @mouseup="onMouseUp"
-    @contextmenu.prevent
   >
     <!-- 加载指示器 -->
     <div v-if="loading" class="loading-overlay">
@@ -45,7 +44,7 @@ export default {
     const loading = ref(true)
     const activeTool = ref('move')
     const activeToolLabel = ref('移动相机 (M)')
-    const toolHint = ref('左键旋转 · 中键平移 · 右键/滚轮缩放')
+    const toolHint = ref('左键旋转 · 中键平移 · 滚轮缩放')
     
     // Three.js 核心对象
     let scene = null
@@ -299,7 +298,7 @@ export default {
         controls.dampingFactor = 0.05
         controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE
         controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN
-        controls.mouseButtons.RIGHT = THREE.MOUSE.DOLLY
+        controls.mouseButtons.RIGHT = THREE.MOUSE.NONE
         controls.addEventListener('change', onCameraChange)
         
         // 创建光照
@@ -2544,7 +2543,7 @@ export default {
         switch (currentNavigationTool) {
           case 'move':
             activeToolLabel.value = '移动相机 (M)'
-            toolHint.value = '左键旋转 · 中键平移 · 右键/滚轮缩放'
+            toolHint.value = '左键旋转 · 中键平移 · 滚轮缩放'
             containerRef.value.style.cursor = 'grab'
             break
           case 'select':
