@@ -38,7 +38,7 @@ for setup_file in ${ROS2_SETUP_PATHS:-}; do
   [[ -f "$setup_file" ]] && source "$setup_file"
 done
 set -u
-backend/.venv/bin/python -m pytest -q backend/tests
+(cd backend && .venv/bin/python -m pytest -q)
 
 git add VERSION README.md README_en.md PROJECT_STATUS.md \
   frontend/package.json frontend/package-lock.json \
