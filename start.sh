@@ -8,7 +8,6 @@ BACKEND_DIR="$PROJECT_ROOT/backend"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 LOG_DIR="$PROJECT_ROOT/logs"
 ENV_FILE="$PROJECT_ROOT/.env"
-DEFAULT_RVIZWEB_CONFIG="${RVIZWEB_CONFIG:-uav1.rvizweb}"
 BACKEND_PID=""
 FRONTEND_PID=""
 
@@ -108,20 +107,21 @@ start_local() {
   local backend_port="${BACKEND_PORT:?Set BACKEND_PORT in $ENV_FILE}"
   local frontend_port="${FRONTEND_PORT:?Set FRONTEND_PORT in $ENV_FILE}"
   local frontend_public_host="${FRONTEND_PUBLIC_HOST:-127.0.0.1}"
+  local default_rvizweb_config="${RVIZWEB_CONFIG:?Set RVIZWEB_CONFIG in $ENV_FILE}"
   check_port "$backend_port"
   check_port "$frontend_port"
 
   [[ -d "$BACKEND_DIR/.venv" ]] || fail "Backend environment missing. Run: cd backend && uv sync"
   [[ -d "$FRONTEND_DIR/node_modules" ]] || fail "Frontend dependencies missing. Run: cd frontend && npm ci"
-  [[ "$DEFAULT_RVIZWEB_CONFIG" == *.rvizweb ]] || fail "Default frontend config must use the .rvizweb suffix"
-  [[ -f "$PROJECT_ROOT/rvizweb_configs/$DEFAULT_RVIZWEB_CONFIG" ]] || fail "Default frontend config not found: rvizweb_configs/$DEFAULT_RVIZWEB_CONFIG"
+  [[ "$default_rvizweb_config" == *.rvizweb ]] || fail "Default frontend config must use the .rvizweb suffix"
+  [[ -f "$PROJECT_ROOT/rvizweb_configs/$default_rvizweb_config" ]] || fail "Default frontend config not found: rvizweb_configs/$default_rvizweb_config"
   "$BACKEND_DIR/.venv/bin/python" -c "import rclpy" || fail "rclpy is unavailable; check the ROS2 setup files"
 
   if [[ "$frontend_mode" == "local" ]]; then
     log "Building frontend for normal local use"
     (
       cd "$FRONTEND_DIR"
-      VITE_RVIZWEB_CONFIG="$DEFAULT_RVIZWEB_CONFIG" npm run build
+      VITE_RVIZWEB_CONFIG="$default_rvizweb_config" npm run build
     ) >"$LOG_DIR/frontend.log" 2>&1 || fail "Frontend build failed; see $LOG_DIR/frontend.log"
   fi
 
@@ -138,7 +138,7 @@ start_local() {
   (
     cd "$FRONTEND_DIR"
     if [[ "$frontend_mode" == "dev" ]]; then
-      export VITE_RVIZWEB_CONFIG="$DEFAULT_RVIZWEB_CONFIG"
+      export VITE_RVIZWEB_CONFIG="$default_rvizweb_config"
       export CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}"
       export CHOKIDAR_INTERVAL="${CHOKIDAR_INTERVAL:-500}"
       exec setsid npm run dev -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "$frontend_port"
@@ -152,7 +152,7 @@ start_local() {
 
   log "Frontend: http://$frontend_public_host:$frontend_port"
   log "Backend:  http://127.0.0.1:$backend_port"
-  log "Config:   rvizweb_configs/$DEFAULT_RVIZWEB_CONFIG"
+  log "Config:   rvizweb_configs/$default_rvizweb_config"
   wait -n "$BACKEND_PID" "$FRONTEND_PID"
   fail "A service stopped unexpectedly; see $LOG_DIR"
 }
