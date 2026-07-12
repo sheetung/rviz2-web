@@ -14,5 +14,3 @@ def read_app_version() -> str:
 
 
 APP_VERSION = read_app_version()
-API_VERSION = "v1"
-CONFIG_VERSION = 1

@@ -35,9 +35,7 @@
         </div>
 
         <div class="version-meta" aria-label="版本信息">
-          <span>RVizWeb {{ appVersion }}</span>
-          <span>API {{ apiVersion }}</span>
-          <span>配置格式 v{{ configVersion }}</span>
+          <span>系统版本 v{{ appVersion }}</span>
         </div>
 
         <div v-if="connectionStore.subscribedTopics.length > 0" class="subscribed-topics">
@@ -74,8 +72,6 @@ export default {
     const showDetails = ref(false)
     const statusRef = ref(null)
     const appVersion = import.meta.env.VITE_APP_VERSION || 'unknown'
-    const apiVersion = import.meta.env.VITE_API_VERSION || 'v1'
-    const configVersion = import.meta.env.VITE_CONFIG_VERSION || '1'
 
     // 徽章类型
     const badgeType = computed(() => {
@@ -143,8 +139,6 @@ export default {
       visibleTopics,
       hiddenTopicCount,
       appVersion,
-      apiVersion,
-      configVersion,
       toggleDetails,
       closeDetails,
       reconnect

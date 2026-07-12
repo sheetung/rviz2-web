@@ -2,7 +2,7 @@
 
 > 当前正式版本：`v1.0.0`
 
-工程版本以根目录 `VERSION` 为唯一来源。后端 API 版本 `v1` 和 `.rvizweb` 配置格式版本 `1` 独立演进；展开前端右上角连接状态可查看三者。修改版本后运行 `node scripts/sync-version.mjs 1.0.1` 同步各清单，或运行 `node scripts/sync-version.mjs --check` 检查一致性。
+整个工程只使用根目录 `VERSION` 中的一套版本号，展开前端右上角连接状态即可查看“系统版本”。修改版本后运行 `node scripts/sync-version.mjs 1.0.1` 同步各清单，或运行 `node scripts/sync-version.mjs --check` 检查一致性。
 
 发布新版本只需运行 `./release.sh 1.0.1 --note "本次发布说明"`。脚本会同步版本、更新变更日志、运行前后端测试与构建、创建提交和 Git 标签；确认需要发布到远端时追加 `--push`。
 

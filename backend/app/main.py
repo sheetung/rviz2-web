@@ -10,7 +10,7 @@ import logging
 import os
 
 from .core.config import get_settings
-from .core.version import API_VERSION, APP_VERSION, CONFIG_VERSION
+from .core.version import APP_VERSION
 from .api.v1 import ros, configs
 from .services.dependencies import get_rosbridge_service
 
@@ -79,8 +79,6 @@ async def health_check():
         "status": "healthy",
         "service": "ros-web-viz",
         "version": APP_VERSION,
-        "api_version": API_VERSION,
-        "config_version": CONFIG_VERSION,
     }
 
 
@@ -89,8 +87,6 @@ async def version_info():
     """返回工程、API 与配置格式版本。"""
     return {
         "version": APP_VERSION,
-        "api_version": API_VERSION,
-        "config_version": CONFIG_VERSION,
     }
 
 @app.websocket("/ws")
