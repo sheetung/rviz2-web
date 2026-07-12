@@ -34,6 +34,12 @@
           <span>重连 {{ connectionStore.reconnectAttempts || 0 }} 次</span>
         </div>
 
+        <div class="version-meta" aria-label="版本信息">
+          <span>RVizWeb {{ appVersion }}</span>
+          <span>API {{ apiVersion }}</span>
+          <span>配置格式 v{{ configVersion }}</span>
+        </div>
+
         <div v-if="connectionStore.subscribedTopics.length > 0" class="subscribed-topics">
           <el-tag
             v-for="topic in visibleTopics"
@@ -67,6 +73,9 @@ export default {
     const connectionStore = useConnectionStore()
     const showDetails = ref(false)
     const statusRef = ref(null)
+    const appVersion = import.meta.env.VITE_APP_VERSION || 'unknown'
+    const apiVersion = import.meta.env.VITE_API_VERSION || 'v1'
+    const configVersion = import.meta.env.VITE_CONFIG_VERSION || '1'
 
     // 徽章类型
     const badgeType = computed(() => {
@@ -133,6 +142,9 @@ export default {
       buttonType,
       visibleTopics,
       hiddenTopicCount,
+      appVersion,
+      apiVersion,
+      configVersion,
       toggleDetails,
       closeDetails,
       reconnect
@@ -219,6 +231,17 @@ export default {
   margin-top: 10px;
   color: var(--text-secondary);
   font-size: 11px;
+}
+
+.version-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 8px;
+  padding-top: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  border-top: 1px solid var(--border);
 }
 
 .subscribed-topics {

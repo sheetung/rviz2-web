@@ -1,5 +1,9 @@
 # RVizWeb
 
+> 当前正式版本：`v1.0.0`
+
+工程版本以根目录 `VERSION` 为唯一来源。后端 API 版本 `v1` 和 `.rvizweb` 配置格式版本 `1` 独立演进；展开前端右上角连接状态可查看三者。修改版本后运行 `node scripts/sync-version.mjs 1.0.1` 同步各清单，或运行 `node scripts/sync-version.mjs --check` 检查一致性。
+
 ![RVizWeb](img/1.png)
 
 ![RVizWeb](img/2.png)

@@ -1,5 +1,9 @@
 # RVizWeb
 
+> Current release: `v1.0.0`
+
+The root `VERSION` file is the single source of truth for the application version. API version `v1` and `.rvizweb` configuration format version `1` evolve independently. Expand the connection status in the top-right corner to view all three versions. Run `node scripts/sync-version.mjs 1.0.1` after changing the release version, or `node scripts/sync-version.mjs --check` to verify consistency.
+
 ![RVizWeb](img/1.png)
 
 ![RVizWeb](img/2.png)

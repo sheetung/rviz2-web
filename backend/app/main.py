@@ -10,6 +10,7 @@ import logging
 import os
 
 from .core.config import get_settings
+from .core.version import API_VERSION, APP_VERSION, CONFIG_VERSION
 from .api.v1 import ros, configs
 from .services.dependencies import get_rosbridge_service
 
@@ -24,7 +25,7 @@ settings = get_settings()
 app = FastAPI(
     title="RViz2 Web Visualization",
     description="基于 Vue.js + FastAPI 的 ROS2 可视化平台",
-    version="1.0.0"
+    version=APP_VERSION
 )
 
 # 配置 CORS
@@ -69,12 +70,28 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     """根路径"""
-    return {"message": "RViz2 Web Visualization System", "version": "1.0.0"}
+    return {"message": "RViz2 Web Visualization System", "version": APP_VERSION}
 
 @app.get("/health")
 async def health_check():
     """健康检查"""
-    return {"status": "healthy", "service": "ros-web-viz"}
+    return {
+        "status": "healthy",
+        "service": "ros-web-viz",
+        "version": APP_VERSION,
+        "api_version": API_VERSION,
+        "config_version": CONFIG_VERSION,
+    }
+
+
+@app.get("/api/v1/version")
+async def version_info():
+    """返回工程、API 与配置格式版本。"""
+    return {
+        "version": APP_VERSION,
+        "api_version": API_VERSION,
+        "config_version": CONFIG_VERSION,
+    }
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

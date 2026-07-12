@@ -3,6 +3,9 @@ import vue from '@vitejs/plugin-vue'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+import { readFileSync } from 'node:fs'
+
+const appVersion = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim()
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '..', '')
@@ -20,6 +23,11 @@ export default defineConfig(({ mode }) => {
 
   return {
   envDir: '..',
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+    'import.meta.env.VITE_API_VERSION': JSON.stringify('v1'),
+    'import.meta.env.VITE_CONFIG_VERSION': JSON.stringify('1')
+  },
   plugins: [
     vue(),
     AutoImport({
