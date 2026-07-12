@@ -172,6 +172,47 @@
               @change="updateDisplayTopic(display)"
             />
           </div>
+
+          <div
+            v-if="selectedDisplayId === display.id && isMarkerArrayDisplay(display)"
+            class="property-row display-property"
+            @click.stop
+          >
+            <span>Color</span>
+            <el-color-picker
+              v-model="display.config.color"
+              clearable
+              size="small"
+              @change="updateDisplayTopic(display)"
+            />
+          </div>
+
+          <div
+            v-if="selectedDisplayId === display.id && isMarkerArrayDisplay(display)"
+            class="property-row display-property"
+            @click.stop
+          >
+            <span>Opacity</span>
+            <div class="display-setting-control">
+              <el-slider
+                v-model="display.config.opacity"
+                :min="0"
+                :max="1"
+                :step="0.05"
+                @input="updateDisplayTopic(display)"
+              />
+              <el-input-number
+                v-model="display.config.opacity"
+                :min="0"
+                :max="1"
+                :step="0.05"
+                :precision="2"
+                controls-position="right"
+                size="small"
+                @change="updateDisplayTopic(display)"
+              />
+            </div>
+          </div>
         </template>
 
         <div v-if="displayTopics.length === 0" class="empty-displays">
@@ -358,6 +399,12 @@ export default {
         return {
           lineWidth: 2,
           color: getThemeColor('--axis-y')
+        }
+      }
+      if ((messageType || '').includes('MarkerArray')) {
+        return {
+          color: '',
+          opacity: 1
         }
       }
       return {}
@@ -558,6 +605,8 @@ export default {
 
     const isPathDisplay = (display) => isPathMessageType(display.messageType || '')
 
+    const isMarkerArrayDisplay = (display) => (display.messageType || '').includes('MarkerArray')
+
     const applyDisplayTopics = () => {
       displayTopics.value.forEach(display => {
         emitDisplayTopicChange(display.visible ? 'add' : 'hide', display)
@@ -626,6 +675,7 @@ export default {
       displayLabel,
       isPointCloudDisplay,
       isPathDisplay,
+      isMarkerArrayDisplay,
       updateFixedFrame,
       loadAvailableTopics,
       onNewDisplayTopicChange,

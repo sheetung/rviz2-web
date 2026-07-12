@@ -1364,6 +1364,25 @@ export default {
         applyPathMaterialConfig(object.material)
         object.traverse?.((child) => applyPathMaterialConfig(child.material))
       }
+
+      if ((object.userData?.messageType || '').includes('Marker')) {
+        const markerColor = nextConfig.color ? new THREE.Color(nextConfig.color) : null
+        const markerOpacity = nextConfig.opacity === undefined
+          ? null
+          : THREE.MathUtils.clamp(Number(nextConfig.opacity), 0, 1)
+        object.traverse?.((child) => {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          materials.filter(Boolean).forEach(material => {
+            if (markerColor && material.color) material.color.copy(markerColor)
+            if (markerOpacity !== null) {
+              material.opacity = markerOpacity
+              material.transparent = markerOpacity < 1
+              material.depthWrite = markerOpacity >= 1
+            }
+            material.needsUpdate = true
+          })
+        })
+      }
     }
 
     const removeVisualization = (topic) => {
@@ -1975,7 +1994,7 @@ export default {
       }
     }
     
-    const updateMarker = (topic, message) => {
+    const updateMarker = (topic, message, displayConfig = displayConfigs.get(topic) || {}) => {
       // 标记可视化实现
       // debugLog(`Updating marker for ${topic}:`, message)
       
@@ -1997,14 +2016,23 @@ export default {
           geometry = new THREE.BoxGeometry(1, 1, 1)
       }
       
+      const messageOpacity = message.color?.a ?? 1
+      const opacity = displayConfig.opacity === undefined
+        ? messageOpacity
+        : THREE.MathUtils.clamp(Number(displayConfig.opacity), 0, 1)
+      const markerColor = displayConfig.color
+        ? new THREE.Color(displayConfig.color)
+        : new THREE.Color(
+          message.color?.r ?? 1,
+          message.color?.g ?? 0,
+          message.color?.b ?? 0
+        )
+
       material = new THREE.MeshLambertMaterial({
-        color: new THREE.Color(
-          message.color?.r || 1,
-          message.color?.g || 0,
-          message.color?.b || 0
-        ),
-        transparent: true,
-        opacity: message.color?.a || 1
+        color: markerColor,
+        transparent: opacity < 1,
+        opacity,
+        depthWrite: opacity >= 1
       })
       
       mesh = new THREE.Mesh(geometry, material)
@@ -2049,11 +2077,12 @@ export default {
       removeVisualization(topic)
       
       const group = new THREE.Group()
+      const displayConfig = displayConfigs.get(topic) || {}
       
       let transformError = ''
       if (message.markers && message.markers.length > 0) {
         message.markers.forEach((marker, index) => {
-          updateMarker(`${topic}_${index}`, marker)
+          updateMarker(`${topic}_${index}`, marker, displayConfig)
           const markerObject = visualizationObjects.get(`${topic}_${index}`)
           if (markerObject) {
             if (!applyFixedFrame(topic, marker, markerObject, false)) {
