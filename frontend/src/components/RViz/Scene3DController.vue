@@ -1,7 +1,7 @@
 <template>
   <div class="scene3d-controller">
     <!-- 地图设置 -->
-    <div class="control-section">
+    <div v-if="showMapSettings" class="control-section">
       <h4>地图设置</h4>
       <div class="map-controls">
         
@@ -153,6 +153,12 @@ import { ROS_TOPICS } from '../../config/rosTopics'
 
 export default {
   name: 'Scene3DController',
+  props: {
+    showMapSettings: {
+      type: Boolean,
+      default: false
+    }
+  },
   components: {
     Refresh, Aim, Folder
   },

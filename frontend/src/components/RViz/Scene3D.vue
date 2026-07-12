@@ -16,10 +16,10 @@
       <span>初始化 3D 场景...</span>
     </div>
     
-    <!-- 调试快捷键提示 -->
-    <div class="debug-hint" v-show="!loading">
+    <div class="tool-hint" v-show="!loading">
       <div class="hint-content">
-        <small>快捷键: D-调试 | R-重置 | F-适配点云 | G-网格 | M-适配地图 | C-检查订阅 | X-清除全部</small>
+        <strong>{{ activeToolLabel }}</strong>
+        <small>{{ toolHint }}</small>
       </div>
     </div>
   </div>
@@ -36,16 +36,21 @@ import { debugLog } from '../../utils/debug'
 
 export default {
   name: 'Scene3D',
-  emits: ['object-selected', 'camera-moved', 'display-status'],
+  emits: ['object-selected', 'camera-moved', 'display-status', 'tool-change'],
   setup(props, { emit }) {
     const rosbridge = useRosbridge()
     const connectionStore = useConnectionStore()
     const containerRef = ref(null)
     const loading = ref(true)
+    const activeTool = ref('move')
+    const activeToolLabel = ref('移动相机 (M)')
+    const toolHint = ref('左键旋转 · 中键平移 · 右键/滚轮缩放')
     
     // Three.js 核心对象
     let scene = null
     let camera = null
+    let perspectiveCamera = null
+    let orthographicCamera = null
     let renderer = null
     let controls = null
     let animationId = null
@@ -225,12 +230,15 @@ export default {
     let trajectoryPoints = []
 
     // 导航工具状态
-    let currentNavigationTool = 'none'
+    let currentNavigationTool = 'move'
     let fixedFrameId = 'map'
     let isDragging = false
     let dragStartPosition = null
     let dragCurrentPosition = null
     let previewArrow = null
+    let goalPublishTopic = ''
+    let selectedObject = null
+    let selectionHelper = null
 
     // FPS 计算
     let lastTime = 0
@@ -248,7 +256,17 @@ export default {
         
         // 创建相机 - 设置为俯视XY平面的视角
         const aspect = containerRef.value.clientWidth / containerRef.value.clientHeight
-        camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000)
+        perspectiveCamera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000)
+        const orthoHeight = 20
+        orthographicCamera = new THREE.OrthographicCamera(
+          (-orthoHeight * aspect) / 2,
+          (orthoHeight * aspect) / 2,
+          orthoHeight / 2,
+          -orthoHeight / 2,
+          0.1,
+          1000
+        )
+        camera = perspectiveCamera
         // Default angled map view: keep world X axis horizontal on screen.
         camera.up.set(0, 0, 1)
         camera.position.set(0, -14, 10)
@@ -270,6 +288,9 @@ export default {
         controls = new OrbitControls(camera, renderer.domElement)
         controls.enableDamping = true
         controls.dampingFactor = 0.05
+        controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE
+        controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN
+        controls.mouseButtons.RIGHT = THREE.MOUSE.DOLLY
         controls.addEventListener('change', onCameraChange)
         
         // 创建光照
@@ -317,6 +338,7 @@ export default {
         animate()
         
         loading.value = false
+        setNavigationTool('move')
         debugLog('3D Scene initialized successfully')
         debugLog('坐标系设置：')
         debugLog('- X轴：向前（红色）')
@@ -598,6 +620,10 @@ export default {
       if (controls) {
         controls.update()
       }
+
+      if (selectionHelper) {
+        selectionHelper.update()
+      }
       
       // 渲染场景
       if (renderer && scene && camera) {
@@ -646,8 +672,16 @@ export default {
       const width = containerRef.value.clientWidth
       const height = containerRef.value.clientHeight
       
-      camera.aspect = width / height
-      camera.updateProjectionMatrix()
+      const aspect = width / height
+      perspectiveCamera.aspect = aspect
+      perspectiveCamera.updateProjectionMatrix()
+
+      const orthoHeight = 20
+      orthographicCamera.left = (-orthoHeight * aspect) / 2
+      orthographicCamera.right = (orthoHeight * aspect) / 2
+      orthographicCamera.top = orthoHeight / 2
+      orthographicCamera.bottom = -orthoHeight / 2
+      orthographicCamera.updateProjectionMatrix()
       
       renderer.setSize(width, height)
     }
@@ -664,24 +698,100 @@ export default {
         })
       }
     }
+
+    const pointerRaycaster = (event) => {
+      const raycaster = new THREE.Raycaster()
+      raycaster.params.Points.threshold = 0.12
+      const rect = containerRef.value.getBoundingClientRect()
+      const mouse = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      )
+      raycaster.setFromCamera(mouse, camera)
+      return raycaster
+    }
+
+    const selectableRoot = (object) => {
+      let root = object
+      while (root?.parent && root.parent !== scene) root = root.parent
+      if (!root || root === gridHelper || root === axesHelper || root === selectionHelper) return null
+      if (root === ambientLight || root === directionalLight || root === previewArrow) return null
+      if (root === robotModel) return root
+      for (const visualizationObject of visualizationObjects.values()) {
+        if (visualizationObject === root) return root
+      }
+      return null
+    }
+
+    const clearSelection = () => {
+      selectedObject = null
+      if (selectionHelper) {
+        scene?.remove(selectionHelper)
+        selectionHelper.geometry?.dispose()
+        selectionHelper.material?.dispose()
+        selectionHelper = null
+      }
+    }
+
+    const selectObject = (intersection) => {
+      const root = selectableRoot(intersection?.object)
+      clearSelection()
+      if (!root) {
+        emit('object-selected', null)
+        return
+      }
+
+      selectedObject = root
+      selectionHelper = new THREE.BoxHelper(root, 0x00d4ff)
+      selectionHelper.name = 'rviz-selection-outline'
+      selectionHelper.userData.ignoreSelection = true
+      selectionHelper.material.depthTest = false
+      selectionHelper.renderOrder = 1000
+      scene.add(selectionHelper)
+      emit('object-selected', {
+        object: root,
+        point: intersection.point,
+        distance: intersection.distance
+      })
+    }
+
+    const focusSelection = () => {
+      if (!selectedObject || !camera || !controls) {
+        ElMessage.info('请先使用选择工具选中对象')
+        return false
+      }
+
+      const bounds = new THREE.Box3().setFromObject(selectedObject)
+      if (bounds.isEmpty()) return false
+      const center = bounds.getCenter(new THREE.Vector3())
+      const size = bounds.getSize(new THREE.Vector3())
+      const radius = Math.max(size.length() / 2, 0.5)
+      const direction = camera.position.clone().sub(controls.target).normalize()
+      controls.target.copy(center)
+
+      if (camera.isOrthographicCamera) {
+        camera.position.copy(center).add(direction.multiplyScalar(Math.max(radius * 2, 10)))
+        camera.zoom = Math.max(0.1, Math.min(50, 8 / radius))
+        camera.updateProjectionMatrix()
+      } else {
+        const distance = radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
+        camera.position.copy(center).add(direction.multiplyScalar(Math.max(distance * 1.35, 2)))
+      }
+      camera.lookAt(center)
+      controls.update()
+      return true
+    }
     
     /**
      * 鼠标点击事件
      */
     const onMouseDown = (event) => {
       if (event.button === 0) { // 左键点击
-        // 射线检测
-        const raycaster = new THREE.Raycaster()
-        const mouse = new THREE.Vector2()
-
-        const rect = containerRef.value.getBoundingClientRect()
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
-
-        raycaster.setFromCamera(mouse, camera)
+        containerRef.value?.focus()
+        const raycaster = pointerRaycaster(event)
 
         // 检查是否使用导航工具
-        if (currentNavigationTool !== 'none') {
+        if (currentNavigationTool === '2d_goal' || currentNavigationTool === '2d_pose') {
           // 与地面相交检测（假设地面在z=0平面）
           const groundPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
           const intersection = new THREE.Vector3()
@@ -695,16 +805,13 @@ export default {
           return
         }
 
-        // 正常的对象选择检测
-        const intersects = raycaster.intersectObjects(scene.children, true)
-
-        if (intersects.length > 0) {
-          const object = intersects[0].object
-          emit('object-selected', {
-            object: object,
-            point: intersects[0].point,
-            distance: intersects[0].distance
-          })
+        if (currentNavigationTool === 'select') {
+          const intersects = raycaster.intersectObjects(
+            scene.children.filter(child => child !== selectionHelper && child !== previewArrow),
+            true
+          )
+          selectObject(intersects.find(hit => selectableRoot(hit.object)))
+          event.preventDefault()
         }
       }
     }
@@ -713,17 +820,10 @@ export default {
      * 鼠标移动事件
      */
     const onMouseMove = (event) => {
-      if (isDragging && currentNavigationTool !== 'none') {
+      if (isDragging && (currentNavigationTool === '2d_goal' || currentNavigationTool === '2d_pose')) {
         event.preventDefault()
 
-        const raycaster = new THREE.Raycaster()
-        const mouse = new THREE.Vector2()
-
-        const rect = containerRef.value.getBoundingClientRect()
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
-
-        raycaster.setFromCamera(mouse, camera)
+        const raycaster = pointerRaycaster(event)
 
         const groundPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
         const intersection = new THREE.Vector3()
@@ -754,7 +854,7 @@ export default {
      * 鼠标释放事件
      */
     const onMouseUp = () => {
-      if (isDragging && currentNavigationTool !== 'none') {
+      if (isDragging && (currentNavigationTool === '2d_goal' || currentNavigationTool === '2d_pose')) {
         isDragging = false
 
         // 清除预览箭头
@@ -798,68 +898,69 @@ export default {
      * 键盘事件处理（调试用）
      */
     const onKeyDown = (event) => {
-      const isNavigationActive = currentNavigationTool !== 'none'
+      const target = event.target
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) {
+        return
+      }
+
+      const isNavigationActive = currentNavigationTool === '2d_goal' || currentNavigationTool === '2d_pose'
       const isSceneFocused = document.activeElement === containerRef.value ||
           containerRef.value?.contains(document.activeElement)
 
-      // ???????????????????????????
       if (isNavigationActive || isSceneFocused) {
         switch (event.key.toLowerCase()) {
-          case 'd':
-            // D键：显示调试信息
-            addDebugInfo()
-            break
-          case 'r':
-            // R键：重置相机
-            resetCamera()
-            break
-          case 'f':
-            // F键：自动适配到点云
-            if (visualizationObjects.size > 0) {
-              for (const [topic, obj] of visualizationObjects) {
-                if (obj.userData?.messageType === 'sensor_msgs/msg/PointCloud2') {
-                  fitCameraToPointCloud(obj)
-                  ElMessage.info(`已适配到点云: ${topic}`)
-                  break
-                }
-              }
-            } else {
-              ElMessage.warning('没有点云数据可适配')
-            }
-            break
-          case 'g':
-            // G键：切换网格
-            setGridVisible(!gridHelper?.visible)
+          case 'escape':
+            event.preventDefault()
+            if (isNavigationActive) cancelNavigationSelection()
+            else setNavigationTool('move')
             break
           case 'm':
-            // M键：适配到地图
-            const mapObject = visualizationObjects.get('loaded_map')
-            if (mapObject) {
-              fitCameraToMap(mapObject)
-              ElMessage.info('已适配到地图视图')
-            } else {
-              ElMessage.warning('没有加载的地图')
-            }
+            event.preventDefault()
+            setNavigationTool('move')
+            break
+          case 's':
+            event.preventDefault()
+            setNavigationTool('select')
+            break
+          case 'g':
+            event.preventDefault()
+            setNavigationTool('2d_goal')
+            break
+          case 'p':
+            event.preventDefault()
+            setNavigationTool('2d_pose')
+            break
+          case 'f':
+            event.preventDefault()
+            focusSelection()
+            break
+          case 'd':
+            if (import.meta.env.DEV) addDebugInfo()
+            break
+          case 'r':
+            resetCamera()
             break
           case 'c':
-            // C键：检查订阅状态
-            checkSubscriptionStatus()
-            break
-          case 'x':
-            if (currentNavigationTool !== 'none') {
-              event.preventDefault()
-              event.stopPropagation()
-              cancelNavigationSelection()
-            } else {
-              clearAllVisualizations()
-            }
+            if (import.meta.env.DEV) checkSubscriptionStatus()
             break
         }
       }
     }
     
+    const activateCamera = (projection = 'perspective') => {
+      const nextCamera = projection === 'orthographic' ? orthographicCamera : perspectiveCamera
+      if (!nextCamera || camera === nextCamera) return
+      const target = controls?.target.clone() || new THREE.Vector3()
+      camera = nextCamera
+      if (controls) {
+        controls.object = camera
+        controls.target.copy(target)
+      }
+    }
+
     // 公共方法
     const resetCamera = () => {
+      activateCamera('perspective')
       if (camera && controls) {
         // Reset to angled map view while keeping world X horizontal.
         camera.up.set(0, 0, 1)
@@ -900,12 +1001,15 @@ export default {
           y: camera.up.y,
           z: camera.up.z
         },
-        zoom: camera.zoom
+        zoom: camera.zoom,
+        projection: camera.isOrthographicCamera ? 'orthographic' : 'perspective'
       }
     }
 
     const applyCameraState = (cameraState) => {
-      if (!camera || !controls || !cameraState?.position || !cameraState?.target) return
+      if (!controls || !cameraState?.position || !cameraState?.target) return
+      const currentProjection = camera?.isOrthographicCamera ? 'orthographic' : 'perspective'
+      activateCamera(cameraState.projection || currentProjection)
       const up = cameraState.up || { x: 0, y: 0, z: 1 }
       camera.up.set(up.x, up.y, up.z)
       camera.position.set(
@@ -1259,6 +1363,7 @@ export default {
     const removeVisualization = (topic) => {
       const object = visualizationObjects.get(topic)
       if (object) {
+        if (selectedObject === object) clearSelection()
         // debugLog(`[Scene3D] 清除可视化对象: ${topic}`)
 
         // 递归清理对象和其子对象
@@ -2331,6 +2436,7 @@ export default {
       
       window.removeEventListener('resize', onWindowResize)
       window.removeEventListener('keydown', onKeyDown)
+      clearSelection()
       
       // 清理所有ROS订阅
       rosSubscriptions.forEach((subscription, topicName) => {
@@ -2400,9 +2506,16 @@ export default {
       scheduleTransformRefresh()
     }
 
+    const setGoalTopic = (topicName) => {
+      goalPublishTopic = typeof topicName === 'string' ? topicName.trim() : ''
+    }
+
     const setNavigationTool = (tool) => {
-      currentNavigationTool = tool
-      debugLog('set navigation tool:', tool)
+      const nextTool = tool === 'none' ? 'move' : tool
+      const supportedTools = ['move', 'select', '2d_goal', '2d_pose']
+      currentNavigationTool = supportedTools.includes(nextTool) ? nextTool : 'move'
+      activeTool.value = currentNavigationTool
+      debugLog('set navigation tool:', currentNavigationTool)
 
       clearPreviewArrow()
       isDragging = false
@@ -2410,25 +2523,38 @@ export default {
       dragCurrentPosition = null
 
       if (controls) {
-        controls.enabled = tool === 'none'
+        controls.enabled = currentNavigationTool === 'move'
       }
 
       if (containerRef.value) {
-        if (tool !== 'none') {
-          containerRef.value.focus()
-        }
+        containerRef.value.focus()
 
-        switch (tool) {
+        switch (currentNavigationTool) {
+          case 'move':
+            activeToolLabel.value = '移动相机 (M)'
+            toolHint.value = '左键旋转 · 中键平移 · 右键/滚轮缩放'
+            containerRef.value.style.cursor = 'grab'
+            break
+          case 'select':
+            activeToolLabel.value = '选择 (S)'
+            toolHint.value = '单击选中对象 · F 聚焦选中对象 · Esc 返回移动相机'
+            containerRef.value.style.cursor = 'default'
+            break
           case '2d_goal':
+            activeToolLabel.value = '2D 目标 (G)'
+            toolHint.value = '左键按下选位置，拖动设方向，松开发布 · Esc 取消'
             containerRef.value.style.cursor = 'crosshair'
             break
           case '2d_pose':
+            activeToolLabel.value = '2D 位姿估计 (P)'
+            toolHint.value = '左键按下选位置，拖动设方向，松开发布 · Esc 取消'
             containerRef.value.style.cursor = 'copy'
             break
           default:
             containerRef.value.style.cursor = 'default'
         }
       }
+      emit('tool-change', currentNavigationTool)
     }
 
     const cancelNavigationSelection = () => {
@@ -2436,7 +2562,7 @@ export default {
       isDragging = false
       dragStartPosition = null
       dragCurrentPosition = null
-      setNavigationTool('none')
+      setNavigationTool('move')
       ElMessage.info('已取消本次目标点')
     }
 
@@ -2511,7 +2637,7 @@ export default {
     const handleNavigationToolClick = (position, orientation) => {
       switch (currentNavigationTool) {
         case '2d_goal':
-          publishGoalPose(position, orientation)
+          publishGoalPose(position, orientation, goalPublishTopic)
           break
         case '2d_pose':
           publishPoseEstimate(position, orientation)
@@ -2519,7 +2645,7 @@ export default {
       }
 
       // 发布后重置工具
-      setNavigationTool('none')
+      setNavigationTool('move')
     }
 
     const publishGoalPose = (position, orientation, topicName = '') => {
@@ -2872,20 +2998,24 @@ export default {
 
     const setViewPreset = (preset) => {
       debugLog('设置视角预设:', preset)
-      
-      if (!camera) return
+
+      if (!perspectiveCamera || !orthographicCamera) return
       
       const target = new THREE.Vector3(0, 0, 0)
       
       switch (preset) {
         case 'top':
-          // 俯视图 - 从正上方看XY平面
+          // RViz Top-down Orthographic: 正交投影沿 Z 轴俯视 XY 平面
+          activateCamera('orthographic')
           camera.up.set(0, 1, 0)
           camera.position.set(0, 0, 20)
+          camera.zoom = 1
+          camera.updateProjectionMatrix()
           camera.lookAt(target)
           break
 
         case 'side':
+          activateCamera('perspective')
           // 侧视图 - 从Y轴侧面看XZ平面
           camera.up.set(0, 0, 1)
           camera.position.set(0, -20, 5)
@@ -2893,6 +3023,7 @@ export default {
           break
 
         case 'front':
+          activateCamera('perspective')
           // 前视图 - 从X轴前方看YZ平面
           camera.up.set(0, 0, 1)
           camera.position.set(20, 0, 5)
@@ -2900,6 +3031,7 @@ export default {
           break
 
         case 'iso':
+          activateCamera('perspective')
           // Angled map view with world X horizontal
           camera.up.set(0, 0, 1)
           camera.position.set(0, -14, 10)
@@ -3673,11 +3805,15 @@ export default {
     return {
       containerRef,
       loading,
+      activeTool,
+      activeToolLabel,
+      toolHint,
       mapMesh,
       mapTexture,
       onMouseDown,
       onMouseMove,
       onMouseUp,
+      handleResize: onWindowResize,
       // 暴露给父组件的方法
       resetCamera,
       setGridVisible,
@@ -3698,6 +3834,8 @@ export default {
       updateSettings,
       setViewPreset,
       setNavigationTool,
+      setGoalTopic,
+      focusSelection,
       previewGoalPoseFromInput,
       publishGoalPoseFromInput,
       setFixedFrame,
@@ -3767,7 +3905,7 @@ export default {
   100% { transform: rotate(360deg); }
 }
 
-.debug-hint {
+.tool-hint {
   position: absolute;
   bottom: 10px;
   right: 10px;
@@ -3776,7 +3914,7 @@ export default {
   transition: opacity 0.3s;
 }
 
-.debug-hint:hover {
+.tool-hint:hover {
   opacity: 1;
 }
 
@@ -3789,5 +3927,14 @@ export default {
   font-family: 'Courier New', monospace;
   font-size: 11px;
   border: 1px solid rgba(0, 212, 255, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hint-content strong {
+  color: #9ee7ff;
+  font-size: 11px;
+  white-space: nowrap;
 }
 </style>

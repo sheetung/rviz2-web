@@ -6,8 +6,25 @@
           <div class="scene-header">
             <h3>点云视图</h3>
             <div class="scene-controls">
+              <el-button-group class="rviz-tool-group" size="small">
+                <el-button :type="activeSceneTool === 'move' ? 'primary' : 'default'" title="移动相机 (M)" @click="activateSceneTool('move')">
+                  移动 M
+                </el-button>
+                <el-button :type="activeSceneTool === 'select' ? 'primary' : 'default'" title="选择 (S)" @click="activateSceneTool('select')">
+                  选择 S
+                </el-button>
+                <el-button title="聚焦选中对象 (F)" @click="focusSelectedObject">
+                  聚焦 F
+                </el-button>
+                <el-button :type="activeSceneTool === '2d_pose' ? 'primary' : 'default'" title="2D 位姿估计 (P)" @click="activateSceneTool('2d_pose')">
+                  2D 位姿 P
+                </el-button>
+                <el-button :type="activeSceneTool === '2d_goal' ? 'primary' : 'default'" title="2D 目标 (G)" @click="activateSceneTool('2d_goal')">
+                  2D 目标 G
+                </el-button>
+              </el-button-group>
               <el-button-group size="small">
-                <el-button @click="resetView">重置视角</el-button>
+                <el-button title="重置视角 (R)" @click="resetView">重置</el-button>
                 <el-button @click="toggleGrid" :type="sceneShowGrid ? 'primary' : 'default'">网格</el-button>
                 <el-button @click="toggleAxes" :type="sceneShowAxes ? 'primary' : 'default'">坐标轴</el-button>
               </el-button-group>
@@ -24,22 +41,10 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-dropdown trigger="click" @command="setExpectedTargetTool">
-                <el-button size="small" type="primary">
-                  期望目标
-                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="2d_goal">2D期望</el-dropdown-item>
-                    <el-dropdown-item command="3d_goal" disabled>3D期望</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
             </div>
           </div>
           <div class="scene-content">
-            <Scene3D ref="scene3dRef" @display-status="onDisplayStatus" />
+            <Scene3D ref="scene3dRef" @display-status="onDisplayStatus" @tool-change="onSceneToolChange" />
           </div>
         </div>
       </section>
@@ -237,6 +242,7 @@ export default {
   setup() {
     const scene3dRef = ref(null)
     const topicConfigRef = ref(null)
+    const activeSceneTool = ref('move')
 
     // 传统布局控制状态
     const sceneWidth = ref(68)
@@ -415,6 +421,19 @@ export default {
       if (scene3dRef.value) {
         scene3dRef.value.resetCamera()
       }
+    }
+
+    const activateSceneTool = (tool) => {
+      scene3dRef.value?.setGoalTopic?.(settingsSnapshot.value.goal.topic)
+      scene3dRef.value?.setNavigationTool?.(tool)
+    }
+
+    const onSceneToolChange = (tool) => {
+      activeSceneTool.value = tool || 'move'
+    }
+
+    const focusSelectedObject = () => {
+      scene3dRef.value?.focusSelection?.()
     }
     
     const toggleGrid = () => {
@@ -622,6 +641,7 @@ export default {
     const onGoalUpdate = (goal) => {
       const nextGoal = normalizeGoal(goal)
       settingsSnapshot.value.goal = nextGoal
+      scene3dRef.value?.setGoalTopic?.(nextGoal.topic)
     }
 
     const onGoalPreview = (goal) => {
@@ -796,6 +816,7 @@ export default {
     return {
       scene3dRef,
       topicConfigRef,
+      activeSceneTool,
       settingsSnapshot,
       displaySnapshot,
       sceneWidth,
@@ -804,6 +825,9 @@ export default {
       getSidePanelStyle,
       startSidePanelResize,
       resetView,
+      activateSceneTool,
+      onSceneToolChange,
+      focusSelectedObject,
       toggleGrid,
       toggleAxes,
       setSceneViewPreset,
@@ -871,8 +895,8 @@ export default {
 }
 
 .scene-header {
-  height: 36px;
-  flex: 0 0 36px;
+  min-height: 40px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -894,6 +918,13 @@ export default {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 3px 0;
+}
+
+.rviz-tool-group {
+  flex: 0 0 auto;
 }
 
 .scene-content {
