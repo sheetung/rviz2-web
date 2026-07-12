@@ -345,33 +345,38 @@ export default {
 }
 
 .info-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 8px;
   align-items: center;
   margin-bottom: 3px;
 }
 
 .label {
-  color: #666;
+  color: var(--text-secondary);
   font-weight: 500;
+  font-size: 11px;
+  text-align: right;
 }
 
 .value {
-  font-family: monospace;
-  font-weight: bold;
-  color: #2c3e50;
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-primary);
 }
 
 .accuracy-good {
-  color: #67c23a;
+  color: var(--success);
 }
 
 .accuracy-medium {
-  color: #e6a23c;
+  color: var(--warning);
 }
 
 .accuracy-poor {
-  color: #f56c6c;
+  color: var(--danger);
 }
 
 .position-status {
@@ -383,6 +388,7 @@ export default {
   align-items: center;
   gap: 6px;
   font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .status-dot {
@@ -393,16 +399,16 @@ export default {
 }
 
 .status-active .status-dot {
-  background: #67c23a;
-  box-shadow: 0 0 6px rgba(103, 194, 58, 0.6);
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(61, 214, 140, 0.5);
 }
 
 .status-inactive .status-dot {
-  background: #909399;
+  background: var(--text-muted);
 }
 
 .status-no-fix .status-dot {
-  background: #f56c6c;
+  background: var(--danger);
   animation: blink 1s infinite;
 }
 

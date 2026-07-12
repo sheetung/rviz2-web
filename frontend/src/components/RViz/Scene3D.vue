@@ -3891,7 +3891,7 @@ export default {
   flex-direction: column;
   align-items: center;
   gap: 15px;
-  color: white;
+  color: var(--text-primary);
   font-size: 14px;
   z-index: 1000;
 }
@@ -3906,7 +3906,7 @@ export default {
   width: 32px;
   height: 32px;
   border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top: 3px solid #409eff;
+  border-top: 3px solid var(--accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -3944,7 +3944,7 @@ export default {
 }
 
 .hint-content strong {
-  color: #9ee7ff;
+  color: var(--accent-glow);
   font-size: 11px;
   white-space: nowrap;
 }

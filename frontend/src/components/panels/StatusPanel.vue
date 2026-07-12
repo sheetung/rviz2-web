@@ -148,10 +148,10 @@ export default {
     
     const connectionColor = computed(() => {
       switch (connectionData.value.quality) {
-        case 'GOOD': return '#67c23a'
-        case 'POOR': return '#e6a23c'
-        case 'DISCONNECTED': return '#f56c6c'
-        default: return '#909399'
+        case 'GOOD': return 'var(--success)'
+        case 'POOR': return 'var(--warning)'
+        case 'DISCONNECTED': return 'var(--danger)'
+        default: return 'var(--text-muted)'
       }
     })
     
@@ -171,9 +171,9 @@ export default {
       const mem = systemData.value.memUsage
       const temp = systemData.value.temperature
       
-      if (cpu > 80 || mem > 80 || temp > 60) return '#f56c6c'
-      if (cpu > 60 || mem > 60 || temp > 50) return '#e6a23c'
-      return '#67c23a'
+      if (cpu > 80 || mem > 80 || temp > 60) return 'var(--danger)'
+      if (cpu > 60 || mem > 60 || temp > 50) return 'var(--warning)'
+      return 'var(--success)'
     })
     
     // 模式相关计算属性
@@ -188,10 +188,10 @@ export default {
     
     const modeColor = computed(() => {
       switch (modeData.value.mode) {
-        case 'VIZ': return '#67c23a'
-        case 'DEBUG': return '#e6a23c'
-        case 'ERROR': return '#f56c6c'
-        default: return '#909399'
+        case 'VIZ': return 'var(--success)'
+        case 'DEBUG': return 'var(--warning)'
+        case 'ERROR': return 'var(--danger)'
+        default: return 'var(--text-muted)'
       }
     })
     
@@ -205,9 +205,9 @@ export default {
     
     const networkColor = computed(() => {
       const signal = networkData.value.signal
-      if (signal > 70) return '#67c23a'
-      if (signal > 40) return '#e6a23c'
-      return '#f56c6c'
+      if (signal > 70) return 'var(--success)'
+      if (signal > 40) return 'var(--warning)'
+      return 'var(--danger)'
     })
     
     // 订阅状态相关主题
@@ -389,30 +389,30 @@ export default {
   gap: 8px;
   padding: 6px;
   border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
   backdrop-filter: blur(10px);
   transition: all 0.3s ease;
 }
 
 .status-item.status-good {
-  border-color: #67c23a;
-  background: rgba(103, 194, 58, 0.1);
+  border-color: var(--success);
+  background: rgba(61, 214, 140, 0.1);
 }
 
 .status-item.status-warning {
-  border-color: #e6a23c;
-  background: rgba(230, 162, 60, 0.1);
+  border-color: var(--warning);
+  background: rgba(240, 180, 41, 0.1);
 }
 
 .status-item.status-critical {
-  border-color: #f56c6c;
-  background: rgba(245, 108, 108, 0.1);
+  border-color: var(--danger);
+  background: rgba(240, 113, 120, 0.1);
 }
 
 .status-item.status-inactive {
-  border-color: #909399;
-  background: rgba(144, 147, 153, 0.1);
+  border-color: var(--text-muted);
+  background: rgba(130, 146, 163, 0.1);
   opacity: 0.7;
 }
 
@@ -427,18 +427,18 @@ export default {
 
 .status-label {
   font-weight: 500;
-  color: #e2e8f0;
+  color: var(--text-primary);
   margin-bottom: 2px;
 }
 
 .status-value {
   font-weight: bold;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 13px;
 }
 
 .status-extra {
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 10px;
   margin-top: 1px;
 }
@@ -466,7 +466,7 @@ export default {
 }
 
 .status-panel--wide .status-label {
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .status-panel--wide .status-value {

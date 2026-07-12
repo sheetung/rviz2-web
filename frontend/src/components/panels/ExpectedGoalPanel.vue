@@ -37,16 +37,18 @@
     </div>
 
     <div class="goal-meta">
-      <span>Topic</span>
+      <span class="meta-label">Topic</span>
       <el-input
         v-model="localGoal.topic"
         size="small"
-        placeholder="选择或输入目标话题"
+        placeholder="目标话题"
         @change="emitGoalUpdate"
       />
-      <span>Frame</span>
+      <span class="meta-sep"></span>
+      <span class="meta-label">Frame</span>
       <strong>{{ fixedFrame || 'map' }}</strong>
-      <span>方向</span>
+      <span class="meta-sep"></span>
+      <span class="meta-label">方向</span>
       <strong>+X</strong>
     </div>
 
@@ -134,7 +136,7 @@ export default {
   flex-direction: column;
   gap: 10px;
   padding: 10px;
-  background: #101820;
+  background: var(--bg-elevated);
 }
 
 .goal-grid {
@@ -146,25 +148,45 @@ export default {
 .goal-grid label {
   display: grid;
   gap: 5px;
-  color: #9fb0c2;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
 .goal-meta {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
+  display: flex;
   align-items: center;
-  padding: 8px;
-  border: 1px solid #263442;
-  background: #0d141c;
-  color: #8394a7;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
+.goal-meta .meta-label {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .goal-meta strong {
-  color: #dce7f3;
+  color: var(--text-primary);
   font-weight: 600;
+  font-size: 12px;
+}
+
+.goal-meta .meta-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  flex: 0 0 auto;
+  margin: 0 2px;
+}
+
+.goal-meta :deep(.el-input) {
+  flex: 1;
+  min-width: 80px;
 }
 
 .goal-actions {
@@ -179,11 +201,11 @@ export default {
 }
 
 :deep(.el-input__wrapper) {
-  background-color: #0d141c !important;
-  border-color: #2a3948 !important;
+  background-color: var(--bg-input) !important;
+  border-color: var(--border) !important;
 }
 
 :deep(.el-input__inner) {
-  color: #dce7f3 !important;
+  color: var(--text-primary) !important;
 }
 </style>

@@ -452,7 +452,7 @@ export default {
 .control-item label {
   display: block;
   margin-bottom: 8px;
-  color: #cbd5e1;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 500;
 }
@@ -472,10 +472,10 @@ export default {
   gap: 12px;
   min-height: 30px;
   padding: 6px 8px;
-  background: #0d141c;
-  border: 1px solid #22303d;
-  border-radius: 6px;
-  color: #cbd5e1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -490,7 +490,7 @@ export default {
   display: flex;
   align-items: center;
   margin-bottom: 8px;
-  color: #cbd5e1;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -532,12 +532,12 @@ export default {
 }
 
 .info-row .label {
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 11px;
 }
 
 .info-row .value {
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-size: 11px;
   font-family: monospace;
   font-weight: 600;
@@ -551,7 +551,7 @@ export default {
 }
 
 :deep(.el-radio) {
-  color: #cbd5e1 !important;
+  color: var(--text-secondary) !important;
   margin-right: 0;
 }
 
@@ -566,7 +566,7 @@ export default {
 }
 
 :deep(.el-input__inner) {
-  color: #e2e8f0 !important;
+  color: var(--text-primary) !important;
 }
 
 :deep(.el-slider__runway) {
@@ -574,7 +574,7 @@ export default {
 }
 
 :deep(.el-slider__bar) {
-  background-color: #409eff !important;
+  background-color: var(--accent) !important;
 }
 
 :deep(.el-button) {

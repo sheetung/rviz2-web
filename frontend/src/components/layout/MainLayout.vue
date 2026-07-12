@@ -6,44 +6,59 @@
           <div class="scene-header">
             <h3>点云视图</h3>
             <div class="scene-controls">
-              <el-button-group class="rviz-tool-group" size="small">
-                <el-button :type="activeSceneTool === 'move' ? 'primary' : 'default'" title="移动相机 (M)" @click="activateSceneTool('move')">
-                  移动 M
+              <div class="tool-group">
+                <el-button size="small" :type="activeSceneTool === 'move' ? 'primary' : 'default'" title="移动相机 (M)" @click="activateSceneTool('move')" class="tool-btn">
+                  <el-icon :size="14"><VideoCamera /></el-icon>
+                  <kbd>M</kbd>
                 </el-button>
-                <el-button :type="activeSceneTool === 'select' ? 'primary' : 'default'" title="选择 (S)" @click="activateSceneTool('select')">
-                  选择 S
+                <el-button size="small" :type="activeSceneTool === 'select' ? 'primary' : 'default'" title="选择 (S)" @click="activateSceneTool('select')" class="tool-btn">
+                  <el-icon :size="14"><Aim /></el-icon>
+                  <kbd>S</kbd>
                 </el-button>
-                <el-button title="聚焦选中对象 (F)" @click="focusSelectedObject">
-                  聚焦 F
+                <el-button size="small" title="聚焦选中对象 (F)" @click="focusSelectedObject" class="tool-btn">
+                  <el-icon :size="14"><Search /></el-icon>
+                  <kbd>F</kbd>
                 </el-button>
-                <el-button :type="activeSceneTool === '2d_pose' ? 'primary' : 'default'" title="2D 位姿估计 (P)" @click="activateSceneTool('2d_pose')">
-                  2D 位姿 P
+                <el-button size="small" :type="activeSceneTool === '2d_pose' ? 'primary' : 'default'" title="2D 位姿估计 (P)" @click="activateSceneTool('2d_pose')" class="tool-btn">
+                  <el-icon :size="14"><MapLocation /></el-icon>
+                  <kbd>P</kbd>
                 </el-button>
-                <el-button :type="activeSceneTool === '2d_goal' ? 'primary' : 'default'" title="2D 目标 (G)" @click="activateSceneTool('2d_goal')">
-                  2D 目标 G
+                <el-button size="small" :type="activeSceneTool === '2d_goal' ? 'primary' : 'default'" title="2D 目标 (G)" @click="activateSceneTool('2d_goal')" class="tool-btn">
+                  <el-icon :size="14"><Flag /></el-icon>
+                  <kbd>G</kbd>
                 </el-button>
-              </el-button-group>
-              <el-button-group size="small">
-                <el-button title="重置视角 (R)" @click="resetView">重置</el-button>
-                <el-button @click="toggleGrid" :type="sceneShowGrid ? 'primary' : 'default'">网格</el-button>
-                <el-button @click="toggleAxes" :type="sceneShowAxes ? 'primary' : 'default'">坐标轴</el-button>
-              </el-button-group>
-              <el-dropdown trigger="click" @command="setSceneViewPreset">
-                <el-button size="small">
-                  视角
-                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </div>
+              <span class="tool-separator"></span>
+              <div class="tool-group">
+                <el-button size="small" title="重置视角 (R)" @click="resetView" class="tool-btn">
+                  <el-icon :size="14"><Refresh /></el-icon>
                 </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="top">俯视图</el-dropdown-item>
-                    <el-dropdown-item command="side">侧视图</el-dropdown-item>
-                    <el-dropdown-item command="iso">等距图</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <el-button size="small" :type="showChartDock ? 'primary' : 'default'" @click="showChartDock = !showChartDock">
-                数据图表
-              </el-button>
+                <el-button size="small" @click="toggleGrid" :type="sceneShowGrid ? 'primary' : 'default'" class="tool-btn" title="切换网格">
+                  <el-icon :size="14"><Grid /></el-icon>
+                </el-button>
+                <el-button size="small" @click="toggleAxes" :type="sceneShowAxes ? 'primary' : 'default'" class="tool-btn" title="切换坐标轴">
+                  <el-icon :size="14"><Connection /></el-icon>
+                </el-button>
+                <el-dropdown trigger="click" @command="setSceneViewPreset">
+                  <el-button size="small" class="tool-btn" title="视角预设">
+                    <el-icon :size="14"><View /></el-icon>
+                    <el-icon class="dropdown-caret"><ArrowDown /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="top">俯视图</el-dropdown-item>
+                      <el-dropdown-item command="side">侧视图</el-dropdown-item>
+                      <el-dropdown-item command="iso">等距图</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
+              <span class="tool-separator"></span>
+              <div class="tool-group">
+                <el-button size="small" :type="showChartDock ? 'primary' : 'default'" @click="showChartDock = !showChartDock" class="tool-btn" title="数据图表">
+                  <el-icon :size="14"><DataAnalysis /></el-icon>
+                </el-button>
+              </div>
             </div>
           </div>
           <div class="scene-content">
@@ -148,6 +163,8 @@
             title="设置"
             panel-class="settings-mini-panel"
             :style="getSidePanelStyle('settings')"
+            collapsible
+            v-model:collapsed="settingsCollapsed"
           >
             <AsyncSettingsPanel
               :settings-snapshot="settingsSnapshot"
@@ -164,6 +181,7 @@
             />
           </WorkbenchPanel>
           <div
+            v-show="!settingsCollapsed"
             class="side-panel-resize-handle"
             @mousedown="startSidePanelResize($event, 'settings')"
             @touchstart="startSidePanelResize($event, 'settings')"
@@ -176,6 +194,8 @@
             title="3D控制"
             panel-class="controller-mini-panel"
             :style="getSidePanelStyle('controller')"
+            collapsible
+            v-model:collapsed="controllerCollapsed"
           >
             <Scene3DController
               :compact="true"
@@ -200,7 +220,7 @@
 <script>
 import { ref, nextTick, defineAsyncComponent } from 'vue'
 import {
-  ArrowDown
+  ArrowDown, Aim, Search, Refresh, View, VideoCamera, MapLocation, Flag, DataAnalysis, Grid, Connection
 } from '@element-plus/icons-vue'
 
 // 引入面板组件
@@ -235,6 +255,16 @@ export default {
   name: 'MainLayout',
   components: {
     ArrowDown,
+    Aim,
+    Search,
+    Refresh,
+    View,
+    VideoCamera,
+    MapLocation,
+    Flag,
+    DataAnalysis,
+    Grid,
+    Connection,
     Scene3D,
     GpsPanel,
     Scene3DController,
@@ -249,6 +279,8 @@ export default {
     const topicConfigRef = ref(null)
     const activeSceneTool = ref('move')
     const showChartDock = ref(false)
+    const settingsCollapsed = ref(true)
+    const controllerCollapsed = ref(true)
 
     // 传统布局控制状态
     const sceneWidth = ref(68)
@@ -858,6 +890,8 @@ export default {
       topicConfigRef,
       activeSceneTool,
       showChartDock,
+      settingsCollapsed,
+      controllerCollapsed,
       settingsSnapshot,
       displaySnapshot,
       sceneWidth,
@@ -908,7 +942,7 @@ export default {
 .main-layout {
   height: 100%;
   min-height: 0;
-  background: #0f141a;
+  background: var(--bg-surface);
 }
 
 .main-content {
@@ -917,7 +951,7 @@ export default {
   display: grid;
   gap: 0;
   padding: 10px;
-  background: #0f141a;
+  background: var(--bg-surface);
 }
 
 .scene-section,
@@ -933,13 +967,13 @@ export default {
 
 .scene-panel {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 40vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #151b22;
-  border: 1px solid #2d3742;
-  border-radius: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .chart-dock-panel {
@@ -960,12 +994,12 @@ export default {
   width: 70px;
   height: 4px;
   border-radius: 999px;
-  background: #33404c;
+  background: var(--handle);
 }
 
 .chart-dock-resize-handle:hover span {
   width: 100px;
-  background: #5c7a95;
+  background: var(--handle-hover);
 }
 
 .scene-header {
@@ -976,9 +1010,9 @@ export default {
   justify-content: space-between;
   gap: 12px;
   padding: 0 10px 0 12px;
-  background: #1c232b;
-  border-bottom: 1px solid #2d3742;
-  color: #dce7f3;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
 }
 
 .scene-header h3 {
@@ -995,10 +1029,6 @@ export default {
   overflow-x: auto;
   scrollbar-width: thin;
   padding: 3px 0;
-}
-
-.rviz-tool-group {
-  flex: 0 0 auto;
 }
 
 .scene-content {
@@ -1022,14 +1052,14 @@ export default {
   width: 4px;
   height: 54px;
   border-radius: 999px;
-  background: #33404c;
+  background: var(--handle);
   transition: background-color 0.16s ease, height 0.16s ease;
 }
 
 .resize-handle:hover .resize-line,
 .resize-handle:active .resize-line {
   height: 84px;
-  background: #5c7a95;
+  background: var(--handle-hover);
 }
 
 .side-section {
@@ -1070,14 +1100,14 @@ export default {
   width: 56px;
   height: 4px;
   border-radius: 999px;
-  background: #33404c;
+  background: var(--handle);
   transition: width 0.16s ease, background-color 0.16s ease;
 }
 
 .side-panel-resize-handle:hover span,
 .side-panel-resize-handle:active span {
   width: 88px;
-  background: #5c7a95;
+  background: var(--handle-hover);
 }
 
 .side-panels-container::-webkit-scrollbar,
@@ -1088,17 +1118,52 @@ export default {
 
 .side-panels-container::-webkit-scrollbar-track,
 :deep(.workbench-panel-content::-webkit-scrollbar-track) {
-  background: #111820;
+  background: var(--bg-elevated);
 }
 
 .side-panels-container::-webkit-scrollbar-thumb,
 :deep(.workbench-panel-content::-webkit-scrollbar-thumb) {
-  background: #3a4652;
+  background: var(--scrollbar-thumb);
   border-radius: 999px;
 }
 
 :deep(.el-button) {
-  border-color: #35414d;
+  border-color: var(--border-strong);
+}
+
+/* ---- toolbar ---- */
+
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.tool-separator {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+  border-radius: 1px;
+}
+
+.tool-btn kbd {
+  font-size: 9px;
+  font-family: inherit;
+  padding: 0 3px;
+  margin-left: 2px;
+  border-radius: 3px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-muted);
+  line-height: 1.5;
+  opacity: 0.7;
+}
+
+.dropdown-caret {
+  margin-left: 1px !important;
+  font-size: 10px;
 }
 
 @media (max-width: 1100px) {

@@ -92,7 +92,13 @@
             </el-input>
           </div>
           <div v-if="filteredAvailableTopics.length === 0" class="empty-state">
-            <div class="empty-icon">📡</div>
+            <div class="empty-icon">
+              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="8" stroke="currentColor" stroke-width="1.5" opacity="0.35"/>
+                <circle cx="20" cy="20" r="3" stroke="currentColor" stroke-width="1.5" opacity="0.65"/>
+                <circle cx="20" cy="20" r="1.2" fill="currentColor" opacity="0.8"/>
+              </svg>
+            </div>
             <p>未找到可用的topic</p>
             <p class="empty-hint">请确保：</p>
             <ul class="empty-checklist">
@@ -301,7 +307,12 @@
         </svg>
 
         <div v-if="dataSeries.length === 0 && chartReady" class="chart-empty-state">
-          <div class="empty-chart-icon">∿</div>
+          <div class="empty-chart-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <polyline points="6,36 18,24 28,28 42,10" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.55"/>
+              <circle cx="42" cy="10" r="2.5" fill="currentColor" opacity="0.75"/>
+            </svg>
+          </div>
           <strong>尚未添加曲线</strong>
           <span>从 ROS Topic 中选择数值字段开始实时绘图</span>
           <el-button type="primary" size="small" @click="showTopicSelector = true">
@@ -417,7 +428,7 @@ export default {
     // 预定义颜色
     const predefinedColors = [
       '#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399',
-      '#00d4ff', '#00ff88', '#ffaa00', '#ff4757', '#74b9ff',
+      'var(--accent-strong)', 'var(--success)', '#ffaa00', '#ff4757', '#74b9ff',
       '#fd79a8', '#a29bfe', '#6c5ce7', '#00b894', '#00cec9'
     ]
     let colorIndex = 0
@@ -2294,8 +2305,8 @@ export default {
   gap: 6px;
   padding: 4px 8px;
   overflow-x: auto;
-  background: #111820;
-  border-bottom: 1px solid #2d3742;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
 }
 
 .series-chip {
@@ -2306,10 +2317,10 @@ export default {
   align-items: center;
   gap: 5px;
   padding-left: 8px;
-  background: #1b242d;
-  border: 1px solid #34414d;
+  background: var(--bg-header);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
-  color: #dce7f3;
+  color: var(--text-primary);
   font-size: 11px;
 }
 
@@ -2338,7 +2349,7 @@ export default {
 }
 
 .time-range-label {
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-size: 12px;
   margin-right: 6px;
 }
@@ -2380,12 +2391,12 @@ export default {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   background: rgba(12, 17, 23, 0.82);
 }
 
 .chart-empty-state strong {
-  color: #dce7f3;
+  color: var(--text-primary);
   font-size: 14px;
 }
 
@@ -2394,9 +2405,12 @@ export default {
 }
 
 .empty-chart-icon {
-  color: #46bdf0;
-  font-size: 32px;
-  line-height: 1;
+  margin-bottom: 4px;
+  opacity: 0.65;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chart-interaction-hint {
@@ -2407,7 +2421,7 @@ export default {
   padding: 3px 6px;
   border-radius: 3px;
   background: rgba(0, 0, 0, 0.58);
-  color: #7f91a3;
+  color: var(--text-muted);
   font-size: 10px;
   pointer-events: none;
 }
@@ -2440,7 +2454,7 @@ export default {
 
 .panel-header h4 {
   margin: 0;
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 500;
 }
@@ -2453,7 +2467,7 @@ export default {
 
 .panel-tip {
   font-size: 12px;
-  color: #10b981;
+  color: var(--success);
   margin-left: 8px;
   opacity: 0.8;
   flex-shrink: 0;
@@ -2486,33 +2500,37 @@ export default {
 
 .stats-item {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .stats-item.active {
-  color: #00ff88;
+  color: var(--success);
   font-weight: 500;
 }
 
 .empty-state {
   text-align: center;
-  padding: 40px 20px;
-  color: #94a3b8;
+  padding: 32px 20px;
+  color: var(--text-secondary);
 }
 
 .empty-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-  opacity: 0.6;
+  margin-bottom: 12px;
+  opacity: 0.7;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .empty-state p {
   margin: 8px 0;
   font-size: 14px;
+  color: var(--text-secondary);
 }
 
 .empty-hint {
-  color: #64748b;
+  color: var(--text-muted);
   font-size: 12px;
   margin-top: 16px;
 }
@@ -2521,7 +2539,7 @@ export default {
   text-align: left;
   margin: 12px auto;
   display: inline-block;
-  color: #64748b;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -2568,7 +2586,7 @@ export default {
 
 .topic-label {
   font-weight: 500;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .status-tag {
@@ -2584,13 +2602,13 @@ export default {
 
 .topic-path {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-family: 'Courier New', monospace;
 }
 
 .topic-type {
   font-size: 10px;
-  color: #64748b;
+  color: var(--text-muted);
   background: rgba(148, 163, 184, 0.2);
   padding: 1px 4px;
   border-radius: 3px;
@@ -2604,7 +2622,7 @@ export default {
 .expand-icon {
   margin-right: 6px;
   transition: transform 0.2s;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .expand-icon.expanded {
@@ -2614,7 +2632,7 @@ export default {
 .topic-type {
   margin-left: auto;
   font-size: 10px;
-  color: #64748b;
+  color: var(--text-muted);
   background: rgba(148, 163, 184, 0.2);
   padding: 2px 6px;
   border-radius: 4px;
@@ -2631,7 +2649,7 @@ export default {
 }
 
 .back-button {
-  color: #94a3b8 !important;
+  color: var(--text-secondary) !important;
   font-size: 12px;
 }
 
@@ -2641,7 +2659,7 @@ export default {
 
 .fields-title {
   font-size: 12px;
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -2712,7 +2730,7 @@ export default {
 /* 不可绘制的字段样式 */
 .field-item.non-plottable {
   background: rgba(148, 163, 184, 0.1);
-  color: #64748b;
+  color: var(--text-muted);
   cursor: not-allowed;
   opacity: 0.6;
   border-color: rgba(148, 163, 184, 0.2);
@@ -2726,7 +2744,7 @@ export default {
 
 .field-item.disabled {
   background: rgba(148, 163, 184, 0.1);
-  color: #64748b;
+  color: var(--text-muted);
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -2737,7 +2755,7 @@ export default {
 }
 
 .field-name {
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -2788,7 +2806,7 @@ export default {
 }
 
 .field-type.text {
-  color: #64748b;
+  color: var(--text-muted);
   background: rgba(100, 116, 139, 0.2);
   border: 1px solid rgba(100, 116, 139, 0.3);
 }
@@ -2806,7 +2824,7 @@ export default {
 }
 
 .field-type.unknown {
-  color: #94a3b8;
+  color: var(--text-secondary);
   background: rgba(148, 163, 184, 0.2);
   border: 1px solid rgba(148, 163, 184, 0.3);
 }
@@ -2895,7 +2913,7 @@ export default {
 
 .series-name {
   flex: 1;
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 500;
   overflow: hidden;
@@ -2913,7 +2931,7 @@ export default {
   flex-direction: column;
   gap: 2px;
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   margin-left: 20px;
 }
 
@@ -2937,24 +2955,24 @@ export default {
 
 .axis-label {
   font-size: 10px;
-  fill: #94a3b8;
+  fill: var(--text-secondary);
 }
 
 .legend-text {
   font-size: 11px;
-  fill: #e2e8f0;
+  fill: var(--text-primary);
 }
 
 .current-value-title {
   font-size: 11px;
   font-weight: bold;
-  fill: #e2e8f0;
+  fill: var(--text-primary);
 }
 
 .current-value-text {
   font-size: 10px;
   font-family: monospace;
-  fill: #94a3b8;
+  fill: var(--text-secondary);
 }
 
 .data-line {
@@ -2990,7 +3008,7 @@ export default {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -2998,7 +3016,7 @@ export default {
   width: 20px;
   height: 20px;
   border: 2px solid rgba(148, 163, 184, 0.3);
-  border-top: 2px solid #00d4ff;
+  border-top: 2px solid var(--accent-strong);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }

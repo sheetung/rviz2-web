@@ -168,9 +168,9 @@ export default {
   right: 0;
   width: min(760px, calc(100vw - 28px));
   padding: 12px;
-  background: #171e25;
-  border: 1px solid #2a3540;
-  border-radius: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
   z-index: 3000;
 }
@@ -182,9 +182,9 @@ export default {
   right: 28px;
   width: 10px;
   height: 10px;
-  background: #171e25;
-  border-left: 1px solid #2a3540;
-  border-top: 1px solid #2a3540;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
   transform: rotate(45deg);
 }
 
@@ -197,7 +197,7 @@ export default {
 }
 
 .status-title {
-  color: #e5edf5;
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 700;
 }
@@ -205,7 +205,7 @@ export default {
 .status-subtitle {
   max-width: 560px;
   margin-top: 3px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -217,7 +217,7 @@ export default {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 10px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 11px;
 }
 
@@ -236,7 +236,7 @@ export default {
 }
 
 .topic-more {
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 11px;
   line-height: 24px;
 }

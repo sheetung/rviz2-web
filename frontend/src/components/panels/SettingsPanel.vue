@@ -310,13 +310,13 @@ export default {
   height: 100%;
   overflow-y: auto;
   padding: 12px;
-  background: #101820;
+  background: var(--bg-elevated);
 }
 
 .settings-section {
-  border: 1px solid #263442;
-  background: #111b25;
-  border-radius: 8px;
+  border: 1px solid var(--border-muted);
+  background: var(--bg-elevated);
+  border-radius: var(--radius);
   padding: 12px;
   margin-bottom: 12px;
 }
@@ -331,11 +331,11 @@ export default {
 .section-heading h4 {
   margin: 0;
   font-size: 13px;
-  color: #e0e9f3;
+  color: var(--text-primary);
 }
 
 .section-heading span {
-  color: #7e8fa1;
+  color: var(--text-muted);
   font-size: 11px;
 }
 
@@ -350,7 +350,7 @@ export default {
 }
 
 .field-row label {
-  color: #9fb0c2;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -375,18 +375,18 @@ export default {
   display: grid;
   gap: 3px;
   padding: 8px;
-  background: #0d141c;
-  border: 1px solid #22303d;
-  border-radius: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
 }
 
 .summary-label {
-  color: #748598;
+  color: var(--text-muted);
   font-size: 11px;
 }
 
 .summary-value {
-  color: #dce7f3;
+  color: var(--text-primary);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -395,15 +395,15 @@ export default {
 
 :deep(.el-select .el-input__wrapper),
 :deep(.el-input__wrapper) {
-  background-color: #0d141c !important;
-  border-color: #2a3948 !important;
+  background-color: var(--bg-input) !important;
+  border-color: var(--border) !important;
 }
 
 :deep(.el-input__inner) {
-  color: #dce7f3 !important;
+  color: var(--text-primary) !important;
 }
 
 :deep(.el-button) {
-  border-color: #2a3948 !important;
+  border-color: var(--border) !important;
 }
 </style>
