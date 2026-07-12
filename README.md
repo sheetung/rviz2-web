@@ -2,10 +2,6 @@
 
 > 当前正式版本：`v1.0.0`
 
-整个工程只使用根目录 `VERSION` 中的一套版本号，展开前端右上角连接状态即可查看“系统版本”。修改版本后运行 `node scripts/sync-version.mjs 1.0.1` 同步各清单，或运行 `node scripts/sync-version.mjs --check` 检查一致性。
-
-发布新版本只需运行 `./release.sh 1.0.1 --note "本次发布说明"`。脚本会同步版本、更新变更日志、运行前后端测试与构建、创建提交和 Git 标签；确认需要发布到远端时追加 `--push`。
-
 ![RVizWeb](img/1.png)
 
 ![RVizWeb](img/2.png)
@@ -91,12 +87,10 @@ rvizweb_configs/*.rvizweb
 rvizweb_configs/default.rvizweb
 ```
 
-`default.rvizweb` 只包含通用界面设置，不绑定具体机器人话题。无人机配置保存在本机的 `rvizweb_configs/uav1.rvizweb`；该个人配置被 `.gitignore` 忽略，不提交到仓库。
-
-当前设备的 `start.sh` 明确指定 `uav1.rvizweb` 为启动配置。临时切换配置时可覆盖：
+`default.rvizweb` 只包含通用界面设置，不绑定具体机器人话题。可以为不同机器人或任务创建独立配置；选择启动配置时使用：
 
 ```bash
-RVIZWEB_CONFIG=default.rvizweb ./start.sh local
+RVIZWEB_CONFIG=<name>.rvizweb ./start.sh local
 ```
 
 启动脚本会检查配置文件是否存在以及是否使用 `.rvizweb` 后缀，然后通过 `VITE_RVIZWEB_CONFIG` 交给前端自动读取。
@@ -215,7 +209,7 @@ uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```bash
 cd frontend
 npm ci
-VITE_RVIZWEB_CONFIG=uav1.rvizweb npm run build
+VITE_RVIZWEB_CONFIG=default.rvizweb npm run build
 npm run preview -- --host 0.0.0.0 --port 3000
 ```
 

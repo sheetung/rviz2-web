@@ -2,8 +2,6 @@
 
 > Current release: `v1.0.0`
 
-The whole project uses one version from the root `VERSION` file. Expand the connection status in the top-right corner to view the system version. Run `node scripts/sync-version.mjs 1.0.1` after changing the release version, or `node scripts/sync-version.mjs --check` to verify consistency.
-
 ![RVizWeb](img/1.png)
 
 ![RVizWeb](img/2.png)
@@ -89,12 +87,10 @@ The generic configuration is:
 rvizweb_configs/default.rvizweb
 ```
 
-`default.rvizweb` only contains generic UI settings and is not tied to any specific robot topics. UAV configuration is saved locally as `rvizweb_configs/uav1.rvizweb`; this personal config is ignored by `.gitignore` and not committed to the repository.
-
-The current device's `start.sh` explicitly specifies `uav1.rvizweb` as the startup config. To temporarily switch configs:
+`default.rvizweb` only contains generic UI settings and is not tied to any specific robot topics. Create separate configurations for different robots or tasks, then select one at startup with:
 
 ```bash
-RVIZWEB_CONFIG=default.rvizweb ./start.sh local
+RVIZWEB_CONFIG=<name>.rvizweb ./start.sh local
 ```
 
 The startup script validates that the config file exists and uses the `.rvizweb` suffix, then passes it to the frontend via `VITE_RVIZWEB_CONFIG`.
@@ -213,7 +209,7 @@ uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```bash
 cd frontend
 npm ci
-VITE_RVIZWEB_CONFIG=uav1.rvizweb npm run build
+VITE_RVIZWEB_CONFIG=default.rvizweb npm run build
 npm run preview -- --host 0.0.0.0 --port 3000
 ```
 
