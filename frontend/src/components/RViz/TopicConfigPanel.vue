@@ -64,7 +64,6 @@
             <el-select
               v-model="display.name"
               filterable
-              allow-create
               default-first-option
               size="small"
               @focus="rememberDisplayName(display)"
@@ -82,29 +81,6 @@
 
           <div v-if="selectedDisplayId === display.id && display.error" class="display-error">
             {{ display.error }}
-          </div>
-
-          <div
-            v-if="selectedDisplayId === display.id"
-            class="property-row display-property"
-            @click.stop
-          >
-            <span>Type</span>
-            <el-select
-              v-model="display.messageType"
-              filterable
-              allow-create
-              default-first-option
-              size="small"
-              @change="updateDisplayTopic(display)"
-            >
-              <el-option
-                v-for="type in messageTypeOptions"
-                :key="type"
-                :label="type"
-                :value="type"
-              />
-            </el-select>
           </div>
 
           <div
@@ -238,9 +214,9 @@
 
     <el-dialog
       v-model="isCreateOpen"
-      title="Create visualization"
       width="min(520px, calc(100vw - 32px))"
       append-to-body
+      :show-close="false"
       class="rviz-create-dialog"
     >
       <el-tabs v-model="createMode" class="create-tabs">
@@ -286,7 +262,7 @@
         </el-tab-pane>
       </el-tabs>
 
-      <div class="create-form">
+      <div v-if="createMode === 'type'" class="create-form create-form-single">
         <label>
           Topic
           <el-select
@@ -300,28 +276,10 @@
             @change="onNewDisplayTopicChange"
           >
             <el-option
-              v-for="topic in availableTopics"
+              v-for="topic in topicsForSelectedType"
               :key="topic.name"
               :label="`${topic.name} (${topic.messageType})`"
               :value="topic.name"
-            />
-          </el-select>
-        </label>
-        <label>
-          Display Type
-          <el-select
-            v-model="newDisplayType"
-            filterable
-            allow-create
-            default-first-option
-            placeholder="消息类型"
-            size="small"
-          >
-            <el-option
-              v-for="type in messageTypeOptions"
-              :key="type"
-              :label="type"
-              :value="type"
             />
           </el-select>
         </label>
@@ -438,6 +396,10 @@ export default {
     const selectedDisplay = computed(() =>
       displayTopics.value.find(display => display.id === selectedDisplayId.value) || null
     )
+    const topicsForSelectedType = computed(() => {
+      if (!newDisplayType.value) return availableTopics.value
+      return availableTopics.value.filter(topic => topic.messageType === newDisplayType.value)
+    })
 
     const normalizeTopicList = (topicList = [], topicTypes = {}) => {
       return topicList.map(topicInfo => {
@@ -501,6 +463,12 @@ export default {
     }
 
     const addDisplayTopic = () => {
+      if (createMode.value === 'topic') {
+        const selectedTopic = availableTopics.value.find(topic => topic.name === newDisplayTopic.value)
+        if (selectedTopic?.messageType && selectedTopic.messageType !== 'unknown') {
+          newDisplayType.value = selectedTopic.messageType
+        }
+      }
       if (!newDisplayTopic.value || !newDisplayType.value) {
         ElMessage.warning('请选择话题和消息类型')
         return
@@ -543,6 +511,10 @@ export default {
 
     const selectDisplayType = (type) => {
       newDisplayType.value = type
+      const selectedTopic = availableTopics.value.find(topic => topic.name === newDisplayTopic.value)
+      if (selectedTopic && selectedTopic.messageType !== type) {
+        newDisplayTopic.value = ''
+      }
     }
 
     const rememberDisplayName = (display) => {
@@ -550,6 +522,10 @@ export default {
     }
 
     const updateDisplayTopic = (display) => {
+      const selectedTopic = availableTopics.value.find(topic => topic.name === display.name)
+      if (selectedTopic?.messageType && selectedTopic.messageType !== 'unknown') {
+        display.messageType = selectedTopic.messageType
+      }
       if (!display.name || !display.messageType) return
       display.config = normalizeDisplayConfig(display.messageType, display.config)
       emitDisplayTopicChange('update', display, { oldName: display.previousName || display.name })
@@ -663,6 +639,7 @@ export default {
       fixedFrame,
       displayTopics,
       selectedDisplay,
+      topicsForSelectedType,
       selectedDisplayId,
       isCreateOpen,
       isLoadingTopics,
@@ -886,14 +863,7 @@ export default {
 }
 
 :global(.rviz-create-dialog .el-dialog__header) {
-  margin-right: 0;
-  padding: 10px 12px;
-  background: var(--bg-header);
-  border-bottom: 1px solid var(--border);
-}
-
-:global(.rviz-create-dialog .el-dialog__title) {
-  color: var(--text-primary);
+  display: none;
 }
 
 :global(.rviz-create-dialog .el-dialog__body) {
@@ -982,6 +952,10 @@ export default {
   gap: 5px;
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+.create-form-single {
+  grid-template-columns: 1fr;
 }
 
 @media (max-width: 560px) {
