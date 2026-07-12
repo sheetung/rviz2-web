@@ -93,8 +93,6 @@ export default {
 
     const getRecordingFormat = () => {
       const candidates = [
-        { mimeType: 'video/mp4;codecs=avc1.42E01E', extension: 'mp4' },
-        { mimeType: 'video/mp4', extension: 'mp4' },
         { mimeType: 'video/webm;codecs=vp9', extension: 'webm' },
         { mimeType: 'video/webm;codecs=vp8', extension: 'webm' },
         { mimeType: 'video/webm', extension: 'webm' }
@@ -136,9 +134,8 @@ export default {
         }
         mediaRecorder.onstop = () => {
           const outputType = mediaRecorder?.mimeType || recordingFormat.mimeType || 'video/webm'
-          const outputExtension = outputType.includes('mp4') ? 'mp4' : recordingFormat.extension
           if (recordingChunks.length > 0) {
-            downloadBlob(new Blob(recordingChunks, { type: outputType }), createCaptureFilename(outputExtension))
+            downloadBlob(new Blob(recordingChunks, { type: outputType }), createCaptureFilename(recordingFormat.extension))
             ElMessage.success('录像已生成')
           } else {
             ElMessage.warning('录像中没有可用画面')
