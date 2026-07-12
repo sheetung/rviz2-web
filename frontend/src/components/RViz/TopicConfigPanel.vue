@@ -248,7 +248,7 @@
         <el-tab-pane label="By display type" name="type">
           <div class="display-type-browser">
             <button
-              v-for="type in messageTypeOptions"
+              v-for="type in availableMessageTypes"
               :key="type"
               type="button"
               class="type-choice"
@@ -326,22 +326,10 @@ export default {
     const isLoadingTopics = ref(false)
     const fixedFrame = ref('map')
     const newDisplayTopic = ref('')
-    const newDisplayType = ref('sensor_msgs/msg/PointCloud2')
+    const newDisplayType = ref('')
     const selectedDisplayId = ref('global')
     const isCreateOpen = ref(false)
     const createMode = ref('topic')
-    const messageTypeOptions = [
-      'sensor_msgs/msg/PointCloud2',
-      'sensor_msgs/msg/LaserScan',
-      'nav_msgs/msg/Odometry',
-      'nav_msgs/msg/Path',
-      'visualization_msgs/msg/Marker',
-      'visualization_msgs/msg/MarkerArray',
-      'geometry_msgs/msg/PoseStamped',
-      'geometry_msgs/msg/PoseWithCovarianceStamped',
-      'nav_msgs/msg/OccupancyGrid'
-    ]
-
     let displayIdCounter = 0
     const isPathMessageType = (messageType = '') => {
       return messageType.includes('Path') || messageType.includes('PositionCommand')
@@ -400,6 +388,13 @@ export default {
       if (!newDisplayType.value) return availableTopics.value
       return availableTopics.value.filter(topic => topic.messageType === newDisplayType.value)
     })
+    const availableMessageTypes = computed(() => {
+      return [...new Set(
+        availableTopics.value
+          .map(topic => topic.messageType)
+          .filter(messageType => messageType && messageType !== 'unknown')
+      )].sort((a, b) => a.localeCompare(b))
+    })
 
     const normalizeTopicList = (topicList = [], topicTypes = {}) => {
       return topicList.map(topicInfo => {
@@ -435,6 +430,10 @@ export default {
         }
       } finally {
         isLoadingTopics.value = false
+        if (!availableMessageTypes.value.includes(newDisplayType.value)) {
+          newDisplayType.value = availableMessageTypes.value[0] || ''
+          newDisplayTopic.value = ''
+        }
       }
     }
 
@@ -496,6 +495,9 @@ export default {
       isCreateOpen.value = true
       await loadAvailableTopics()
       createMode.value = availableTopics.value.length > 0 ? 'topic' : 'type'
+      if (!availableMessageTypes.value.includes(newDisplayType.value)) {
+        newDisplayType.value = availableMessageTypes.value[0] || ''
+      }
     }
 
     const onTopicSelectVisibleChange = (visible) => {
@@ -636,6 +638,7 @@ export default {
 
     return {
       availableTopics,
+      availableMessageTypes,
       fixedFrame,
       displayTopics,
       selectedDisplay,
@@ -646,7 +649,6 @@ export default {
       createMode,
       newDisplayTopic,
       newDisplayType,
-      messageTypeOptions,
       selectDisplay,
       displayTypeLabel,
       displayLabel,
