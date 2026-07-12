@@ -31,7 +31,7 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - 快捷键为 `M` 移动、`S` 选择、`F` 聚焦、`P` 2D 位姿、`G` 2D 目标、`Esc` 取消。
   - 选中对象后显示青色包围框；俯视预设使用正交相机。
   - 工具栏支持将当前 3D 画布截图为 PNG。
-  - 支持以 30 FPS 录制 3D 画布，再次点击结束并下载 WebM；根据浏览器能力选择 VP9、VP8 或普通 WebM。
+  - 支持以 30 FPS 录制 3D 画布；浏览器支持 H.264/MP4 时下载 MP4，否则按能力回退到 VP9、VP8 或普通 WebM。
 - 点云与路径样式：
   - PointCloud2 支持按话题设置 `Point Size`。
   - Path 支持按话题设置线宽和颜色。
@@ -244,7 +244,7 @@ ros2 topic list -t
 
 ### 截图或录像没有下载
 
-截图和录像使用浏览器下载能力，请确认站点具有下载权限。录像依赖 `MediaRecorder` 和 `canvas.captureStream()`，推荐使用当前版本的 Chrome、Edge 或 Firefox。录像文件使用 WebM 格式，不包含工具栏和右侧面板。
+截图和录像使用浏览器下载能力，请确认站点具有下载权限。录像依赖 `MediaRecorder` 和 `canvas.captureStream()`，推荐使用当前版本的 Chrome、Edge 或 Firefox。输出格式由浏览器能力决定：优先 MP4，不支持时为 WebM；录像不包含工具栏和右侧面板。
 
 ## 验证
 

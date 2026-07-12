@@ -91,13 +91,18 @@ export default {
       return true
     }
 
-    const getRecordingMimeType = () => {
+    const getRecordingFormat = () => {
       const candidates = [
-        'video/webm;codecs=vp9',
-        'video/webm;codecs=vp8',
-        'video/webm'
+        { mimeType: 'video/mp4;codecs=avc1.42E01E', extension: 'mp4' },
+        { mimeType: 'video/mp4', extension: 'mp4' },
+        { mimeType: 'video/webm;codecs=vp9', extension: 'webm' },
+        { mimeType: 'video/webm;codecs=vp8', extension: 'webm' },
+        { mimeType: 'video/webm', extension: 'webm' }
       ]
-      return candidates.find(type => MediaRecorder.isTypeSupported(type)) || ''
+      return candidates.find(format => MediaRecorder.isTypeSupported(format.mimeType)) || {
+        mimeType: '',
+        extension: 'webm'
+      }
     }
 
     const releaseRecordingStream = () => {
@@ -116,8 +121,11 @@ export default {
       try {
         recordingChunks = []
         recordingStream = canvas.captureStream(30)
-        const mimeType = getRecordingMimeType()
-        mediaRecorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : undefined)
+        const recordingFormat = getRecordingFormat()
+        mediaRecorder = new MediaRecorder(
+          recordingStream,
+          recordingFormat.mimeType ? { mimeType: recordingFormat.mimeType } : undefined
+        )
         mediaRecorder.ondataavailable = event => {
           if (event.data?.size > 0) recordingChunks.push(event.data)
         }
@@ -127,9 +135,10 @@ export default {
           ElMessage.error('录像过程发生错误')
         }
         mediaRecorder.onstop = () => {
-          const outputType = mediaRecorder?.mimeType || mimeType || 'video/webm'
+          const outputType = mediaRecorder?.mimeType || recordingFormat.mimeType || 'video/webm'
+          const outputExtension = outputType.includes('mp4') ? 'mp4' : recordingFormat.extension
           if (recordingChunks.length > 0) {
-            downloadBlob(new Blob(recordingChunks, { type: outputType }), createCaptureFilename('webm'))
+            downloadBlob(new Blob(recordingChunks, { type: outputType }), createCaptureFilename(outputExtension))
             ElMessage.success('录像已生成')
           } else {
             ElMessage.warning('录像中没有可用画面')

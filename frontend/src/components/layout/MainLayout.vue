@@ -39,21 +39,6 @@
                 <el-button size="small" @click="toggleAxes" :type="sceneShowAxes ? 'primary' : 'default'" class="tool-btn" title="切换坐标轴">
                   <el-icon :size="14"><Connection /></el-icon>
                 </el-button>
-                <el-button size="small" class="tool-btn" title="截图并下载" @click="captureSceneScreenshot">
-                  <el-icon :size="14"><Camera /></el-icon>
-                </el-button>
-                <el-button
-                  size="small"
-                  class="tool-btn"
-                  :type="isSceneRecording ? 'danger' : 'default'"
-                  :title="isSceneRecording ? '结束录像并下载' : '开始录像'"
-                  @click="toggleSceneRecording"
-                >
-                  <el-icon :size="14">
-                    <VideoPause v-if="isSceneRecording" />
-                    <VideoCamera v-else />
-                  </el-icon>
-                </el-button>
                 <el-dropdown trigger="click" @command="setSceneViewPreset">
                   <el-button size="small" class="tool-btn" title="视角预设">
                     <el-icon :size="14"><View /></el-icon>
@@ -67,6 +52,26 @@
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
+              </div>
+              <span class="tool-separator"></span>
+              <div class="tool-group">
+                <el-button-group>
+                  <el-button size="small" class="tool-btn" title="截图并下载" @click="captureSceneScreenshot">
+                    <el-icon :size="14"><Camera /></el-icon>
+                  </el-button>
+                  <el-button
+                    size="small"
+                    class="tool-btn"
+                    :type="isSceneRecording ? 'danger' : 'default'"
+                    :title="isSceneRecording ? '结束录像并下载' : '开始录像'"
+                    @click="toggleSceneRecording"
+                  >
+                    <el-icon :size="14">
+                      <VideoPause v-if="isSceneRecording" />
+                      <VideoCamera v-else />
+                    </el-icon>
+                  </el-button>
+                </el-button-group>
               </div>
               <span class="tool-separator"></span>
               <div class="tool-group">
