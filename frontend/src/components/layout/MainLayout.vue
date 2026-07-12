@@ -97,7 +97,7 @@
         <div class="side-panels-container">
           <WorkbenchPanel
             id="gps"
-            title="位置信息"
+            title="位姿信息"
             panel-class="gps-mini-panel"
             :style="getSidePanelStyle('gps')"
           >

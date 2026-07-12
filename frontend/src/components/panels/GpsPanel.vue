@@ -19,22 +19,26 @@
       </el-select>
     </div>
 
-    <div class="position-info">
-      <div class="info-row">
-        <span class="label">X位置:</span>
-        <span class="value">{{ positionData.x.toFixed(3) }}m</span>
+    <div class="position-info compact">
+      <div class="position-labels">
+        <span>X</span>
+        <span>Y</span>
+        <span>Z</span>
       </div>
-      <div class="info-row">
-        <span class="label">Y位置:</span>
-        <span class="value">{{ positionData.y.toFixed(3) }}m</span>
+      <div class="position-values">
+        <span>{{ positionData.x.toFixed(3) }}</span>
+        <span>{{ positionData.y.toFixed(3) }}</span>
+        <span>{{ positionData.z.toFixed(3) }}</span>
       </div>
-      <div class="info-row">
-        <span class="label">Z位置:</span>
-        <span class="value">{{ positionData.z.toFixed(3) }}m</span>
+      <div class="position-labels">
+        <span>ROLL</span>
+        <span>PITCH</span>
+        <span>YAW</span>
       </div>
-      <div class="info-row">
-        <span class="label">朝向:</span>
-        <span class="value">{{ positionData.yaw.toFixed(1) }}°</span>
+      <div class="position-values">
+        <span>{{ positionData.roll.toFixed(2) }}</span>
+        <span>{{ positionData.pitch.toFixed(2) }}</span>
+        <span>{{ positionData.yaw.toFixed(2) }}</span>
       </div>
     </div>
 
@@ -54,7 +58,7 @@ import { useConnectionStore } from '../../composables/useConnectionStore'
 import { rosApi } from '../../services/api'
 
 export default {
-  name: 'PositionPanel',
+  name: 'PosePanel',
   props: {
     currentOdomTopic: {
       type: String,
@@ -73,6 +77,8 @@ export default {
       x: 0.0,
       y: 0.0,
       z: 0.0,
+      roll: 0.0,
+      pitch: 0.0,
       yaw: 0.0,
       status: 'INACTIVE', // ACTIVE, INACTIVE, NO_DATA
       lastUpdate: null,
@@ -141,7 +147,7 @@ export default {
       const { position, orientation } = extractPose(message, type)
 
       if (!position) {
-        console.warn('[PositionPanel] Failed to parse position from ' + topic, message)
+        console.warn('[PosePanel] Failed to parse pose from ' + topic, message)
         return
       }
 
@@ -157,17 +163,29 @@ export default {
         const qy = toNumber(orientation.y)
         const qz = toNumber(orientation.z)
         const qw = toNumber(orientation.w, 1)
-        const yaw = Math.atan2(
-          2 * (qw * qz + qx * qy),
-          1 - 2 * (qy * qy + qz * qz)
-        )
+
+        const sinr_cosp = 2 * (qw * qx + qy * qz)
+        const cosr_cosp = 1 - 2 * (qx * qx + qy * qy)
+        const roll = Math.atan2(sinr_cosp, cosr_cosp)
+
+        const sinp = 2 * (qw * qy - qz * qx)
+        const pitch = Math.abs(sinp) >= 1 ? (Math.sign(sinp) * Math.PI / 2) : Math.asin(sinp)
+
+        const siny_cosp = 2 * (qw * qz + qx * qy)
+        const cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
+        const yaw = Math.atan2(siny_cosp, cosy_cosp)
+
+        positionData.value.roll = roll * 180 / Math.PI
+        positionData.value.pitch = pitch * 180 / Math.PI
         positionData.value.yaw = yaw * 180 / Math.PI
       } else {
+        positionData.value.roll = 0.0
+        positionData.value.pitch = 0.0
         positionData.value.yaw = 0.0
       }
 
       if (!updatePositionFromMessage._lastLogTime || Date.now() - updatePositionFromMessage._lastLogTime > 5000) {
-        console.log('[PositionPanel] ' + topic + ' position: (' + positionData.value.x.toFixed(3) + ', ' + positionData.value.y.toFixed(3) + ', ' + positionData.value.z.toFixed(3) + ')')
+        console.log('[PosePanel] ' + topic + ' position: (' + positionData.value.x.toFixed(3) + ', ' + positionData.value.y.toFixed(3) + ', ' + positionData.value.z.toFixed(3) + ')')
         updatePositionFromMessage._lastLogTime = Date.now()
       }
     }
@@ -176,9 +194,9 @@ export default {
       subscriptions.forEach(({ topic, subscription }) => {
         try {
           rosbridge.unsubscribe(subscription || topic)
-          console.log('[PositionPanel] unsubscribed: ' + topic)
+          console.log('[PosePanel] unsubscribed: ' + topic)
         } catch (e) {
-          console.warn('[PositionPanel] failed to unsubscribe ' + topic + ':', e)
+          console.warn('[PosePanel] failed to unsubscribe ' + topic + ':', e)
         }
       })
       subscriptions.length = 0
@@ -201,7 +219,7 @@ export default {
         return
       }
 
-      console.log('[PositionPanel] 订阅无人机 odom 位置信息: ' + topic)
+      console.log('[PosePanel] 订阅无人机 odom 位姿信息: ' + topic)
 
       try {
         const type = 'nav_msgs/msg/Odometry'
@@ -211,10 +229,10 @@ export default {
 
         if (subscription) {
           subscriptions.push({ topic, subscription })
-          console.log('[PositionPanel] subscribed: ' + topic)
+          console.log('[PosePanel] subscribed: ' + topic)
         }
       } catch (error) {
-        console.warn('[PositionPanel] failed to subscribe ' + topic + ':', error)
+        console.warn('[PosePanel] failed to subscribe ' + topic + ':', error)
       }
 
       if (subscriptions.length === 0) {
@@ -303,7 +321,7 @@ export default {
     })
 
     onUnmounted(() => {
-      console.log('[PositionPanel] 组件卸载 - 清理所有订阅')
+      console.log('[PosePanel] 组件卸载 - 清理所有订阅')
       stopConnectionWatch()
       stopTopicWatch()
       clearPositionSubscriptions()
@@ -334,6 +352,36 @@ export default {
 
 .position-info {
   flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.position-labels,
+.position-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: center;
+}
+
+.position-labels {
+  color: var(--text-secondary);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.position-values {
+  color: var(--text-primary);
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.position-item,
+.info-item,
+.info-item.compact-item {
+  display: none;
 }
 
 .odom-selector {
@@ -365,6 +413,7 @@ export default {
   font-weight: 600;
   font-size: 12px;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .accuracy-good {
