@@ -135,6 +135,50 @@ export class TfBuffer {
     }
     return null
   }
+
+  frameIds() {
+    const frames = new Set()
+    this.transforms.forEach((entry, child) => {
+      frames.add(child)
+      frames.add(entry.parent)
+    })
+    return [...frames].sort((left, right) => left.localeCompare(right))
+  }
+}
+
+export class FollowFrameTracker {
+  constructor() {
+    this.frameId = ''
+    this.position = null
+  }
+
+  setFrame(frameId) {
+    this.frameId = normalizeFrame(frameId)
+    this.position = null
+  }
+
+  reset() {
+    this.position = null
+  }
+
+  update(tfBuffer, fixedFrame) {
+    if (!this.frameId) return null
+    const transform = tfBuffer.lookupTransform(fixedFrame, this.frameId)
+    if (!transform) {
+      this.position = null
+      return null
+    }
+
+    const nextPosition = new THREE.Vector3().setFromMatrixPosition(transform)
+    if (!this.position) {
+      this.position = nextPosition
+      return null
+    }
+
+    const translation = nextPosition.clone().sub(this.position)
+    this.position.copy(nextPosition)
+    return translation
+  }
 }
 
 export const frameIdFromMessage = message => {

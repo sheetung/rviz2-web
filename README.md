@@ -108,6 +108,7 @@ RVIZWEB_CONFIG=default.rvizweb ./start.sh local
 配置文件主要包含：
 
 - `fixedFrame`
+- `followFrame`（可选；相机跟随该 TF frame 的平移，视角不随姿态旋转）
 - `scene.showGrid`
 - `scene.showAxes`
 - `scene.viewPreset`

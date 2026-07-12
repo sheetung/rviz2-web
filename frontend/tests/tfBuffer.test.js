@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import * as THREE from 'three'
 
-import { TfBuffer, frameIdFromMessage, messageTimestampMs } from '../src/utils/tfBuffer.js'
+import { FollowFrameTracker, TfBuffer, frameIdFromMessage, messageTimestampMs } from '../src/utils/tfBuffer.js'
 
 
 const stampedTransform = ({ parent = 'map', child = 'base', seconds, x = 0, yaw = 0 }) => ({
@@ -74,4 +74,31 @@ test('prunes samples outside the configured history window', () => {
 
   assert.equal(buffer.transforms.get('base').samples.length, 1)
   assert.equal(translation(buffer.lookupTransform('map', 'base', 1_000)).x, 3)
+})
+
+
+test('lists normalized parent and child frame IDs', () => {
+  const buffer = new TfBuffer()
+  buffer.updateMessage({ transforms: [
+    stampedTransform({ parent: '/map', child: '/odom', seconds: 1 }),
+    stampedTransform({ parent: 'odom', child: 'base', seconds: 1 })
+  ] })
+
+  assert.deepEqual(buffer.frameIds(), ['base', 'map', 'odom'])
+})
+
+
+test('follow frame tracker returns translation only and ignores rotation', () => {
+  const buffer = new TfBuffer()
+  const tracker = new FollowFrameTracker()
+  tracker.setFrame('base')
+
+  buffer.updateMessage({ transforms: [stampedTransform({ seconds: 1, x: 2, yaw: 0 })] })
+  assert.equal(tracker.update(buffer, 'map'), null)
+
+  buffer.updateMessage({ transforms: [stampedTransform({ seconds: 2, x: 2, yaw: Math.PI / 2 })] })
+  assert.deepEqual(tracker.update(buffer, 'map').toArray(), [0, 0, 0])
+
+  buffer.updateMessage({ transforms: [stampedTransform({ seconds: 3, x: 5, yaw: Math.PI })] })
+  assert.deepEqual(tracker.update(buffer, 'map').toArray(), [3, 0, 0])
 })

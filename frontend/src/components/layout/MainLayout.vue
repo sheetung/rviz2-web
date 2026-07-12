@@ -88,6 +88,7 @@
               @display-status="onDisplayStatus"
               @tool-change="onSceneToolChange"
               @recording-change="isSceneRecording = $event"
+              @frame-list-change="onFrameListChange"
             />
           </div>
         </div>
@@ -172,8 +173,10 @@
             <TopicConfigPanel
               ref="topicConfigRef"
               :displays="displaySnapshot"
+              :frame-ids="availableFrameIds"
               @display-topic-change="onDisplayTopicChange"
               @fixed-frame-change="onFixedFrameChange"
+              @follow-frame-change="onFollowFrameChange"
             />
           </WorkbenchPanel>
           <div
@@ -205,6 +208,7 @@
               @capture-scene-state="captureSceneState"
               @display-config-apply="onDisplayConfigApply"
               @fixed-frame-change="onConfigFixedFrameChange"
+              @follow-frame-change="onConfigFollowFrameChange"
             />
           </WorkbenchPanel>
           <div
@@ -318,6 +322,7 @@ export default {
     const sceneWidth = ref(68)
     const sceneShowGrid = ref(true)
     const sceneShowAxes = ref(true)
+    const availableFrameIds = ref([])
     const isResizing = ref(false)
     const startX = ref(0)
     const startWidth = ref(0)
@@ -330,6 +335,7 @@ export default {
 
     const settingsSnapshot = ref({
       fixedFrame: 'map',
+      followFrame: '',
       scene: {
         showGrid: true,
         showAxes: true,
@@ -951,6 +957,16 @@ export default {
       }
     }
 
+    const onFrameListChange = (frameIds) => {
+      availableFrameIds.value = Array.isArray(frameIds) ? frameIds : []
+    }
+
+    const onFollowFrameChange = (frameId) => {
+      const nextFrameId = frameId || ''
+      settingsSnapshot.value.followFrame = nextFrameId
+      scene3dRef.value?.setFollowFrame?.(nextFrameId)
+    }
+
     const onDisplayStatus = ({ topic, error }) => {
       topicConfigRef.value?.setDisplayStatus?.(topic, error || '')
     }
@@ -959,6 +975,12 @@ export default {
       const nextFrameId = frameId || 'map'
       topicConfigRef.value?.setFixedFrameSilently?.(nextFrameId)
       onFixedFrameChange(nextFrameId)
+    }
+
+    const onConfigFollowFrameChange = (frameId) => {
+      const nextFrameId = frameId || ''
+      topicConfigRef.value?.setFollowFrameSilently?.(nextFrameId)
+      onFollowFrameChange(nextFrameId)
     }
 
     const captureSceneState = () => {
@@ -984,6 +1006,7 @@ export default {
       controllerCollapsed,
       setPanelCollapsed,
       settingsSnapshot,
+      availableFrameIds,
       displaySnapshot,
       sceneWidth,
       sidePanelHeights,
@@ -1023,8 +1046,11 @@ export default {
       onDisplayTopicChange,
       onDisplayConfigApply,
       onFixedFrameChange,
+      onFollowFrameChange,
+      onFrameListChange,
       onDisplayStatus,
       onConfigFixedFrameChange,
+      onConfigFollowFrameChange,
       captureSceneState
     }
   }

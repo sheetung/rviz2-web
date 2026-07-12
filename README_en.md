@@ -108,6 +108,7 @@ The settings panel supports:
 Configuration files primarily include:
 
 - `fixedFrame`
+- `followFrame` (optional; follows TF frame translation without rotating the camera view)
 - `scene.showGrid`
 - `scene.showAxes`
 - `scene.viewPreset`

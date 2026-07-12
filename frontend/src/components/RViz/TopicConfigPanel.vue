@@ -23,6 +23,25 @@
           />
         </div>
 
+        <div class="property-row global-property">
+          <span>Follow Frame</span>
+          <el-select
+            v-model="followFrame"
+            filterable
+            placeholder="None"
+            size="small"
+            @change="updateFollowFrame"
+          >
+            <el-option label="None" value="" />
+            <el-option
+              v-for="frameId in selectableFrameIds"
+              :key="frameId"
+              :label="frameId"
+              :value="frameId"
+            />
+          </el-select>
+        </div>
+
         <div class="property-row global-property read-only">
           <span>Frame Rate</span>
           <span>30</span>
@@ -314,17 +333,23 @@ export default {
     displays: {
       type: Array,
       default: () => []
+    },
+    frameIds: {
+      type: Array,
+      default: () => []
     }
   },
   emits: [
     'display-topic-change',
-    'fixed-frame-change'
+    'fixed-frame-change',
+    'follow-frame-change'
   ],
   setup(props, { emit, expose }) {
     const rosbridge = useRosbridge()
     const availableTopics = ref([])
     const isLoadingTopics = ref(false)
     const fixedFrame = ref('map')
+    const followFrame = ref('')
     const newDisplayTopic = ref('')
     const newDisplayType = ref('')
     const selectedDisplayId = ref('global')
@@ -395,6 +420,10 @@ export default {
           .filter(messageType => messageType && messageType !== 'unknown')
       )].sort((a, b) => a.localeCompare(b))
     })
+    const selectableFrameIds = computed(() => [...new Set([
+      fixedFrame.value,
+      ...props.frameIds
+    ].filter(Boolean))].sort((left, right) => left.localeCompare(right)))
 
     const normalizeTopicList = (topicList = [], topicTypes = {}) => {
       return topicList.map(topicInfo => {
@@ -439,6 +468,10 @@ export default {
 
     const updateFixedFrame = () => {
       emit('fixed-frame-change', fixedFrame.value || 'map')
+    }
+
+    const updateFollowFrame = () => {
+      emit('follow-frame-change', followFrame.value || '')
     }
 
     const emitDisplayTopicChange = (action, display, extra = {}) => {
@@ -619,12 +652,17 @@ export default {
       updateFixedFrame()
     }
 
+
+    const setFollowFrameSilently = (frameId) => {
+      followFrame.value = frameId || ''
+    }
+
     const setDisplayStatus = (topic, error = '') => {
       const display = displayTopics.value.find(item => item.name === topic)
       if (display) display.error = error
     }
 
-    expose({ applyDisplays, getDisplays, setFixedFrame, setFixedFrameSilently, setDisplayStatus })
+    expose({ applyDisplays, getDisplays, setFixedFrame, setFixedFrameSilently, setFollowFrameSilently, setDisplayStatus })
 
     const loadDefaultConfig = async () => {
       updateFixedFrame()
@@ -640,6 +678,8 @@ export default {
       availableTopics,
       availableMessageTypes,
       fixedFrame,
+      followFrame,
+      selectableFrameIds,
       displayTopics,
       selectedDisplay,
       topicsForSelectedType,
@@ -656,6 +696,7 @@ export default {
       isPathDisplay,
       isMarkerArrayDisplay,
       updateFixedFrame,
+      updateFollowFrame,
       loadAvailableTopics,
       onNewDisplayTopicChange,
       onTopicSelectVisibleChange,

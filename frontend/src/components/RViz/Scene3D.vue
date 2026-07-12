@@ -30,13 +30,13 @@ import * as THREE from 'three'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { useConnectionStore } from '../../composables/useConnectionStore'
 import { ROS_TOPICS, getDefaultVisualizationTopics, getPositionTopics } from '../../config/rosTopics'
-import { TfBuffer, frameIdFromMessage, messageTimestampMs } from '../../utils/tfBuffer'
+import { FollowFrameTracker, TfBuffer, frameIdFromMessage, messageTimestampMs } from '../../utils/tfBuffer'
 import { debugLog } from '../../utils/debug'
 import { getThemeColor } from '../../utils/theme'
 
 export default {
   name: 'Scene3D',
-  emits: ['object-selected', 'camera-moved', 'display-status', 'tool-change', 'recording-change'],
+  emits: ['object-selected', 'camera-moved', 'display-status', 'tool-change', 'recording-change', 'frame-list-change'],
   setup(props, { emit }) {
     const rosbridge = useRosbridge()
     const connectionStore = useConnectionStore()
@@ -184,10 +184,28 @@ export default {
     const displayConfigs = new Map()
     const positionCommandPaths = new Map()
     const tfBuffer = new TfBuffer()
+    const followFrameTracker = new FollowFrameTracker()
     const pendingPointClouds = new Map()
     const latestDisplayMessages = new Map()
     let pointCloudFrameRequest = null
     let transformFrameRequest = null
+    let frameListSignature = ''
+
+    const emitFrameList = () => {
+      const frameIds = tfBuffer.frameIds()
+      const signature = frameIds.join('\n')
+      if (signature === frameListSignature) return
+      frameListSignature = signature
+      emit('frame-list-change', frameIds)
+    }
+
+    const applyFollowFrame = () => {
+      const translation = followFrameTracker.update(tfBuffer, fixedFrameId)
+      if (!translation || !camera || !controls) return
+      camera.position.add(translation)
+      controls.target.add(translation)
+      controls.update()
+    }
 
     const setDisplayStatus = (topic, error = '') => {
       emit('display-status', { topic, error })
@@ -1361,6 +1379,8 @@ export default {
           case 'tf2_msgs/msg/TFMessage':
           case 'tf2_msgs/TFMessage':
             tfBuffer.updateMessage(message, topic === '/tf_static')
+            emitFrameList()
+            applyFollowFrame()
             scheduleTransformRefresh()
             return
           case 'sensor_msgs/msg/LaserScan':
@@ -2656,7 +2676,14 @@ export default {
     // 导航工具相关方法
     const setFixedFrame = (frameId) => {
       fixedFrameId = frameId || 'map'
+      followFrameTracker.reset()
+      applyFollowFrame()
       scheduleTransformRefresh()
+    }
+
+    const setFollowFrame = (frameId) => {
+      followFrameTracker.setFrame(frameId)
+      applyFollowFrame()
     }
 
     const setGoalTopic = (topicName) => {
@@ -3998,6 +4025,7 @@ export default {
       previewGoalPoseFromInput,
       publishGoalPoseFromInput,
       setFixedFrame,
+      setFollowFrame,
       loadMapFile,
       loadMapFiles,
       fitCameraToPointCloud,

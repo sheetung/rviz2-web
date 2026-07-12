@@ -108,7 +108,8 @@ export default {
     'settings-update',
     'capture-scene-state',
     'display-config-apply',
-    'fixed-frame-change'
+    'fixed-frame-change',
+    'follow-frame-change'
   ],
   setup(props, { emit }) {
     const startupConfigName = import.meta.env.VITE_RVIZWEB_CONFIG || 'default.rvizweb'
@@ -172,6 +173,7 @@ export default {
     const applyConfig = (config) => {
       const cfg = config || {}
       emit('fixed-frame-change', cfg.fixedFrame || 'map')
+      emit('follow-frame-change', cfg.followFrame || '')
 
       emit('settings-update', {
         type: 'scene',

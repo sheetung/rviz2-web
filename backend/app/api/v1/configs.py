@@ -51,6 +51,7 @@ class FrontendConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     fixedFrame: str = Field(default="map", min_length=1, max_length=256)
+    followFrame: str = Field(default="", max_length=256)
     displays: List[DisplayConfig] = Field(default_factory=list, max_length=256)
     layout: LayoutConfig = Field(default_factory=LayoutConfig)
     appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
