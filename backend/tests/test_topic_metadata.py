@@ -91,7 +91,7 @@ async def test_frequency_endpoint_actively_samples_published_topics(settings, mo
     monotonic_times = iter([100.0, 100.1, 100.2])
 
     monkeypatch.setattr(service, "_get_message_class", lambda _message_type: object)
-    monkeypatch.setattr("app.services.rosbridge.time.monotonic", lambda: next(monotonic_times))
+    monkeypatch.setattr(service, "_frequency_clock", lambda: next(monotonic_times))
     monkeypatch.setattr("app.services.rosbridge.time.time", lambda: 1000.0)
 
     async def emit_samples(_duration):

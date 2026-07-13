@@ -1110,6 +1110,10 @@ class RosbridgeService:
             return None
         return (len(timestamps) - 1) / duration
 
+    @staticmethod
+    def _frequency_clock() -> float:
+        return time.monotonic()
+
     async def _sample_topic_frequencies(
         self,
         sample_duration: float
@@ -1149,7 +1153,7 @@ class RosbridgeService:
                         continue
 
                     def callback(_msg, measured_topic=topic_name):
-                        sample_times[measured_topic].append(time.monotonic())
+                        sample_times[measured_topic].append(self._frequency_clock())
                         self._topic_last_message_times[measured_topic] = time.time()
 
                     # BEST_EFFORT + VOLATILE can receive both common sensor QoS and
