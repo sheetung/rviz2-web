@@ -4,6 +4,7 @@
       <label>
         X
         <el-input-number
+          ref="xInputRef"
           v-model="localGoal.x"
           size="small"
           :step="0.1"
@@ -16,6 +17,7 @@
       <label>
         Y
         <el-input-number
+          ref="yInputRef"
           v-model="localGoal.y"
           size="small"
           :step="0.1"
@@ -28,6 +30,7 @@
       <label>
         Z
         <el-input-number
+          ref="zInputRef"
           v-model="localGoal.z"
           size="small"
           :step="0.1"
@@ -66,7 +69,7 @@
 </template>
 
 <script>
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 const createDefaultGoal = () => ({
   topic: '',
@@ -98,6 +101,25 @@ export default {
   setup(props, { emit }) {
     const localGoal = reactive(createDefaultGoal())
     const normalizedGoal = computed(() => normalizeGoal(localGoal))
+    const xInputRef = ref(null)
+    const yInputRef = ref(null)
+    const zInputRef = ref(null)
+
+    const readVisibleNumber = (inputRef, fallback) => {
+      const rawValue = inputRef.value?.$el?.querySelector('input')?.value
+      const parsedValue = Number(rawValue)
+      return Number.isFinite(parsedValue) ? parsedValue : fallback
+    }
+
+    const getVisibleGoal = () => {
+      const goal = normalizeGoal(localGoal)
+      return {
+        ...goal,
+        x: readVisibleNumber(xInputRef, goal.x),
+        y: readVisibleNumber(yInputRef, goal.y),
+        z: readVisibleNumber(zInputRef, goal.z)
+      }
+    }
 
     const syncFromProps = () => {
       const nextGoal = normalizeGoal(props.goal)
@@ -117,13 +139,13 @@ export default {
     }
 
     const previewGoal = () => {
-      const goal = normalizeGoal(localGoal)
+      const goal = getVisibleGoal()
       emit('goal-update', goal)
       emit('goal-preview', goal)
     }
 
     const publishGoal = () => {
-      const goal = normalizeGoal(localGoal)
+      const goal = getVisibleGoal()
       emit('goal-update', goal)
       emit('goal-publish', goal)
     }
@@ -140,6 +162,9 @@ export default {
 
     return {
       localGoal,
+      xInputRef,
+      yInputRef,
+      zInputRef,
       normalizedGoal,
       emitGoalUpdate,
       updateCoordinate,
