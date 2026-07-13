@@ -1,4 +1,4 @@
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovarianceStamped, Twist
 
 from app.services.rosbridge import RosbridgeService
 
@@ -34,3 +34,42 @@ def test_pose_stamped_dictionary_preserves_all_position_axes():
     assert result.pose.position.x == 16.0
     assert result.pose.position.y == 0.0
     assert result.pose.position.z == 0.6
+
+
+def test_integer_json_values_are_coerced_for_other_ros_float_fields():
+    service = object.__new__(RosbridgeService)
+
+    pose = service._dict_to_message(
+        Pose,
+        {
+            "position": {"x": 1, "y": 0, "z": -2},
+            "orientation": {"x": 0, "y": 0, "z": 0, "w": 1},
+        },
+    )
+    twist = service._dict_to_message(
+        Twist,
+        {
+            "linear": {"x": 2, "y": 0, "z": -1},
+            "angular": {"x": 0, "y": 0, "z": 1},
+        },
+    )
+    initial_pose = service._dict_to_message(
+        PoseWithCovarianceStamped,
+        {
+            "pose": {
+                "pose": {
+                    "position": {"x": 16, "y": 0, "z": 0},
+                    "orientation": {"x": 0, "y": 0, "z": 0, "w": 1},
+                },
+                "covariance": [0] * 36,
+            }
+        },
+    )
+
+    assert (pose.position.x, pose.position.y, pose.position.z) == (1.0, 0.0, -2.0)
+    assert (pose.orientation.x, pose.orientation.w) == (0.0, 1.0)
+    assert (twist.linear.x, twist.linear.y, twist.linear.z) == (2.0, 0.0, -1.0)
+    assert (twist.angular.x, twist.angular.z) == (0.0, 1.0)
+    assert initial_pose.pose.pose.position.x == 16.0
+    assert initial_pose.pose.pose.position.y == 0.0
+    assert all(isinstance(value, float) for value in initial_pose.pose.covariance)
