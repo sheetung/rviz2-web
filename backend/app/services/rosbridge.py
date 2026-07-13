@@ -1016,7 +1016,7 @@ class RosbridgeService:
         """Read the live ROS graph using the ros2 CLI."""
         try:
             result = subprocess.run(
-                ["ros2", "topic", "list", "-t"],
+                ["ros2", "topic", "list", "-t", "--no-daemon"],
                 capture_output=True,
                 text=True,
                 timeout=3,
