@@ -4,10 +4,12 @@ FastAPI 应用入口
 """
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 import os
+from pathlib import Path
 
 from .core.config import get_settings
 from .core.version import APP_VERSION
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 # 获取配置
 settings = get_settings()
+DOCS_ASSETS_DIR = Path(__file__).resolve().parent / "static" / "swagger-ui"
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -38,6 +41,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount(
+    "/docs-assets",
+    StaticFiles(directory=DOCS_ASSETS_DIR),
+    name="docs-assets",
+)
+
+
+@app.get("/docs", include_in_schema=False)
+async def swagger_ui_html():
+    """使用仓库内静态资源提供 Swagger UI。"""
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - Swagger UI",
+        swagger_js_url="/docs-assets/swagger-ui-bundle.js",
+        swagger_css_url="/docs-assets/swagger-ui.css",
+        swagger_favicon_url="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E",
+    )
 
 # 全局 Rosbridge 服务实例将通过依赖注入管理
 
