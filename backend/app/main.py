@@ -25,7 +25,9 @@ settings = get_settings()
 app = FastAPI(
     title="RViz2 Web Visualization",
     description="基于 Vue.js + FastAPI 的 ROS2 可视化平台",
-    version=APP_VERSION
+    version=APP_VERSION,
+    docs_url=None,
+    redoc_url=None,
 )
 
 # 配置 CORS
