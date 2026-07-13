@@ -9,6 +9,7 @@
           :step="0.1"
           :precision="2"
           controls-position="right"
+          @input="emitGoalUpdate"
           @change="emitGoalUpdate"
         />
       </label>
@@ -20,6 +21,7 @@
           :step="0.1"
           :precision="2"
           controls-position="right"
+          @input="emitGoalUpdate"
           @change="emitGoalUpdate"
         />
       </label>
@@ -31,6 +33,7 @@
           :step="0.1"
           :precision="2"
           controls-position="right"
+          @input="emitGoalUpdate"
           @change="emitGoalUpdate"
         />
       </label>
@@ -54,8 +57,8 @@
 
     <div class="goal-actions">
       <el-button size="small" @click="resetGoal">重置</el-button>
-      <el-button size="small" @click="$emit('goal-preview', normalizedGoal)">展示</el-button>
-      <el-button size="small" type="primary" @click="$emit('goal-publish', normalizedGoal)">
+      <el-button size="small" @click="previewGoal">展示</el-button>
+      <el-button size="small" type="primary" @click="publishGoal">
         发布
       </el-button>
     </div>
@@ -108,6 +111,18 @@ export default {
       emit('goal-update', normalizedGoal.value)
     }
 
+    const previewGoal = () => {
+      const goal = normalizeGoal(localGoal)
+      emit('goal-update', goal)
+      emit('goal-preview', goal)
+    }
+
+    const publishGoal = () => {
+      const goal = normalizeGoal(localGoal)
+      emit('goal-update', goal)
+      emit('goal-publish', goal)
+    }
+
     const resetGoal = () => {
       localGoal.topic = ''
       localGoal.x = 0
@@ -122,6 +137,8 @@ export default {
       localGoal,
       normalizedGoal,
       emitGoalUpdate,
+      previewGoal,
+      publishGoal,
       resetGoal
     }
   }
