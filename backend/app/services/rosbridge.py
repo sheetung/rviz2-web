@@ -12,7 +12,7 @@ import subprocess
 from typing import Dict, List, Optional, Any
 from collections import defaultdict, deque
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import WebSocket, WebSocketDisconnect
 import rclpy
@@ -131,6 +131,8 @@ class RosbridgeService:
         self.node_info_cache = {}
         self._message_counts = {}
         self._topic_message_times = defaultdict(lambda: deque(maxlen=200))
+        self._topic_last_message_times = {}
+        self._topic_observation_started_at = {}
 
         # 异步消息处理队列
         self.message_queue = None
@@ -551,6 +553,7 @@ class RosbridgeService:
                 )
 
                 self.subscribers[topic] = subscriber
+                self._topic_observation_started_at[topic] = time.time()
                 logger.info(f"✅ Successfully created subscriber for {topic}")
                 logger.info(f"🎯 QoS: {reliability_name} + {durability_name} + {history_name} + depth={qos_profile.depth}")
 
@@ -659,7 +662,8 @@ class RosbridgeService:
                     if topic not in self._message_counts:
                         self._message_counts[topic] = 0
                     self._message_counts[topic] += 1
-                    self._topic_message_times[topic].append(time.time())
+                    self._topic_message_times[topic].append(timestamp)
+                    self._topic_last_message_times[topic] = timestamp
 
                     # 只记录第一条消息，减少日志输出
                     if self._message_counts[topic] == 1:
@@ -1059,11 +1063,70 @@ class RosbridgeService:
 
         return topics
 
-    async def get_topics(self) -> List[TopicInfo]:
+    @staticmethod
+    def _endpoint_node_name(endpoint) -> str:
+        node_name = str(getattr(endpoint, 'node_name', '') or '').strip('/')
+        namespace = str(getattr(endpoint, 'node_namespace', '') or '').strip('/')
+        if not node_name:
+            return ''
+        return f"/{namespace}/{node_name}" if namespace else f"/{node_name}"
+
+    def _topic_frequency(self, topic_name: str, now: Optional[float] = None) -> Optional[float]:
+        current_time = time.time() if now is None else now
+        timestamps = self._topic_message_times.get(topic_name)
+        if timestamps:
+            while timestamps and current_time - timestamps[0] > 5.0:
+                timestamps.popleft()
+
+        if timestamps and len(timestamps) >= 2:
+            duration = timestamps[-1] - timestamps[0]
+            if duration > 0:
+                return (len(timestamps) - 1) / duration
+
+        observation_started_at = self._topic_observation_started_at.get(topic_name)
+        if (
+            topic_name in self.subscribers
+            and observation_started_at is not None
+            and current_time - observation_started_at >= 5.0
+        ):
+            return 0.0
+        return None
+
+    def _enrich_topic_info(self, topic: TopicInfo, now: float) -> TopicInfo:
+        if self.node:
+            try:
+                topic.publishers = sorted(filter(None, {
+                    self._endpoint_node_name(info)
+                    for info in self.node.get_publishers_info_by_topic(topic.name)
+                }))
+            except Exception as e:
+                logger.debug(f"Could not get publishers for {topic.name}: {e}")
+
+            try:
+                topic.subscribers = sorted(filter(None, {
+                    self._endpoint_node_name(info)
+                    for info in self.node.get_subscriptions_info_by_topic(topic.name)
+                }))
+            except Exception as e:
+                logger.debug(f"Could not get subscribers for {topic.name}: {e}")
+
+        topic.frequency = self._topic_frequency(topic.name, now)
+        last_message_time = self._topic_last_message_times.get(topic.name)
+        topic.last_message_time = (
+            datetime.fromtimestamp(last_message_time, tz=timezone.utc)
+            if last_message_time is not None
+            else None
+        )
+        return topic
+
+    async def get_topics(self, include_details: bool = True) -> List[TopicInfo]:
         """获取主题列表"""
         cli_topics = await asyncio.to_thread(self._get_topics_from_cli_sync)
         if cli_topics:
-            return cli_topics
+            if not include_details:
+                return cli_topics
+            now = time.time()
+            return [self._enrich_topic_info(topic, now) for topic in cli_topics]
 
         if not self.node:
             return []
@@ -1080,7 +1143,10 @@ class RosbridgeService:
                     subscribers=[]
                 ))
                 
-            return topics
+            if not include_details:
+                return topics
+            now = time.time()
+            return [self._enrich_topic_info(topic, now) for topic in topics]
         except Exception as e:
             logger.error(f"Failed to get topics: {e}")
             return []
@@ -1169,6 +1235,7 @@ class RosbridgeService:
             if subscriber and self.node:
                 self.node.destroy_subscription(subscriber)
             self._topic_message_times.pop(topic_name, None)
+            self._topic_observation_started_at.pop(topic_name, None)
             self._message_counts.pop(topic_name, None)
             return True
         except Exception as e:
@@ -1270,7 +1337,7 @@ class RosbridgeService:
     async def get_topic_types(self) -> Dict[str, str]:
         """获取主题类型映射"""
         try:
-            topics = await self.get_topics()
+            topics = await self.get_topics(include_details=False)
             topic_types = {
                 topic.name: topic.message_type or "unknown"
                 for topic in topics
@@ -1281,7 +1348,7 @@ class RosbridgeService:
             logger.error(f"Failed to get topic types: {e}")
             return {}
 
-    async def get_topic_frequencies(self) -> Dict[str, float]:
+    async def get_topic_frequencies(self) -> Dict[str, Optional[float]]:
         """获取主题频率信息"""
         if not self.node:
             return {}
@@ -1293,28 +1360,11 @@ class RosbridgeService:
             
             for topic_name, _ in topic_names_and_types:
                 try:
-                    publishers_info = self.node.get_publishers_info_by_topic(topic_name)
-                    timestamps = self._topic_message_times.get(topic_name)
-                    if timestamps:
-                        while timestamps and now - timestamps[0] > 5.0:
-                            timestamps.popleft()
-
-                    if timestamps and len(timestamps) >= 2:
-                        duration = timestamps[-1] - timestamps[0]
-                        frequencies[topic_name] = (
-                            (len(timestamps) - 1) / duration
-                            if duration > 0
-                            else 0.0
-                        )
-                    elif publishers_info:
-                        # 有发布者但当前桥未收到足够样本时，明确返回未知/未测得为0。
-                        frequencies[topic_name] = 0.0
-                    else:
-                        frequencies[topic_name] = 0.0
+                    frequencies[topic_name] = self._topic_frequency(topic_name, now)
                         
                 except Exception as e:
                     logger.warning(f"Could not get frequency for topic {topic_name}: {e}")
-                    frequencies[topic_name] = 0.0
+                    frequencies[topic_name] = None
                     
             logger.info(f"Found frequencies for {len(frequencies)} topics")
             return frequencies
@@ -1387,7 +1437,7 @@ class RosbridgeService:
     
     async def get_system_status(self) -> SystemStatus:
         """获取系统状态"""
-        topics = await self.get_topics()
+        topics = await self.get_topics(include_details=False)
         nodes = await self.get_nodes()
         cpu_usage = 0.0
         memory_usage = 0.0

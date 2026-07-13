@@ -41,11 +41,11 @@ async def get_topics(
         logger.error(f"Failed to get topics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/topics/frequencies", response_model=Dict[str, float])
+@router.get("/topics/frequencies", response_model=Dict[str, Optional[float]])
 async def get_topic_frequencies(
     service: RosbridgeService = Depends(get_rosbridge_service)
 ):
-    """获取所有主题的频率信息"""
+    """获取后端已观察主题的频率；未订阅或样本不足时返回 null。"""
     try:
         frequencies = await service.get_topic_frequencies()
         return frequencies

@@ -12,8 +12,8 @@ class TopicInfo(BaseModel):
     message_type: str = Field(..., description="消息类型")
     publishers: List[str] = Field(default_factory=list, description="发布者列表")
     subscribers: List[str] = Field(default_factory=list, description="订阅者列表")
-    frequency: Optional[float] = Field(None, description="发布频率 (Hz)")
-    last_message_time: Optional[datetime] = Field(None, description="最后消息时间")
+    frequency: Optional[float] = Field(None, description="后端最近 5 秒观测到的发布频率 (Hz)，未观测时为 null")
+    last_message_time: Optional[datetime] = Field(None, description="后端最近一次收到该话题消息的 UTC 时间，未观测时为 null")
     
 class NodeInfo(BaseModel):
     """ROS2 节点信息"""
