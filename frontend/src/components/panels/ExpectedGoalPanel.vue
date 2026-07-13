@@ -4,40 +4,34 @@
       <label>
         X
         <el-input-number
-          ref="xInputRef"
-          v-model="localGoal.x"
+          :model-value="goal.x"
           size="small"
           :step="0.1"
           :precision="2"
           controls-position="right"
-          @input="value => updateCoordinate('x', value)"
-          @change="value => updateCoordinate('x', value)"
+          @update:model-value="value => updateCoordinate('x', value)"
         />
       </label>
       <label>
         Y
         <el-input-number
-          ref="yInputRef"
-          v-model="localGoal.y"
+          :model-value="goal.y"
           size="small"
           :step="0.1"
           :precision="2"
           controls-position="right"
-          @input="value => updateCoordinate('y', value)"
-          @change="value => updateCoordinate('y', value)"
+          @update:model-value="value => updateCoordinate('y', value)"
         />
       </label>
       <label>
         Z
         <el-input-number
-          ref="zInputRef"
-          v-model="localGoal.z"
+          :model-value="goal.z"
           size="small"
           :step="0.1"
           :precision="2"
           controls-position="right"
-          @input="value => updateCoordinate('z', value)"
-          @change="value => updateCoordinate('z', value)"
+          @update:model-value="value => updateCoordinate('z', value)"
         />
       </label>
     </div>
@@ -45,10 +39,10 @@
     <div class="goal-meta">
       <span class="meta-label">Topic</span>
       <el-input
-        v-model="localGoal.topic"
+        :model-value="goal.topic"
         size="small"
         placeholder="目标话题"
-        @change="emitGoalUpdate"
+        @update:model-value="updateTopic"
       />
       <span class="meta-sep"></span>
       <span class="meta-label">Frame</span>
@@ -69,7 +63,7 @@
 </template>
 
 <script>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 const createDefaultGoal = () => ({
   topic: '',
@@ -99,75 +93,38 @@ export default {
   },
   emits: ['goal-update', 'goal-preview', 'goal-publish'],
   setup(props, { emit }) {
-    const localGoal = reactive(createDefaultGoal())
-    const normalizedGoal = computed(() => normalizeGoal(localGoal))
-    const xInputRef = ref(null)
-    const yInputRef = ref(null)
-    const zInputRef = ref(null)
-
-    const readVisibleNumber = (inputRef, fallback) => {
-      const rawValue = inputRef.value?.$el?.querySelector('input')?.value
-      const parsedValue = Number(rawValue)
-      return Number.isFinite(parsedValue) ? parsedValue : fallback
-    }
-
-    const getVisibleGoal = () => {
-      const goal = normalizeGoal(localGoal)
-      return {
-        ...goal,
-        x: readVisibleNumber(xInputRef, goal.x),
-        y: readVisibleNumber(yInputRef, goal.y),
-        z: readVisibleNumber(zInputRef, goal.z)
-      }
-    }
-
-    const syncFromProps = () => {
-      const nextGoal = normalizeGoal(props.goal)
-      localGoal.topic = nextGoal.topic
-      localGoal.x = nextGoal.x
-      localGoal.y = nextGoal.y
-      localGoal.z = nextGoal.z
-    }
-
-    const emitGoalUpdate = () => {
-      emit('goal-update', normalizedGoal.value)
-    }
+    const normalizedGoal = computed(() => normalizeGoal(props.goal))
 
     const updateCoordinate = (axis, value) => {
-      localGoal[axis] = Number(value) || 0
-      emitGoalUpdate()
+      emit('goal-update', {
+        ...normalizedGoal.value,
+        [axis]: Number(value) || 0
+      })
+    }
+
+    const updateTopic = (topic) => {
+      emit('goal-update', {
+        ...normalizedGoal.value,
+        topic
+      })
     }
 
     const previewGoal = () => {
-      const goal = getVisibleGoal()
-      emit('goal-update', goal)
-      emit('goal-preview', goal)
+      emit('goal-preview', normalizedGoal.value)
     }
 
     const publishGoal = () => {
-      const goal = getVisibleGoal()
-      emit('goal-update', goal)
-      emit('goal-publish', goal)
+      emit('goal-publish', normalizedGoal.value)
     }
 
     const resetGoal = () => {
-      localGoal.topic = ''
-      localGoal.x = 0
-      localGoal.y = 0
-      localGoal.z = 0
-      emitGoalUpdate()
+      emit('goal-update', createDefaultGoal())
     }
 
-    watch(() => props.goal, syncFromProps, { deep: true, immediate: true })
-
     return {
-      localGoal,
-      xInputRef,
-      yInputRef,
-      zInputRef,
       normalizedGoal,
-      emitGoalUpdate,
       updateCoordinate,
+      updateTopic,
       previewGoal,
       publishGoal,
       resetGoal
