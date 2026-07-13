@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { createConfigFingerprint } from '../utils/configSnapshot'
+import { createConfigFingerprint } from '../utils/configSnapshot.js'
 
 export const useConfigStatusStore = defineStore('configStatus', () => {
   const currentConfigName = ref('')
