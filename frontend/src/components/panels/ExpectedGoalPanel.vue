@@ -9,8 +9,8 @@
           :step="0.1"
           :precision="2"
           controls-position="right"
-          @input="emitGoalUpdate"
-          @change="emitGoalUpdate"
+          @input="value => updateCoordinate('x', value)"
+          @change="value => updateCoordinate('x', value)"
         />
       </label>
       <label>
@@ -21,8 +21,8 @@
           :step="0.1"
           :precision="2"
           controls-position="right"
-          @input="emitGoalUpdate"
-          @change="emitGoalUpdate"
+          @input="value => updateCoordinate('y', value)"
+          @change="value => updateCoordinate('y', value)"
         />
       </label>
       <label>
@@ -33,8 +33,8 @@
           :step="0.1"
           :precision="2"
           controls-position="right"
-          @input="emitGoalUpdate"
-          @change="emitGoalUpdate"
+          @input="value => updateCoordinate('z', value)"
+          @change="value => updateCoordinate('z', value)"
         />
       </label>
     </div>
@@ -111,6 +111,11 @@ export default {
       emit('goal-update', normalizedGoal.value)
     }
 
+    const updateCoordinate = (axis, value) => {
+      localGoal[axis] = Number(value) || 0
+      emitGoalUpdate()
+    }
+
     const previewGoal = () => {
       const goal = normalizeGoal(localGoal)
       emit('goal-update', goal)
@@ -137,6 +142,7 @@ export default {
       localGoal,
       normalizedGoal,
       emitGoalUpdate,
+      updateCoordinate,
       previewGoal,
       publishGoal,
       resetGoal
