@@ -127,4 +127,7 @@ async def test_websocket_topics_encode_last_message_time(settings, monkeypatch):
     await service._handle_get_topics("client-1", "request-1")
 
     response = service.connection_manager.send_to_client.await_args.args[1]
-    assert response["topics"][0]["last_message_time"] == "2026-07-13T06:15:00+00:00"
+    encoded_time = response["topics"][0]["last_message_time"].replace("Z", "+00:00")
+    assert datetime.fromisoformat(encoded_time) == datetime(
+        2026, 7, 13, 6, 15, tzinfo=timezone.utc
+    )
