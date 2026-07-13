@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timezone
 
 from fastapi import WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
@@ -1793,7 +1794,7 @@ class RosbridgeService:
             topics = await self.get_topics()
             response = {
                 'op': 'get_topics_result',
-                'topics': [topic.dict() for topic in topics]
+                'topics': jsonable_encoder(topics)
             }
             if request_id:
                 response['id'] = request_id

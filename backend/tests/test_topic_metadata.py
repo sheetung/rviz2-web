@@ -1,6 +1,7 @@
 from collections import deque
-from datetime import timezone
+from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -110,3 +111,20 @@ async def test_frequency_endpoint_actively_samples_published_topics(settings, mo
     assert service._topic_frequency("/points", now=1000.0) == pytest.approx(10.0)
     assert service._topic_last_message_times["/points"] == 1000.0
     assert len(service.node.destroyed_subscriptions) == 1
+
+
+@pytest.mark.asyncio
+async def test_websocket_topics_encode_last_message_time(settings, monkeypatch):
+    service = RosbridgeService(settings)
+    topic = TopicInfo(
+        name="/points",
+        message_type="sensor_msgs/msg/PointCloud2",
+        last_message_time=datetime(2026, 7, 13, 6, 15, tzinfo=timezone.utc),
+    )
+    monkeypatch.setattr(service, "get_topics", AsyncMock(return_value=[topic]))
+    service.connection_manager.send_to_client = AsyncMock()
+
+    await service._handle_get_topics("client-1", "request-1")
+
+    response = service.connection_manager.send_to_client.await_args.args[1]
+    assert response["topics"][0]["last_message_time"] == "2026-07-13T06:15:00+00:00"
