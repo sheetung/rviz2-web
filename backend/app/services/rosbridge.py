@@ -1605,6 +1605,8 @@ class RosbridgeService:
 
                     # 基本类型
                     try:
+                        if isinstance(current_attr, float) and isinstance(val, (int, float)):
+                            val = float(val)
                         setattr(obj, key, val)
                     except Exception:
                         pass
