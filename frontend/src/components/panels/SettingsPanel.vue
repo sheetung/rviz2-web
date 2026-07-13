@@ -84,7 +84,8 @@
 </template>
 
 <script>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useConfigStatusStore } from '../../composables/useConfigStatusStore'
 import { configApi } from '../../services/api'
 
 export default {
@@ -112,6 +113,7 @@ export default {
     'follow-frame-change'
   ],
   setup(props, { emit }) {
+    const configStatusStore = useConfigStatusStore()
     const startupConfigName = import.meta.env.VITE_RVIZWEB_CONFIG || 'default.rvizweb'
     const configName = ref(startupConfigName)
     const selectedConfigName = ref(startupConfigName)
@@ -161,6 +163,12 @@ export default {
         config: display.config || {}
       }))
     })
+
+    watch(
+      () => [props.settingsSnapshot, props.displaySnapshot],
+      () => configStatusStore.updateCurrentConfig(buildConfig()),
+      { deep: true, immediate: true }
+    )
 
     const loadConfigFiles = async () => {
       try {
@@ -274,9 +282,11 @@ export default {
         emit('capture-scene-state')
         await nextTick()
         const name = normalizeConfigName(configName.value)
-        await configApi.saveConfig(name, validateConfig(buildConfig()))
+        const config = validateConfig(buildConfig())
+        const result = await configApi.saveConfig(name, config)
         configName.value = name
         selectedConfigName.value = name
+        configStatusStore.markSaved(name, config, result.modified_at)
         await loadConfigFiles()
         ElMessage.success(`配置已保存: ${name}`)
       } catch (error) {
@@ -290,7 +300,10 @@ export default {
         const data = await configApi.getConfig(selectedConfigName.value)
         const nextConfig = validateConfig(data.config || data)
         applyConfig(nextConfig)
-        configName.value = data.name || selectedConfigName.value
+        const loadedName = data.name || selectedConfigName.value
+        configName.value = loadedName
+        await nextTick()
+        configStatusStore.markLoaded(loadedName, buildConfig(), data.modified_at)
         ElMessage.success(`配置已读取: ${selectedConfigName.value}`)
       } catch (error) {
         ElMessage.error(`${apiErrorMessage(error, '读取配置失败')}，当前界面未修改`)
@@ -300,8 +313,10 @@ export default {
     const deleteSelectedConfig = async () => {
       if (!selectedConfigName.value) return
       try {
-        await configApi.deleteConfig(selectedConfigName.value)
-        ElMessage.success(`配置已删除: ${selectedConfigName.value}`)
+        const deletedName = selectedConfigName.value
+        await configApi.deleteConfig(deletedName)
+        configStatusStore.markDeleted(deletedName)
+        ElMessage.success(`配置已删除: ${deletedName}`)
         selectedConfigName.value = ''
         await loadConfigFiles()
       } catch (error) {

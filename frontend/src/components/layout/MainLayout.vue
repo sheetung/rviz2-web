@@ -85,6 +85,7 @@
           <div class="scene-content">
             <Scene3D
               ref="scene3dRef"
+              @camera-moved="onCameraMoved"
               @display-status="onDisplayStatus"
               @tool-change="onSceneToolChange"
               @recording-change="isSceneRecording = $event"
@@ -585,6 +586,12 @@ export default {
       activeSceneTool.value = tool || 'move'
     }
 
+    const onCameraMoved = (cameraState) => {
+      if (cameraState) {
+        settingsSnapshot.value.scene.camera = cameraState
+      }
+    }
+
     const focusSelectedObject = () => {
       scene3dRef.value?.focusSelection?.()
     }
@@ -1045,6 +1052,7 @@ export default {
       onGoalPublish,
       onDisplayTopicChange,
       onDisplayConfigApply,
+      onCameraMoved,
       onFixedFrameChange,
       onFollowFrameChange,
       onFrameListChange,

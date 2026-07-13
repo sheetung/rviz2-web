@@ -68,6 +68,16 @@ class StoredConfig(BaseModel):
     config: FrontendConfig
 
 
+class ConfigResponse(StoredConfig):
+    modified_at: datetime
+
+
+class ConfigSaveResult(BaseModel):
+    name: str
+    status: Literal["saved"]
+    modified_at: datetime
+
+
 def _normalize_name(name: str) -> str:
     settings = get_settings()
     value = (name or "default.rvizweb").strip()
@@ -118,6 +128,10 @@ def _read_validated(path: Path) -> StoredConfig:
         raise HTTPException(status_code=422, detail=f"配置文件格式无效: {exc}") from exc
 
 
+def _modified_at(path: Path) -> datetime:
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+
+
 @router.get("/configs", response_model=List[str])
 async def list_configs() -> List[str]:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -128,19 +142,21 @@ async def list_configs() -> List[str]:
     )
 
 
-@router.get("/configs/{name}", response_model=StoredConfig)
-async def get_config(name: str) -> StoredConfig:
+@router.get("/configs/{name}", response_model=ConfigResponse)
+async def get_config(name: str) -> ConfigResponse:
     path = _config_path(name)
     if not path.exists():
         raise HTTPException(status_code=404, detail="配置文件不存在")
-    return _read_validated(path)
+    stored = _read_validated(path)
+    return ConfigResponse(**stored.model_dump(), modified_at=_modified_at(path))
 
 
 @router.post(
     "/configs/{name}",
     dependencies=[Depends(_require_config_write_access)],
+    response_model=ConfigSaveResult,
 )
-async def save_config(name: str, payload: ConfigPayload) -> Dict[str, str]:
+async def save_config(name: str, payload: ConfigPayload) -> ConfigSaveResult:
     path = _config_path(name)
     document = StoredConfig(name=path.name, version=1, config=payload.config)
     encoded = document.model_dump_json(indent=2).encode("utf-8")
@@ -164,7 +180,11 @@ async def save_config(name: str, payload: ConfigPayload) -> Dict[str, str]:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=f"保存配置失败: {exc}") from exc
-    return {"name": path.name, "status": "saved"}
+    return ConfigSaveResult(
+        name=path.name,
+        status="saved",
+        modified_at=_modified_at(path),
+    )
 
 
 @router.delete(

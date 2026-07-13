@@ -429,7 +429,7 @@ export default {
         controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE
         controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN
         controls.mouseButtons.RIGHT = THREE.MOUSE.NONE
-        controls.addEventListener('change', onCameraChange)
+        controls.addEventListener('end', onCameraChange)
         
         // 创建光照
         ambientLight = new THREE.AmbientLight(0x404040, 0.6)
@@ -826,12 +826,9 @@ export default {
      * 相机变化事件
      */
     const onCameraChange = () => {
-      if (camera) {
-        emit('camera-moved', {
-          position: camera.position.clone(),
-          target: controls.target.clone(),
-          zoom: camera.zoom
-        })
+      const cameraState = getCameraState()
+      if (cameraState) {
+        emit('camera-moved', cameraState)
       }
     }
 

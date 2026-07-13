@@ -30,20 +30,42 @@
           </div>
         </div>
       </div>
-      
+
+      <!-- 配置状态 -->
+      <div class="status-item config" :class="configStatusClass">
+        <div class="status-icon">
+          <el-icon size="20" :color="configColor">
+            <Document />
+          </el-icon>
+        </div>
+        <div class="status-content">
+          <div class="status-label">配置</div>
+          <div class="status-value status-value--ellipsis" :title="configStatusStore.currentConfigName || '未加载配置'">
+            {{ configStatusStore.currentConfigName || '未加载配置' }}
+          </div>
+          <div class="status-extra">
+            <template v-if="configStatusStore.currentConfigName">
+              {{ configStatusStore.isDirty ? '有未保存修改' : '已保存' }} · 最近保存 {{ formatSavedTime(configStatusStore.lastSavedAt) }}
+            </template>
+            <template v-else>等待读取 .rvizweb</template>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Setting, Link } from '@element-plus/icons-vue'
+import { Document, Setting, Link } from '@element-plus/icons-vue'
+import { useConfigStatusStore } from '../../composables/useConfigStatusStore'
 import { useConnectionStore } from '../../composables/useConnectionStore'
 import { rosApi } from '../../services/api'
 
 export default {
   name: 'StatusPanel',
   components: {
+    Document,
     Setting,
     Link
   },
@@ -69,6 +91,7 @@ export default {
   },
 
   setup() {
+    const configStatusStore = useConfigStatusStore()
     const connectionStore = useConnectionStore()
     
     // 状态数据
@@ -126,6 +149,16 @@ export default {
       if (cpu > 60 || mem > 60 || temp > 50) return 'var(--warning)'
       return 'var(--success)'
     })
+
+    const configStatusClass = computed(() => {
+      if (!configStatusStore.currentConfigName) return 'status-inactive'
+      return configStatusStore.isDirty ? 'status-warning' : 'status-good'
+    })
+
+    const configColor = computed(() => {
+      if (!configStatusStore.currentConfigName) return 'var(--text-muted)'
+      return configStatusStore.isDirty ? 'var(--warning)' : 'var(--success)'
+    })
     
     let systemStatusTimer = null
 
@@ -182,6 +215,15 @@ export default {
       }
       return `${Number(value).toFixed(1)}°C`
     }
+
+    const formatSavedTime = (value) => {
+      if (!value) return '--'
+      const date = new Date(value)
+      if (Number.isNaN(date.getTime())) return '--'
+
+      const pad = (number) => String(number).padStart(2, '0')
+      return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    }
     
     onMounted(() => {
       fetchSystemStatus()
@@ -196,15 +238,19 @@ export default {
     
     return {
       connectionData,
+      configStatusStore,
       connectionStore,
       systemData,
       connectionStatusClass,
       connectionColor,
       systemStatusClass,
       systemColor,
+      configStatusClass,
+      configColor,
       formatPercent,
       formatLatency,
-      formatTemperature
+      formatTemperature,
+      formatSavedTime
     }
   }
 }
@@ -281,6 +327,12 @@ export default {
   font-size: 13px;
 }
 
+.status-value--ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-extra {
   color: var(--text-secondary);
   font-size: 10px;
@@ -295,7 +347,7 @@ export default {
 }
 
 .status-panel--wide .status-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   flex: none;
   min-width: 0;
 }

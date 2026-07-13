@@ -48,11 +48,26 @@ async def test_save_uses_atomic_replace_and_leaves_no_temp_file(config_storage, 
     result = await configs.save_config("flight", _payload())
 
     saved = configs._read_validated(config_dir / "flight.rvizweb")
-    assert result == {"name": "flight.rvizweb", "status": "saved"}
+    assert result.name == "flight.rvizweb"
+    assert result.status == "saved"
+    assert result.modified_at.tzinfo is not None
     assert saved.config.fixedFrame == "map"
     assert len(replacements) == 1
     assert replacements[0][1] == config_dir / "flight.rvizweb"
     assert not list(config_dir.glob(".flight.rvizweb.*"))
+
+
+@pytest.mark.asyncio
+async def test_get_config_returns_file_modification_time(config_storage):
+    await configs.save_config("flight", _payload())
+
+    result = await configs.get_config("flight")
+
+    assert result.name == "flight.rvizweb"
+    assert result.modified_at.tzinfo is not None
+    assert result.modified_at == configs._modified_at(
+        config_storage[0] / "flight.rvizweb"
+    )
 
 
 @pytest.mark.asyncio
