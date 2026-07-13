@@ -11,7 +11,10 @@ export const useConnectionStore = defineStore('connection', () => {
   const isConnected = ref(false)
   const isConnecting = ref(false)
   const connectionError = ref(null)
+  const connectionLatency = ref(null)
   const websocket = ref(null)
+  let latencyTimer = null
+  let latencyMeasurementInFlight = false
   
   const getDefaultWsUrl = () => {
     if (typeof window === 'undefined') {
@@ -79,6 +82,7 @@ export const useConnectionStore = defineStore('connection', () => {
         isConnected.value = true
         isConnecting.value = false
         reconnectAttempts.value = 0
+        startLatencyTracking()
         debugLog('WebSocket connected')
         ElMessage.success('已连接到 ROS2 服务')
       }
@@ -96,6 +100,7 @@ export const useConnectionStore = defineStore('connection', () => {
       websocket.value.onclose = (event) => {
         isConnected.value = false
         isConnecting.value = false
+        stopLatencyTracking()
         clearPendingRequests()
         
         if (event.code !== 1000) {
@@ -111,6 +116,7 @@ export const useConnectionStore = defineStore('connection', () => {
       websocket.value.onerror = (error) => {
         isConnected.value = false
         isConnecting.value = false
+        stopLatencyTracking()
         connectionError.value = '连接失败'
         console.error('WebSocket error:', error)
         ElMessage.error('连接失败')
@@ -125,6 +131,7 @@ export const useConnectionStore = defineStore('connection', () => {
   
   // 断开连接
   const disconnect = () => {
+    stopLatencyTracking()
     if (websocket.value) {
       websocket.value.close(1000, 'Normal closure')
       websocket.value = null
@@ -210,6 +217,9 @@ export const useConnectionStore = defineStore('connection', () => {
         debugLog(`[ConnectionStore] ⚙️ 收到参数列表，数量: ${(message.params || []).length}`)
         resolveRequest(id, message.params || [])
         break
+      case 'pong':
+        resolveRequest(id, true)
+        break
       case 'error':
         console.error(`[ConnectionStore] ❌ 收到错误消息:`, message.error)
         rejectRequest(id, message.error || 'Unknown error')
@@ -273,6 +283,36 @@ export const useConnectionStore = defineStore('connection', () => {
         reject(new Error(`Failed to send message: ${operation}`))
       }
     })
+  }
+
+  const measureLatency = async () => {
+    if (!isConnected.value || latencyMeasurementInFlight) return
+
+    latencyMeasurementInFlight = true
+    const startedAt = performance.now()
+    try {
+      await sendApiRequest('ping')
+      connectionLatency.value = Math.max(0, Math.round(performance.now() - startedAt))
+    } catch {
+      connectionLatency.value = null
+    } finally {
+      latencyMeasurementInFlight = false
+    }
+  }
+
+  const stopLatencyTracking = () => {
+    if (latencyTimer) {
+      clearInterval(latencyTimer)
+      latencyTimer = null
+    }
+    latencyMeasurementInFlight = false
+    connectionLatency.value = null
+  }
+
+  const startLatencyTracking = () => {
+    stopLatencyTracking()
+    measureLatency()
+    latencyTimer = setInterval(measureLatency, 5000)
   }
   
   // 处理主题消息
@@ -548,6 +588,7 @@ export const useConnectionStore = defineStore('connection', () => {
     isConnected,
     isConnecting,
     connectionError,
+    connectionLatency,
     connectionStatus,
     connectionStatusText,
     subscribedTopics: computed(() => Array.from(subscribedTopics.value)),

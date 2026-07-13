@@ -222,7 +222,12 @@ class RosbridgeService:
             op = message.get('op')
             request_id = message.get('id')  # 获取请求ID
             
-            if op == 'subscribe':
+            if op == 'ping':
+                await self.connection_manager.send_to_client(client_id, {
+                    'op': 'pong',
+                    'id': request_id
+                })
+            elif op == 'subscribe':
                 await self._handle_subscribe(client_id, message)
             elif op == 'unsubscribe':
                 await self._handle_unsubscribe(client_id, message)
