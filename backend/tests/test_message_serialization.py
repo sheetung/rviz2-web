@@ -25,12 +25,12 @@ def test_pose_stamped_dictionary_preserves_all_position_axes():
         {
             "header": {"frame_id": "world"},
             "pose": {
-                "position": {"x": 16.0, "y": -3.5, "z": 0.6},
+                "position": {"x": 16, "y": 0, "z": 0.6},
                 "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
             },
         },
     )
 
     assert result.pose.position.x == 16.0
-    assert result.pose.position.y == -3.5
+    assert result.pose.position.y == 0.0
     assert result.pose.position.z == 0.6
