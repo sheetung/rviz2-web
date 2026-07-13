@@ -97,6 +97,8 @@ RVIZWEB_CONFIG=<name>.rvizweb ./start.sh local
 
 保存配置采用同目录临时文件原子替换，覆盖和删除前的副本保存在 `rvizweb_configs/backups/`。后端会校验配置版本、结构、文件名和大小；配置读取失败时前端保持当前状态不变。
 
+右上角系统状态会显示当前加载的 `.rvizweb` 文件名、是否存在未保存修改以及配置文件的最近保存时间。设置、Displays、布局和相机视角变化都会更新该状态；保存或重新读取成功后恢复为“已保存”。
+
 设置面板支持：
 
 - 保存当前前端状态为 `.rvizweb`
@@ -219,6 +221,8 @@ npm run preview -- --host 0.0.0.0 --port 3000
 - 后端 API：`http://localhost:8000/`
 - 后端文档：`http://localhost:8000/docs`
 
+`/docs` 使用仓库内固定版本的 Swagger UI 5.9.0 静态资源，约 1.5 MB，不依赖浏览器访问外部 CDN，适合无互联网的局域网环境。`/redoc` 默认关闭，接口结构仍可通过 `/openapi.json` 获取。
+
 ## 常见问题
 
 ### 文件监听数量不足
@@ -281,7 +285,7 @@ uv run pytest -q
 uv run python -m compileall -q app
 ```
 
-前端单元测试（当前主要覆盖 TF 缓存与插值）：
+前端单元测试（当前覆盖 TF 缓存与插值、配置指纹和未保存状态）：
 
 ```bash
 cd frontend
@@ -295,6 +299,7 @@ RVIZ-RQT-VISUAL/
 ├── backend/                  # FastAPI + rclpy 后端
 │   └── app/
 │       ├── api/v1/           # ROS、配置文件、可视化 API
+│       ├── static/swagger-ui/ # 本地 Swagger UI 静态资源
 │       └── services/         # rosbridge 与 ROS2 服务
 ├── frontend/                 # Vue 3 + Three.js 前端
 │   └── src/
