@@ -1,6 +1,6 @@
 {
   "name": "ros-web-viz-frontend",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "type": "module",
   "description": "RViz2 Web Visualization Frontend with Vue.js",
   "scripts": {

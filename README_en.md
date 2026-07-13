@@ -1,6 +1,6 @@
 # RVizWeb
 
-> Current release: `v1.0.0`
+> Current release: `v1.0.2`
 
 ![RVizWeb](img/1.png)
 
