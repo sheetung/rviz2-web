@@ -27,6 +27,21 @@ class FakeGraphNode:
         return [SimpleNamespace(node_name="viewer", node_namespace="/")]
 
 
+class FakeSamplingNode(FakeGraphNode):
+    def __init__(self):
+        self.callbacks = {}
+        self.destroyed_subscriptions = []
+
+    def create_subscription(self, _msg_class, topic_name, callback, _qos, raw=False):
+        assert raw is True
+        subscription = object()
+        self.callbacks[topic_name] = callback
+        return subscription
+
+    def destroy_subscription(self, subscription):
+        self.destroyed_subscriptions.append(subscription)
+
+
 @pytest.mark.asyncio
 async def test_topics_include_graph_and_observed_message_metadata(settings, monkeypatch):
     service = RosbridgeService(settings)
@@ -67,3 +82,31 @@ async def test_frequencies_distinguish_measured_zero_from_unobserved(settings, m
     assert frequencies["/points"] == pytest.approx(10.0)
     assert frequencies["/idle"] == 0.0
     assert frequencies["/unknown"] is None
+
+
+@pytest.mark.asyncio
+async def test_frequency_endpoint_actively_samples_published_topics(settings, monkeypatch):
+    service = RosbridgeService(settings)
+    service.node = FakeSamplingNode()
+    monotonic_times = iter([100.0, 100.1, 100.2])
+
+    monkeypatch.setattr(service, "_get_message_class", lambda _message_type: object)
+    monkeypatch.setattr("app.services.rosbridge.time.monotonic", lambda: next(monotonic_times))
+    monkeypatch.setattr("app.services.rosbridge.time.time", lambda: 1000.0)
+
+    async def emit_samples(_duration):
+        callback = service.node.callbacks["/points"]
+        callback(b"first")
+        callback(b"second")
+        callback(b"third")
+
+    monkeypatch.setattr("app.services.rosbridge.asyncio.sleep", emit_samples)
+
+    frequencies = await service.get_topic_frequencies(sample_duration=1.0)
+
+    assert frequencies["/points"] == pytest.approx(10.0)
+    assert frequencies["/idle"] == 0.0
+    assert frequencies["/unknown"] == 0.0
+    assert service._topic_frequency("/points", now=1000.0) == pytest.approx(10.0)
+    assert service._topic_last_message_times["/points"] == 1000.0
+    assert len(service.node.destroyed_subscriptions) == 1

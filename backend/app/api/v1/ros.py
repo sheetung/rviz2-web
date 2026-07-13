@@ -2,7 +2,7 @@
 ROS2 相关 API 端点
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Dict, Any, Optional
 import logging
 
@@ -43,11 +43,17 @@ async def get_topics(
 
 @router.get("/topics/frequencies", response_model=Dict[str, Optional[float]])
 async def get_topic_frequencies(
+    sample_seconds: float = Query(
+        1.0,
+        ge=0.5,
+        le=5.0,
+        description="主动订阅采样时长（秒）",
+    ),
     service: RosbridgeService = Depends(get_rosbridge_service)
 ):
-    """获取后端已观察主题的频率；未订阅或样本不足时返回 null。"""
+    """短时订阅当前 ROS2 主题并测量实际接收频率。"""
     try:
-        frequencies = await service.get_topic_frequencies()
+        frequencies = await service.get_topic_frequencies(sample_duration=sample_seconds)
         return frequencies
     except Exception as e:
         logger.error(f"Failed to get topic frequencies: {e}")
