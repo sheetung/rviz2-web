@@ -107,6 +107,22 @@
             class="property-row display-property"
             @click.stop
           >
+            <span>Render Style</span>
+            <el-select
+              v-model="display.config.renderStyle"
+              size="small"
+              @change="updateDisplayTopic(display)"
+            >
+              <el-option label="Points" value="points" />
+              <el-option label="Boxes" value="boxes" />
+            </el-select>
+          </div>
+
+          <div
+            v-if="selectedDisplayId === display.id && isPointCloudDisplay(display) && display.config.renderStyle === 'points'"
+            class="property-row display-property"
+            @click.stop
+          >
             <span>Point Size</span>
             <div class="display-setting-control">
               <el-slider
@@ -118,6 +134,33 @@
               />
               <el-input-number
                 v-model="display.config.pointSize"
+                :min="0.01"
+                :max="1"
+                :step="0.01"
+                :precision="2"
+                controls-position="right"
+                size="small"
+                @change="updateDisplayTopic(display)"
+              />
+            </div>
+          </div>
+
+          <div
+            v-if="selectedDisplayId === display.id && isPointCloudDisplay(display) && display.config.renderStyle === 'boxes'"
+            class="property-row display-property"
+            @click.stop
+          >
+            <span>Box Size</span>
+            <div class="display-setting-control">
+              <el-slider
+                v-model="display.config.boxSize"
+                :min="0.01"
+                :max="1"
+                :step="0.01"
+                @input="updateDisplayTopic(display)"
+              />
+              <el-input-number
+                v-model="display.config.boxSize"
                 :min="0.01"
                 :max="1"
                 :step="0.01"
@@ -363,7 +406,9 @@ export default {
     const createDefaultDisplayConfig = (messageType) => {
       if ((messageType || '').includes('PointCloud2')) {
         return {
-          pointSize: 0.03
+          renderStyle: 'points',
+          pointSize: 0.03,
+          boxSize: 0.1
         }
       }
       if (isPathMessageType(messageType || '')) {

@@ -509,8 +509,15 @@ export default {
           context.fillText(text, 32, 40)
 
           const texture = new THREE.CanvasTexture(canvas)
-          const material = new THREE.SpriteMaterial({ map: texture })
+          const material = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            alphaTest: 0.01,
+            depthTest: false,
+            depthWrite: false
+          })
           const sprite = new THREE.Sprite(material)
+          sprite.renderOrder = 1000
           sprite.position.copy(position)
           sprite.scale.set(0.5, 0.5, 1)
           return sprite
@@ -1463,17 +1470,29 @@ export default {
     const configureDisplay = (topic, config = {}) => {
       if (!topic) return
 
-      displayConfigs.set(topic, {
-        ...(displayConfigs.get(topic) || {}),
+      const previousConfig = displayConfigs.get(topic) || {}
+      const nextConfig = {
+        ...previousConfig,
         ...(config || {})
-      })
+      }
+      displayConfigs.set(topic, nextConfig)
 
       const object = visualizationObjects.get(topic)
       if (!object) return
 
-      const nextConfig = displayConfigs.get(topic)
-      if (object.userData?.messageType === 'sensor_msgs/msg/PointCloud2' && object.material) {
-        if (nextConfig.pointSize !== undefined) {
+      if (object.userData?.messageType === 'sensor_msgs/msg/PointCloud2') {
+        const renderStyle = nextConfig.renderStyle === 'boxes' ? 'boxes' : 'points'
+        const currentStyle = object.userData.renderStyle || 'points'
+        const boxSizeChanged = renderStyle === 'boxes' && Number(previousConfig.boxSize) !== Number(nextConfig.boxSize)
+
+        if ((renderStyle !== currentStyle || boxSizeChanged) && object.userData.originalMessage) {
+          const message = object.userData.originalMessage
+          updatePointCloud(topic, message)
+          applyFixedFrame(topic, message)
+          return
+        }
+
+        if (object.isPoints && object.material && nextConfig.pointSize !== undefined) {
           object.material.size = Number(nextConfig.pointSize) || object.material.size
           object.material.needsUpdate = true
         }
@@ -1773,41 +1792,85 @@ export default {
             box.max.z - box.min.z
           )
           
-          // 应用持久化设置创建材质
-          // 强度显示优先使用激光设置，如果没有则使用点云设置
+          // 每个 Display 可以独立选择高性能点片或真实三维体素。
           const displayConfig = displayConfigs.get(topic) || {}
+          const renderStyle = displayConfig.renderStyle === 'boxes' ? 'boxes' : 'points'
+          const opacity = persistentSettings.pointcloud.opacity ?? 1.0
+          let visualization
 
-          const material = new THREE.PointsMaterial({
-            size: displayConfig.pointSize || persistentSettings.pointcloud.pointSize || Math.max(0.06, size / 300),
-            vertexColors: true,
-            sizeAttenuation: true,
-            opacity: persistentSettings.pointcloud.opacity || 1.0,
-            transparent: (persistentSettings.pointcloud.opacity || 1.0) < 1.0
-          })
+          if (renderStyle === 'boxes') {
+            const configuredBoxSize = Number(displayConfig.boxSize)
+            const boxSize = Number.isFinite(configuredBoxSize) && configuredBoxSize > 0
+              ? configuredBoxSize
+              : 0.1
+            const boxGeometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize)
+            // RViz 的体素颜色接近无光照的原色显示。MeshBasicMaterial
+            // 避免背光面被场景灯光压暗，同时保留立方体深度和遮挡。
+            const boxMaterial = new THREE.MeshBasicMaterial({
+              // InstancedMesh uses instanceColor directly. Enabling vertexColors
+              // would also require a color attribute on BoxGeometry and can
+              // multiply every instance color by the WebGL default (black).
+              color: 0xffffff,
+              opacity,
+              transparent: opacity < 1.0,
+              depthWrite: opacity >= 1.0
+            })
+            const boxes = new THREE.InstancedMesh(boxGeometry, boxMaterial, pointsProcessed)
+            const instanceMatrix = new THREE.Matrix4()
+            const instanceColor = new THREE.Color()
 
-          const pointCloud = new THREE.Points(geometry, material)
-          pointCloud.userData = {
+            for (let i = 0; i < pointsProcessed; i++) {
+              const offset = i * 3
+              instanceMatrix.makeTranslation(
+                positions[offset],
+                positions[offset + 1],
+                positions[offset + 2]
+              )
+              boxes.setMatrixAt(i, instanceMatrix)
+              instanceColor.setRGB(colors[offset], colors[offset + 1], colors[offset + 2])
+              boxes.setColorAt(i, instanceColor)
+            }
+
+            boxes.instanceMatrix.needsUpdate = true
+            if (boxes.instanceColor) boxes.instanceColor.needsUpdate = true
+            boxes.computeBoundingBox()
+            boxes.computeBoundingSphere()
+            geometry.dispose()
+            visualization = boxes
+          } else {
+            const material = new THREE.PointsMaterial({
+              size: displayConfig.pointSize || persistentSettings.pointcloud.pointSize || Math.max(0.06, size / 300),
+              vertexColors: true,
+              sizeAttenuation: true,
+              opacity,
+              transparent: opacity < 1.0
+            })
+            visualization = new THREE.Points(geometry, material)
+          }
+
+          visualization.userData = {
             topic,
             messageType: 'sensor_msgs/msg/PointCloud2',
+            renderStyle,
             pointCount: pointsProcessed,
             originalMessage: message
           }
 
           // 根据激光设置决定是否显示点云（当作为3D激光时）
-          pointCloud.visible = persistentSettings.laser.showLaserPoints !== undefined
+          visualization.visible = persistentSettings.laser.showLaserPoints !== undefined
             ? persistentSettings.laser.showLaserPoints
             : true
 
-          scene.add(pointCloud)
-          visualizationObjects.set(topic, pointCloud)
+          scene.add(visualization)
+          visualizationObjects.set(topic, visualization)
           
           // 只在首次或特殊情况下调整相机视角，避免频繁变化
           // Keep the startup camera at the configured default view.
           // Users can still press F to fit the point cloud explicitly.
           
           if (shouldLog) {
-            debugLog(`✅ Added point cloud with ${pointsProcessed} points`)
-            debugLog(`Point size: ${material.size}, Bounding box:`, box)
+            debugLog(`✅ Added ${renderStyle} point cloud with ${pointsProcessed} points`)
+            debugLog('Bounding box:', box)
           }
 
           // 只在首次显示成功消息
@@ -3047,7 +3110,7 @@ export default {
                 object.visible = settings.showLaserPoints
               }
               // 强度显示（对3D点云生效）
-              if (settings.showIntensity !== undefined && object.material) {
+              if (settings.showIntensity !== undefined && object.isPoints && object.material) {
                 // 直接创建新材质以确保vertexColors变化生效
                 const oldMaterial = object.material
                 const newMaterial = new THREE.PointsMaterial({
@@ -3069,7 +3132,7 @@ export default {
           // 更新点云设置
           visualizationObjects.forEach((object) => {
             if (object.userData?.messageType === 'sensor_msgs/msg/PointCloud2') {
-              if (settings.pointSize !== undefined && object.material) {
+              if (settings.pointSize !== undefined && object.isPoints && object.material) {
                 object.material.size = settings.pointSize
                 object.material.needsUpdate = true
               }
@@ -3078,7 +3141,7 @@ export default {
                 object.material.transparent = settings.opacity < 1.0
                 object.material.needsUpdate = true
               }
-              if (settings.showIntensity !== undefined && object.material) {
+              if (settings.showIntensity !== undefined && object.isPoints && object.material) {
                 // 直接创建新材质以确保vertexColors变化生效
                 const oldMaterial = object.material
                 const newMaterial = new THREE.PointsMaterial({
@@ -3796,11 +3859,19 @@ export default {
       if (!camera || !controls || !pointCloud.geometry) return
       
       try {
-        // 确保边界框已计算
-        pointCloud.geometry.computeBoundingBox()
-        const box = pointCloud.geometry.boundingBox
+        // InstancedMesh 的完整边界框保存在对象上，普通点云保存在几何体上。
+        if (pointCloud.isInstancedMesh) {
+          pointCloud.computeBoundingBox()
+        } else {
+          pointCloud.geometry.computeBoundingBox()
+        }
+        const localBox = pointCloud.isInstancedMesh
+          ? pointCloud.boundingBox
+          : pointCloud.geometry.boundingBox
         
-        if (!box) return
+        if (!localBox) return
+        pointCloud.updateMatrixWorld(true)
+        const box = localBox.clone().applyMatrix4(pointCloud.matrixWorld)
         
         // 计算点云的中心和大小
         const center = new THREE.Vector3()

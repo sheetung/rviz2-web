@@ -923,14 +923,15 @@ export default {
           }
           upsertDisplaySnapshot(display)
           scene.configureDisplay?.(topicName, display.config || {})
+          // 同一话题的样式更新直接作用到当前对象，避免拖动尺寸时反复退订和重订。
+          if (previousTopicName === topicName) {
+            setDisplayTopicVisible(topicName, display.visible !== false)
+            break
+          }
           unsubscribeDisplayTopic(previousTopicName, messageType)
-          if (previousTopicName !== topicName) {
-            unsubscribeDisplayTopic(topicName, messageType)
-          }
+          unsubscribeDisplayTopic(topicName, messageType)
           removeDisplayVisualization(previousTopicName, messageType)
-          if (previousTopicName !== topicName) {
-            removeDisplayVisualization(topicName, messageType)
-          }
+          removeDisplayVisualization(topicName, messageType)
           if (display.visible !== false && scene.subscribeToRosTopic) {
             scene.subscribeToRosTopic(topicName, messageType)
           } else {

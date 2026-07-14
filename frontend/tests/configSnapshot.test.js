@@ -16,3 +16,14 @@ test('config fingerprints detect nested setting changes', () => {
 
   assert.notEqual(createConfigFingerprint(saved), createConfigFingerprint(changed))
 })
+
+test('config fingerprints detect point cloud render style changes', () => {
+  const points = {
+    displays: [{ name: '/map', config: { renderStyle: 'points', pointSize: 0.03 } }]
+  }
+  const boxes = {
+    displays: [{ name: '/map', config: { renderStyle: 'boxes', boxSize: 0.1 } }]
+  }
+
+  assert.notEqual(createConfigFingerprint(points), createConfigFingerprint(boxes))
+})

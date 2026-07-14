@@ -1,6 +1,6 @@
 # RVizWeb
 
-> 当前正式版本：`v1.0.2`
+> 当前正式版本：`v1.1.0`
 
 ![RVizWeb](img/1.png)
 
@@ -37,7 +37,8 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - 工具栏支持将当前 3D 画布截图为 PNG。
   - 支持以 30 FPS 录制 3D 画布，再次点击结束并下载 WebM；根据浏览器能力选择 VP9、VP8 或普通 WebM。
 - 点云与路径样式：
-  - PointCloud2 支持按话题设置 `Point Size`。
+  - PointCloud2 支持按话题选择 `Points` 或 `Boxes` 渲染，并分别设置 `Point Size` 或 `Box Size`。
+  - `Boxes` 使用实例化立方体渲染，适合占用体素地图；`Points` 适合高频、大规模实时点云。
   - Path 支持按话题设置线宽和颜色。
   - MarkerArray 支持颜色覆盖和透明度设置；颜色留空时使用消息自身颜色。
 - 无人机位姿：

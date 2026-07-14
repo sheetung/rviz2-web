@@ -1,6 +1,6 @@
 # RVizWeb
 
-> Current release: `v1.0.2`
+> Current release: `v1.1.0`
 
 ![RVizWeb](img/1.png)
 
@@ -37,7 +37,8 @@ RVizWeb is a browser-based visualization frontend for ROS2, supporting point clo
   - Toolbar supports capturing the current 3D canvas as PNG.
   - Supports recording the 3D canvas at 30 FPS; click again to stop and download as WebM. Selects VP9, VP8, or plain WebM based on browser capabilities.
 - Point Cloud & Path Styles:
-  - PointCloud2 supports per-topic `Point Size`.
+  - PointCloud2 supports per-topic `Points` or `Boxes` rendering with independent `Point Size` or `Box Size` controls.
+  - `Boxes` uses instanced cubes for occupied voxel maps, while `Points` is intended for high-frequency, large point clouds.
   - Path supports per-topic line width and color.
   - MarkerArray supports color override and opacity; leaving color empty uses the message's own color.
 - UAV Pose:
