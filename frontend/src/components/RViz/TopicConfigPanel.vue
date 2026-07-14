@@ -362,6 +362,7 @@ import { useRosbridge } from '../../composables/useRosbridge'
 import { getThemeColor } from '../../utils/theme'
 import { rosApi } from '../../services/api'
 import { ROS_TOPICS } from '../../config/rosTopics'
+import { systemMessage } from '../../composables/useSystemMessage'
 
 export default {
   name: 'TopicConfigPanel',
@@ -547,7 +548,7 @@ export default {
         }
       }
       if (!newDisplayTopic.value || !newDisplayType.value) {
-        ElMessage.warning('请选择话题和消息类型')
+        systemMessage.warning('请选择话题和消息类型')
         return
       }
       const existing = displayTopics.value.find(display => display.name === newDisplayTopic.value)

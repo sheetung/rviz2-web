@@ -337,6 +337,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { VideoPause, VideoPlay, Delete, Plus, Close, Search, ArrowRight, ArrowLeft, Refresh, View, Hide } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
+import { systemMessage } from '../../composables/useSystemMessage'
 
 export default {
   name: 'ChartPanel',
@@ -1397,7 +1398,7 @@ export default {
         // 如果已经存在，删除它
         const existingSeries = dataSeries.value[existingSeriesIndex]
         removeDataSeries(existingSeries.id)
-        ElMessage.info(`已移除数据系列: ${field.name}`)
+        systemMessage.info(`已移除数据系列: ${field.name}`)
         return
       }
 
@@ -1426,7 +1427,7 @@ export default {
         subscribeToTopic(topicName, messageType)
       }
 
-      ElMessage.success(`已添加数据系列: ${field.name}`)
+      systemMessage.success(`已添加数据系列: ${field.name}`)
     }
 
     // 移除数据系列
@@ -1443,7 +1444,7 @@ export default {
           subscriptions.delete(series.topic)
         }
 
-        ElMessage.info(`已移除数据系列: ${series.name}`)
+        systemMessage.info(`已移除数据系列: ${series.name}`)
       }
     }
 
@@ -1741,7 +1742,7 @@ export default {
 
           if (!rosbridge.isConnected) {
             console.error('[ChartPanel] ROS连接失败')
-            if (notifySuccess) ElMessage.error('ROS连接失败，请检查服务器状态和网络连接')
+            if (notifySuccess) systemMessage.error('ROS连接失败，请检查服务器状态和网络连接')
             availableTopics.value = []
             return
           }
@@ -1760,7 +1761,7 @@ export default {
 
         if (!topicsData || !Array.isArray(topicsData) || topicsData.length === 0) {
           console.error('[ChartPanel] 没有获取到任何topic')
-          if (notifySuccess) ElMessage.warning('当前ROS系统中没有发现任何topic，请检查ROS节点是否正在运行')
+          if (notifySuccess) systemMessage.warning('当前ROS系统中没有发现任何topic，请检查ROS节点是否正在运行')
           availableTopics.value = []
           return
         }
@@ -1776,7 +1777,7 @@ export default {
 
         if (!topicTypesMap || Object.keys(topicTypesMap).length === 0) {
           console.error('[ChartPanel] 没有获取到topic类型信息')
-          if (notifySuccess) ElMessage.warning('无法获取topic类型信息')
+          if (notifySuccess) systemMessage.warning('无法获取topic类型信息')
           availableTopics.value = []
           return
         }
@@ -1988,15 +1989,15 @@ export default {
           console.error('[ChartPanel] 不支持的类型:', Array.from(unsupportedTypes))
 
           if (notifySuccess) {
-            ElMessage.warning(`没有找到支持的消息类型。不支持的类型包括: ${Array.from(unsupportedTypes).slice(0, 3).join(', ')}`)
+            systemMessage.warning(`没有找到支持的消息类型。不支持的类型包括: ${Array.from(unsupportedTypes).slice(0, 3).join(', ')}`)
           }
         } else if (notifySuccess) {
-          ElMessage.success(`发现 ${supportedTopicCount} 个支持的topic（${activeTopicCount} 个活跃，${supportedTopicCount - activeTopicCount} 个无数据传输）`)
+          systemMessage.success(`发现 ${supportedTopicCount} 个支持的topic（${activeTopicCount} 个活跃，${supportedTopicCount - activeTopicCount} 个无数据传输）`)
         }
 
       } catch (error) {
         console.error('[ChartPanel] 加载topic失败:', error)
-        if (notifySuccess) ElMessage.error(`获取topic列表失败: ${error.message}`)
+        if (notifySuccess) systemMessage.error(`获取topic列表失败: ${error.message}`)
         availableTopics.value = []
       }
     }
@@ -2138,7 +2139,7 @@ export default {
           console.log('4. 重连后状态:', rosbridge.isConnected)
         } catch (error) {
           console.error('5. 重连失败:', error)
-          ElMessage.error('ROS重连失败: ' + error.message)
+          systemMessage.error('ROS重连失败: ' + error.message)
           return
         }
       }
@@ -2157,18 +2158,18 @@ export default {
           console.log('9. TopicFrequencies返回:', topicFrequencies)
 
           if (topics && topics.length > 0) {
-            ElMessage.success(`成功获取到 ${topics.length} 个topic`)
+            systemMessage.success(`成功获取到 ${topics.length} 个topic`)
             console.log('10. 手动触发loadTopics...')
             loadTopics(true)
           } else {
-            ElMessage.warning('ROS连接正常，但没有找到任何topic')
+            systemMessage.warning('ROS连接正常，但没有找到任何topic')
           }
         } catch (error) {
           console.error('11. API调用失败:', error)
-          ElMessage.error('ROS API调用失败: ' + error.message)
+          systemMessage.error('ROS API调用失败: ' + error.message)
         }
       } else {
-        ElMessage.error('ROS连接失败，请检查服务器状态')
+        systemMessage.error('ROS连接失败，请检查服务器状态')
       }
       console.log('=== ROS连接调试结束 ===')
     }

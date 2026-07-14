@@ -33,6 +33,7 @@ import { ROS_TOPICS, getDefaultVisualizationTopics, getPositionTopics } from '..
 import { FollowFrameTracker, TfBuffer, frameIdFromMessage, messageTimestampMs } from '../../utils/tfBuffer'
 import { debugLog } from '../../utils/debug'
 import { getThemeColor } from '../../utils/theme'
+import { systemMessage } from '../../composables/useSystemMessage'
 
 export default {
   name: 'Scene3D',
@@ -76,17 +77,17 @@ export default {
 
     const captureScreenshot = () => {
       if (!renderer || !scene || !camera) {
-        ElMessage.warning('3D场景尚未就绪')
+        systemMessage.warning('3D场景尚未就绪')
         return false
       }
       renderer.render(scene, camera)
       renderer.domElement.toBlob(blob => {
         if (!blob) {
-          ElMessage.error('截图生成失败')
+          systemMessage.error('截图生成失败')
           return
         }
         downloadBlob(blob, createCaptureFilename('png'))
-        ElMessage.success('截图已生成')
+        systemMessage.success('截图已生成')
       }, 'image/png')
       return true
     }
@@ -112,7 +113,7 @@ export default {
       if (mediaRecorder?.state === 'recording') return true
       const canvas = renderer?.domElement
       if (!canvas || typeof canvas.captureStream !== 'function' || typeof MediaRecorder === 'undefined') {
-        ElMessage.error('当前浏览器不支持画布录像')
+        systemMessage.error('当前浏览器不支持画布录像')
         return false
       }
 
@@ -130,15 +131,15 @@ export default {
         mediaRecorder.onerror = () => {
           releaseRecordingStream()
           emit('recording-change', false)
-          ElMessage.error('录像过程发生错误')
+          systemMessage.error('录像过程发生错误')
         }
         mediaRecorder.onstop = () => {
           const outputType = mediaRecorder?.mimeType || recordingFormat.mimeType || 'video/webm'
           if (recordingChunks.length > 0) {
             downloadBlob(new Blob(recordingChunks, { type: outputType }), createCaptureFilename(recordingFormat.extension))
-            ElMessage.success('录像已生成')
+            systemMessage.success('录像已生成')
           } else {
-            ElMessage.warning('录像中没有可用画面')
+            systemMessage.warning('录像中没有可用画面')
           }
           recordingChunks = []
           releaseRecordingStream()
@@ -147,13 +148,13 @@ export default {
         }
         mediaRecorder.start(250)
         emit('recording-change', true)
-        ElMessage.success('开始录制点云视图')
+        systemMessage.success('开始录制点云视图')
         return true
       } catch (error) {
         releaseRecordingStream()
         mediaRecorder = null
         emit('recording-change', false)
-        ElMessage.error(`无法开始录像: ${error.message}`)
+        systemMessage.error(`无法开始录像: ${error.message}`)
         return false
       }
     }
@@ -897,7 +898,7 @@ export default {
 
     const focusSelection = () => {
       if (!selectedObject || !camera || !controls) {
-        ElMessage.info('请先使用选择工具选中对象')
+        systemMessage.info('请先使用选择工具选中对象')
         return false
       }
 
@@ -1279,7 +1280,7 @@ export default {
             const sub = rosSubscriptions.get(topicName)
             if (sub && sub.messageCount === 0) {
               console.warn(`[Scene3D] ⚠️ 主题 ${topicName} 在 5 秒内没有收到任何消息`)
-              ElMessage.warning(`主题 ${topicName} 可能没有数据发布，请检查ROS系统`)
+              systemMessage.warning(`主题 ${topicName} 可能没有数据发布，请检查ROS系统`)
             } else if (sub) {
               // debugLog(`[Scene3D] ✅ 主题 ${topicName} 正常，已收到 ${sub.messageCount} 条消息`)
             }
@@ -1288,13 +1289,13 @@ export default {
           return true
         } else {
           console.error(`[Scene3D] ❌ rosbridge.subscribe返回null/false`)
-          ElMessage.error(`订阅主题 ${topicName} 失败`)
+          systemMessage.error(`订阅主题 ${topicName} 失败`)
           return false
         }
         
       } catch (error) {
         console.error(`[Scene3D] ❌ 订阅主题 ${topicName} 失败:`, error)
-        ElMessage.error(`订阅主题 ${topicName} 异常: ${error.message}`)
+        systemMessage.error(`订阅主题 ${topicName} 异常: ${error.message}`)
         return false
       }
     }
@@ -1330,7 +1331,7 @@ export default {
       defaultVisualizationTopics.forEach(({ topic, type }) => {
         subscribeToRosTopic(topic, type)
       })
-      ElMessage.success('已加载 RViz2 默认显示配置')
+      systemMessage.success('已加载 RViz2 默认显示配置')
     }
 
     const subscribeToTfTopics = () => {
@@ -1608,7 +1609,7 @@ export default {
       trajectoryPoints = []
 
       // debugLog(`[Scene3D] 已清除可视化对象，保留 ${preservedTopics.size} 个地图对象`)
-      ElMessage.info(`已清除可视化对象，保留了 ${preservedTopics.size} 个地图`)
+      systemMessage.info(`已清除可视化对象，保留了 ${preservedTopics.size} 个地图`)
     }
     
     const getPerformanceStats = () => {
@@ -1759,7 +1760,7 @@ export default {
         // 如果没有成功解析出点，创建测试数据以验证渲染
         if (pointsProcessed === 0) {
           debugLog('No valid points parsed, creating test point cloud')
-          ElMessage.warning(`主题 ${topic} 的点云数据解析失败，显示测试数据`)
+          systemMessage.warning(`主题 ${topic} 的点云数据解析失败，显示测试数据`)
           
           for (let i = 0; i < 2000; i++) {
             const angle = (i / 2000) * Math.PI * 4
@@ -1875,16 +1876,16 @@ export default {
 
           // 只在首次显示成功消息
           if (pointCloudUpdateCount <= 3) {
-            ElMessage.success(`成功显示点云 ${topic}: ${pointsProcessed} 个点`)
+            systemMessage.success(`成功显示点云 ${topic}: ${pointsProcessed} 个点`)
           }
         } else {
           console.warn('No positions to create point cloud')
-          ElMessage.warning(`点云 ${topic} 没有有效的位置数据`)
+          systemMessage.warning(`点云 ${topic} 没有有效的位置数据`)
         }
         
       } catch (error) {
         console.error('Error updating point cloud:', error)
-        ElMessage.error(`点云更新失败: ${error.message}`)
+        systemMessage.error(`点云更新失败: ${error.message}`)
         
         // 创建错误指示器
         const geometry = new THREE.BoxGeometry(2, 2, 2)
@@ -2101,7 +2102,7 @@ export default {
 
           if (validPoints === 0) {
             console.warn('[LaserScan] 没有找到有效的激光雷达点')
-            ElMessage.warning(`激光雷达 ${topic} 没有有效数据点`)
+            systemMessage.warning(`激光雷达 ${topic} 没有有效数据点`)
 
             // 创建一个警告指示器
             const warningGeometry = new THREE.SphereGeometry(0.1, 8, 8)
@@ -2116,7 +2117,7 @@ export default {
         } else {
           console.error('[LaserScan] 无效的激光雷达消息格式')
           console.error('[LaserScan] 消息内容:', message)
-          ElMessage.error(`激光雷达 ${topic} 消息格式无效`)
+          systemMessage.error(`激光雷达 ${topic} 消息格式无效`)
           return
         }
 
@@ -2178,13 +2179,13 @@ export default {
         // 只在第一次成功时显示详细日志和消息
         if (!updateLaserScan._firstLogged) {
           // debugLog(`[LaserScan] 成功添加激光雷达点云: ${positions.length / 3} 个点`)
-          ElMessage.success(`激光雷达 ${topic} 显示成功: ${positions.length / 3} 个点`)
+          systemMessage.success(`激光雷达 ${topic} 显示成功: ${positions.length / 3} 个点`)
           updateLaserScan._firstLogged = true
         }
 
       } catch (error) {
         console.error('Error updating laser scan:', error)
-        ElMessage.error(`激光雷达更新失败: ${error.message}`)
+        systemMessage.error(`激光雷达更新失败: ${error.message}`)
       }
     }
     
@@ -2559,7 +2560,7 @@ export default {
         try {
           const goalPoseVerification = rosbridge.subscribe(ROS_TOPICS.expectedControl, 'geometry_msgs/msg/PoseStamped', (message) => {
             debugLog(`[Verification] ✅ 收到${ROS_TOPICS.expectedControl}消息:`, message)
-            ElMessage.success('验证成功：收到发布的目标点消息')
+            systemMessage.success('验证成功：收到发布的目标点消息')
           })
 
           if (goalPoseVerification) {
@@ -2575,7 +2576,7 @@ export default {
         try {
           const initialPoseVerification = rosbridge.subscribe(ROS_TOPICS.initialPose, 'geometry_msgs/msg/PoseWithCovarianceStamped', (message) => {
             debugLog(`[Verification] ✅ 收到${ROS_TOPICS.initialPose}消息:`, message)
-            ElMessage.success('验证成功：收到发布的位置估计消息')
+            systemMessage.success('验证成功：收到发布的位置估计消息')
           })
 
           if (initialPoseVerification) {
@@ -2803,7 +2804,7 @@ export default {
       dragStartPosition = null
       dragCurrentPosition = null
       setNavigationTool('move')
-      ElMessage.info('已取消本次目标点')
+      systemMessage.info('已取消本次目标点')
     }
 
     const getPreviewArrowLength = (direction) => {
@@ -2898,13 +2899,13 @@ export default {
 
       if (!rosbridge.isConnected) {
         console.error('[Navigation] ❌ ROS Bridge未连接，无法发布消息')
-        ElMessage.error('ROS Bridge未连接，请先连接到ROS系统')
+        systemMessage.error('ROS Bridge未连接，请先连接到ROS系统')
         return false
       }
 
       const publishTopic = typeof topicName === 'string' ? topicName.trim() : ''
       if (!publishTopic) {
-        ElMessage.warning('请先配置期望目标发布话题')
+        systemMessage.warning('请先配置期望目标发布话题')
         return false
       }
 
@@ -2942,7 +2943,7 @@ export default {
           const yawDegrees = (Math.atan2(2 * (orientation.w * orientation.z + orientation.x * orientation.y),
                                          1 - 2 * (orientation.y * orientation.y + orientation.z * orientation.z)) * 180 / Math.PI).toFixed(1)
           debugLog(`[Navigation] ✅ 目标点发布成功: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
-          ElMessage.success(`已设置目标点: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
+          systemMessage.success(`已设置目标点: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
 
           // 额外验证：订阅目标话题来验证消息是否真的发送了
           debugLog('[Navigation] 尝试验证消息发送...')
@@ -2953,7 +2954,7 @@ export default {
       } catch (error) {
         console.error('[Navigation] ❌ 发布目标点失败:', error)
         console.error('[Navigation] 错误堆栈:', error.stack)
-        ElMessage.error(`发布目标点失败: ${error.message}`)
+        systemMessage.error(`发布目标点失败: ${error.message}`)
         return false
       }
     }
@@ -2996,12 +2997,12 @@ export default {
 
       if (!rosbridge.isConnected) {
         console.error('[Navigation] ❌ ROS Bridge未连接，无法发布消息')
-        ElMessage.error('ROS Bridge未连接，请先连接到ROS系统')
+        systemMessage.error('ROS Bridge未连接，请先连接到ROS系统')
         return false
       }
 
       if (!ROS_TOPICS.initialPose) {
-        ElMessage.warning('请先配置位置估计发布话题')
+        systemMessage.warning('请先配置位置估计发布话题')
         return false
       }
 
@@ -3051,14 +3052,14 @@ export default {
           const yawDegrees = (Math.atan2(2 * (orientation.w * orientation.z + orientation.x * orientation.y),
                                          1 - 2 * (orientation.y * orientation.y + orientation.z * orientation.z)) * 180 / Math.PI).toFixed(1)
           debugLog(`[Navigation] ✅ 位置估计发布成功: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
-          ElMessage.success(`已设置位置估计: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
+          systemMessage.success(`已设置位置估计: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
           return true
         } else {
           throw new Error('发布函数返回false')
         }
       } catch (error) {
         console.error('[Navigation] ❌ 发布位置估计失败:', error)
-        ElMessage.error(`发布位置估计失败: ${error.message}`)
+        systemMessage.error(`发布位置估计失败: ${error.message}`)
       }
     }
 
@@ -3304,9 +3305,9 @@ export default {
           if (!window.mapConfigs) window.mapConfigs = {}
           window.mapConfigs[baseName] = config
           
-          ElMessage.success(`YAML配置已加载: ${file.name}`)
+          systemMessage.success(`YAML配置已加载: ${file.name}`)
           if (config.image) {
-            ElMessage.info(`请选择对应的图像文件: ${config.image}`)
+            systemMessage.info(`请选择对应的图像文件: ${config.image}`)
           }
           
         } else if (fileExtension === 'pgm') {
@@ -3329,27 +3330,22 @@ export default {
           await loadMapPgmWithConfig(file, mapConfig)
           
         } else {
-          ElMessage.error(`不支持的地图文件格式: ${fileExtension}。支持的格式：YAML, PGM`)
+          systemMessage.error(`不支持的地图文件格式: ${fileExtension}。支持的格式：YAML, PGM`)
           return
         }
         
       } catch (error) {
         console.error(`[Scene3D] 地图文件加载失败:`, error)
-        ElMessage.error(`地图文件加载失败: ${error.message}`)
+        systemMessage.error(`地图文件加载失败: ${error.message}`)
         
         // 提供更详细的错误信息和建议
         if (error.message.includes('PGM文件格式无效')) {
-          ElMessage({
-            message: '请确保PGM文件格式正确：支持P5(二进制)和P2(ASCII)格式。请先上传对应的YAML配置文件。',
-            type: 'warning',
-            duration: 6000
-          })
+          systemMessage.warning(
+            '请确保PGM文件格式正确：支持P5(二进制)和P2(ASCII)格式。请先上传对应的YAML配置文件。',
+            { duration: 6000 }
+          )
         } else if (error.message.includes('文件读取失败')) {
-          ElMessage({
-            message: '文件可能已损坏或不完整，请重新选择文件',
-            type: 'warning',
-            duration: 5000
-          })
+          systemMessage.warning('文件可能已损坏或不完整，请重新选择文件', { duration: 5000 })
         }
       }
     }
@@ -3365,11 +3361,11 @@ export default {
         // 再用配置加载PGM文件
         await loadMapPgmWithConfig(pgmFile, mapConfig)
 
-        ElMessage.success(`地图加载成功: ${yamlFile.name} + ${pgmFile.name}`)
+        systemMessage.success(`地图加载成功: ${yamlFile.name} + ${pgmFile.name}`)
 
       } catch (error) {
         console.error(`[Scene3D] 地图文件对加载失败:`, error)
-        ElMessage.error(`地图文件对加载失败: ${error.message}`)
+        systemMessage.error(`地图文件对加载失败: ${error.message}`)
       }
     }
 
@@ -3390,7 +3386,7 @@ export default {
             
             // 如果YAML中指定了图像文件，提示用户也上传PGM文件
             if (mapConfig.image) {
-              ElMessage.info(`地图配置已读取，请上传对应的图像文件: ${mapConfig.image}`)
+              systemMessage.info(`地图配置已读取，请上传对应的图像文件: ${mapConfig.image}`)
             }
             
             // 存储地图配置用于后续PGM加载
@@ -3422,7 +3418,7 @@ export default {
             
             if (pgmData) {
               createMapFromPgmWithConfig(pgmData, mapConfig, file.name)
-              ElMessage.success(`成功加载地图: ${file.name}`)
+              systemMessage.success(`成功加载地图: ${file.name}`)
               resolve(pgmData)
             } else {
               reject(new Error('PGM文件格式无效'))
@@ -3802,7 +3798,7 @@ export default {
         debugLog(`[Scene3D] - 原点配置: [${mapConfig.origin.join(', ')}]`)
         
         // 显示成功消息
-        ElMessage.success(`地图加载成功！尺寸: ${mapWidthMeters.toFixed(1)}m×${mapHeightMeters.toFixed(1)}m`)
+        systemMessage.success(`地图加载成功！尺寸: ${mapWidthMeters.toFixed(1)}m×${mapHeightMeters.toFixed(1)}m`)
         
       } catch (error) {
         console.error('[Scene3D] 创建地图可视化失败:', error)
@@ -3998,7 +3994,7 @@ export default {
       debugLog('=== 🔍 调试信息结束 ===')
       
       // 显示简化的用户消息
-      ElMessage.info(`调试信息已输出到控制台 - 对象:${debugInfo.scene.objects} 订阅:${debugInfo.scene.subscriptions} FPS:${debugInfo.performance.fps}`)
+      systemMessage.info(`调试信息已输出到控制台 - 对象:${debugInfo.scene.objects} 订阅:${debugInfo.scene.subscriptions} FPS:${debugInfo.performance.fps}`)
       
       return debugInfo
     }
@@ -4013,7 +4009,7 @@ export default {
       
       if (rosSubscriptions.size === 0) {
         debugLog('⚠️ 没有任何ROS订阅')
-        ElMessage.warning('没有任何ROS订阅')
+        systemMessage.warning('没有任何ROS订阅')
         return
       }
       
@@ -4047,9 +4043,9 @@ export default {
       
       // 用户反馈
       if (inactiveSubscriptions > 0) {
-        ElMessage.warning(`有 ${inactiveSubscriptions} 个主题没有数据，请检查ROS系统是否正在发布这些主题`)
+        systemMessage.warning(`有 ${inactiveSubscriptions} 个主题没有数据，请检查ROS系统是否正在发布这些主题`)
       } else if (activeSubscriptions > 0) {
-        ElMessage.success(`所有 ${activeSubscriptions} 个订阅都在正常接收数据`)
+        systemMessage.success(`所有 ${activeSubscriptions} 个订阅都在正常接收数据`)
       }
     }
     

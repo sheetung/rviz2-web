@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { debugLog } from '../utils/debug'
+import { systemMessage } from './useSystemMessage'
 
 export const useConnectionStore = defineStore('connection', () => {
   // 连接状态
@@ -84,7 +85,7 @@ export const useConnectionStore = defineStore('connection', () => {
         reconnectAttempts.value = 0
         startLatencyTracking()
         debugLog('WebSocket connected')
-        ElMessage.success('已连接到 ROS2 服务')
+        systemMessage.success('已连接到 ROS2 服务')
       }
       
       websocket.value.onmessage = (event) => {
@@ -119,7 +120,7 @@ export const useConnectionStore = defineStore('connection', () => {
         stopLatencyTracking()
         connectionError.value = '连接失败'
         console.error('WebSocket error:', error)
-        ElMessage.error('连接失败')
+        systemMessage.error('连接失败')
       }
       
     } catch (error) {
@@ -149,7 +150,7 @@ export const useConnectionStore = defineStore('connection', () => {
   const attemptReconnect = () => {
     if (reconnectAttempts.value >= maxReconnectAttempts.value) {
       console.error('Max reconnect attempts reached')
-      ElMessage.error('连接失败，请检查服务器状态')
+      systemMessage.error('连接失败，请检查服务器状态')
       return
     }
     

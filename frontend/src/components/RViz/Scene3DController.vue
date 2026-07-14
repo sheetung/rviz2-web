@@ -150,6 +150,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { Refresh, Aim, Folder } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { ROS_TOPICS } from '../../config/rosTopics'
+import { systemMessage } from '../../composables/useSystemMessage'
 
 export default {
   name: 'Scene3DController',
@@ -282,7 +283,7 @@ export default {
         const file = files[0]
         mapFilePath.value = file.name
         emit('map-file-change', file)
-        ElMessage.success(`已选择地图文件: ${file.name}`)
+        systemMessage.success(`已选择地图文件: ${file.name}`)
       } else if (yamlFiles.length === 1 && pgmFiles.length === 1) {
         // 同时选择了YAML和PGM文件
         const yamlFile = yamlFiles[0]
@@ -290,10 +291,10 @@ export default {
 
         mapFilePath.value = `${yamlFile.name} + ${pgmFile.name}`
         emit('map-files-change', { yamlFile, pgmFile })
-        ElMessage.success(`已选择地图文件对: ${yamlFile.name} + ${pgmFile.name}`)
+        systemMessage.success(`已选择地图文件对: ${yamlFile.name} + ${pgmFile.name}`)
       } else {
         // 多文件但不是正确的组合
-        ElMessage.warning('请选择一个YAML文件和一个PGM文件，或单独选择一个文件')
+        systemMessage.warning('请选择一个YAML文件和一个PGM文件，或单独选择一个文件')
       }
     }
 
