@@ -36,6 +36,9 @@ RVizWeb is a browser-based visualization frontend for ROS2, supporting point clo
   - Selected objects show a cyan bounding box; top-down preset uses an orthographic camera.
   - Toolbar supports capturing the current 3D canvas as PNG.
   - Supports recording the 3D canvas at 30 FPS; click again to stop and download as WebM. Selects VP9, VP8, or plain WebM based on browser capabilities.
+  - The RTSP tool follows the same popover interaction as System Status. Clicking it only opens connection settings and status; it does not create a video window.
+  - Titleless, borderless video appears at its saved position only after FFmpeg successfully probes the first frame. Connection failures, timeouts, and sources without a video track produce a system message without an empty window.
+  - Drag the video itself to move it. Edit, reconnect, close, and lower-corner resize controls appear only on hover. FFmpeg converts RTSP to MJPEG while the playback URL contains only a short-lived session ID.
 - Point Cloud & Path Styles:
   - PointCloud2 supports per-topic `Points` or `Boxes` rendering with independent `Point Size` or `Box Size` controls.
   - `Boxes` uses instanced cubes for occupied voxel maps, while `Points` is intended for high-frequency, large point clouds.
@@ -118,6 +121,9 @@ Configuration files primarily include:
 - `layout.panelHeights`
 - `layout.collapsedPanels`
 - `appearance.theme`
+- `video.sourceUrl`
+- `video.visible`
+- `video.layout.x/y/width/height`
 - `goal.topic`
 - `goal.x/y/z`
 - `position.odomTopic`
@@ -132,6 +138,15 @@ GET    /api/v1/configs
 GET    /api/v1/configs/{name}
 POST   /api/v1/configs/{name}
 DELETE /api/v1/configs/{name}
+```
+
+RTSP video API:
+
+```text
+GET    /api/v1/video/status
+POST   /api/v1/video/sessions
+GET    /api/v1/video/stream/{session_id}
+DELETE /api/v1/video/sessions/{session_id}
 ```
 
 ## Getting Started
@@ -173,6 +188,7 @@ Local mode requires:
 - ROS2 environment available
 - Node.js 20.19+
 - Python 3.10+
+- FFmpeg (converts RTSP into browser-compatible MJPEG)
 - curl (if `uv` is not installed, the startup script will install it via the official install script)
 
 The startup script reads `.env` from the project root, loads the ROS2 environment, checks the default `.rvizweb` config and ports specified by `FRONTEND_PORT`/`BACKEND_PORT`, waits for frontend and backend health checks, and writes all output to `logs/`. The frontend access host shown after startup is configured by `FRONTEND_PUBLIC_HOST`. Startup failures exit immediately; Ctrl+C stops the entire frontend and backend process group.
@@ -182,6 +198,18 @@ The browser tab and top-left title can be changed in `.env`:
 ```env
 VITE_APP_TITLE=RVizWeb
 ```
+
+Click the camera monitor button in the point cloud toolbar to open the connection popover below the button, then enter a source such as:
+
+```text
+rtsp://192.168.1.66:8554/1
+```
+
+Saving the `.rvizweb` configuration stores the RTSP URL, overlay visibility, position, and size. Credentials embedded in the URL are therefore stored as plain text; protect the configuration file accordingly.
+
+Connect waits for the backend to receive a valid first frame. The video window is created only after that probe succeeds; failures and missing video are reported through the page notification system.
+
+Backend transcoding can be tuned with `RTSP_TRANSPORT`, `RTSP_FRAME_RATE`, `RTSP_WIDTH`, `RTSP_JPEG_QUALITY`, `RTSP_STARTUP_TIMEOUT`, `RTSP_SESSION_TTL`, and `FFMPEG_PATH` in `.env`.
 
 In normal mode, re-run `./start.sh` after changes to rebuild the frontend. In dev mode, changes take effect on Vite restart or environment reload.
 
@@ -258,6 +286,16 @@ Before saving a config, the current view, layout ratio, and panel heights are ca
 
 Screenshots and recordings use the browser's download capability. Ensure the site has download permission. Recording relies on `MediaRecorder` and `canvas.captureStream()`; current versions of Chrome, Edge, or Firefox are recommended. Recordings use the WebM format and do not include the toolbar or right panel.
 
+### RTSP Video Cannot Connect
+
+Verify that FFmpeg on the backend host can reach and read the camera:
+
+```bash
+ffmpeg -rtsp_transport tcp -i 'rtsp://<camera>/<path>' -t 3 -f null -
+```
+
+The backend, not the browser, connects to RTSP. If a camera only supports UDP, set `RTSP_TRANSPORT=udp` and restart. Expose the transcoding API only on trusted networks.
+
 ## Verification
 
 Frontend build:
@@ -315,6 +353,7 @@ RVIZ-RQT-VISUAL/
 - Adding a new right panel: wire the component into `MainLayout.vue` and add persistent state to the config snapshot.
 - Adding a new visualization type: extend `Scene3D.vue` subscription and rendering logic first, then add corresponding config items in Displays.
 - Adding a new backend endpoint: place it in `backend/app/api/v1/`; frontend wrappers go in `frontend/src/services/api.js`.
+- Route success, info, warning, and error notices through `frontend/src/composables/useSystemMessage.js`; it owns durations, close buttons, duplicate suppression, and backend error parsing.
 - Keep config key names stable to avoid breaking existing `.rvizweb` files.
 
 ## Roadmap

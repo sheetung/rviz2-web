@@ -36,6 +36,10 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - 选中对象后显示青色包围框；俯视预设使用正交相机。
   - 工具栏支持将当前 3D 画布截图为 PNG。
   - 支持以 30 FPS 录制 3D 画布，再次点击结束并下载 WebM；根据浏览器能力选择 VP9、VP8 或普通 WebM。
+  - RTSP 工具按钮采用与系统状态框相同的配置浮层交互；点击按钮只展开地址输入和连接状态，不直接创建视频窗口。
+  - 后端 FFmpeg 成功探测到首帧后，才在已保存位置显示无标题、无边框的实时视频；连接失败、超时或没有视频轨道时仅显示系统错误消息。
+  - 播放时可直接拖动画面移动位置；编辑、重连、关闭按钮和左右下角缩放控制仅在鼠标悬停时显示。
+  - 后端使用 FFmpeg 将 RTSP 转为浏览器可显示的 MJPEG，播放 URL 只包含短期会话 ID。
 - 点云与路径样式：
   - PointCloud2 支持按话题选择 `Points` 或 `Boxes` 渲染，并分别设置 `Point Size` 或 `Box Size`。
   - `Boxes` 使用实例化立方体渲染，适合占用体素地图；`Points` 适合高频、大规模实时点云。
@@ -120,6 +124,9 @@ RVIZWEB_CONFIG=<name>.rvizweb ./start.sh local
 - `layout.panelHeights`
 - `layout.collapsedPanels`
 - `appearance.theme`
+- `video.sourceUrl`
+- `video.visible`
+- `video.layout.x/y/width/height`
 - `goal.topic`
 - `goal.x/y/z`
 - `position.odomTopic`
@@ -134,6 +141,15 @@ GET    /api/v1/configs
 GET    /api/v1/configs/{name}
 POST   /api/v1/configs/{name}
 DELETE /api/v1/configs/{name}
+```
+
+RTSP 视频 API：
+
+```text
+GET    /api/v1/video/status
+POST   /api/v1/video/sessions
+GET    /api/v1/video/stream/{session_id}
+DELETE /api/v1/video/sessions/{session_id}
 ```
 
 ## 启动
@@ -175,6 +191,7 @@ cp .env.example .env
 - ROS2 环境可用
 - Node.js 20.19+
 - Python 3.10+
+- FFmpeg（用于把浏览器不支持的 RTSP 转为 MJPEG）
 - curl（若未安装 `uv`，启动脚本会通过官方安装脚本自动安装）
 
 启动脚本会读取项目根目录 `.env`，加载 ROS2 环境，检查默认 `.rvizweb` 配置以及 `FRONTEND_PORT`、`BACKEND_PORT` 指定的端口，等待前后端健康检查，并把输出统一写入 `logs/`。启动后显示的前端访问主机由 `FRONTEND_PUBLIC_HOST` 配置。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
@@ -183,6 +200,28 @@ cp .env.example .env
 
 ```env
 VITE_APP_TITLE=RVizWeb
+```
+
+点击点云视图工具栏中的相机监视器按钮后，会在按钮下方展开连接配置浮层。输入地址并连接，例如：
+
+```text
+rtsp://192.168.1.66:8554/1
+```
+
+点击“保存”时，RTSP 地址、浮窗开关、位置和大小会写入当前 `.rvizweb` 配置。若地址包含用户名或密码，它们也会以明文保存在配置文件中，请妥善控制文件权限。
+
+“连接”会先等待后端取得有效视频首帧。只有探测成功才显示视频窗口；失败或无画面时不会创建空白窗口，而是通过页面系统消息报告具体错误。
+
+后端转流参数可在 `.env` 中调整：
+
+```env
+RTSP_TRANSPORT=tcp
+RTSP_FRAME_RATE=12
+RTSP_WIDTH=640
+RTSP_JPEG_QUALITY=5
+RTSP_STARTUP_TIMEOUT=10
+RTSP_SESSION_TTL=300
+FFMPEG_PATH=ffmpeg
 ```
 
 正常模式修改后重新执行 `./start.sh` 以重新构建前端；开发模式会随 Vite 重启或环境重新加载后生效。
@@ -262,6 +301,16 @@ ros2 topic list -t
 
 截图和录像使用浏览器下载能力，请确认站点具有下载权限。录像依赖 `MediaRecorder` 和 `canvas.captureStream()`，推荐使用当前版本的 Chrome、Edge 或 Firefox。录像统一使用 WebM 格式，不包含工具栏和右侧面板。
 
+### RTSP 视频无法连接
+
+先在运行后端的机器上确认 FFmpeg 可用，并能直接读取相机：
+
+```bash
+ffmpeg -rtsp_transport tcp -i 'rtsp://<相机地址>/<路径>' -t 3 -f null -
+```
+
+浏览器不直接访问相机，真正连接 RTSP 的是后端进程，因此后端机器必须能访问相机所在网络。若相机只支持 UDP，可把 `RTSP_TRANSPORT` 改为 `udp` 后重启。请仅在可信网络中开放网络流转码接口。
+
 ## 验证
 
 前端构建：
@@ -320,6 +369,7 @@ RVIZ-RQT-VISUAL/
 - 新增右侧面板：在 `MainLayout.vue` 接入组件，并把需要持久化的状态写入配置快照。
 - 新增可视化类型：优先扩展 `Scene3D.vue` 的订阅和渲染逻辑，再在 Displays 中补充对应的配置项。
 - 新增后端接口：放在 `backend/app/api/v1/`，前端统一通过 `frontend/src/services/api.js` 封装。
+- 页面成功、提示、警告和错误消息统一通过 `frontend/src/composables/useSystemMessage.js` 展示；该入口统一控制显示时长、关闭按钮、重复消息抑制和后端错误解析。
 - 配置项命名保持稳定，避免破坏已有 `.rvizweb` 文件。
 
 ## 后续计划
