@@ -111,7 +111,7 @@
                       id="rtsp-toolbar-source"
                       v-model="rtspInputUrl"
                       size="small"
-                      placeholder="rtsp://192.168.1.66:8554/1"
+                      placeholder="rtsp://127.0.0.1:8554/1"
                       clearable
                       @keyup.enter="connectRtspVideo()"
                     />
