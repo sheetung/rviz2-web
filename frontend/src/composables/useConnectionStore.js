@@ -18,9 +18,12 @@ export const useConnectionStore = defineStore('connection', () => {
   let latencyTimer = null
   let latencyMeasurementInFlight = false
   
-  // 使用同源 /ws，由 Vite 或 Nginx 代理到 BACKEND_PORT。
+  // BACKEND_PORT 由 Vite 构建配置注入，浏览器直接连接 FastAPI WebSocket。
   const browserLocation = typeof window === 'undefined' ? null : window.location
-  const wsUrl = ref(createWebSocketUrl(browserLocation))
+  const wsUrl = ref(createWebSocketUrl(
+    browserLocation,
+    import.meta.env.VITE_BACKEND_PORT
+  ))
   const reconnectAttempts = ref(0)
   const maxReconnectAttempts = ref(5)
   const reconnectInterval = ref(3000)

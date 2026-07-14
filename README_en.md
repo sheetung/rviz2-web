@@ -248,7 +248,7 @@ Access URLs:
 - Backend API: `http://localhost:8000/`
 - Backend docs: `http://localhost:8000/docs`
 
-These are the default ports. When using `./start.sh`, the backend port comes from `BACKEND_PORT` in `.env`; the frontend API and WebSocket use the same-origin proxy and follow that port automatically.
+These are the default ports. When using `./start.sh`, the backend port comes from `BACKEND_PORT` in `.env`. Vite injects that value into the frontend build, so WebSocket connects directly to the backend port on the current page host without a duplicate frontend variable. Re-run `./start.sh` after changing the port so the frontend is rebuilt.
 
 ## FAQ
 

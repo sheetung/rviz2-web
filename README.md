@@ -261,7 +261,7 @@ npm run preview -- --host 0.0.0.0 --port 3000
 - 后端 API：`http://localhost:8000/`
 - 后端文档：`http://localhost:8000/docs`
 
-以上为默认端口。使用 `./start.sh` 时，后端实际端口由 `.env` 中的 `BACKEND_PORT` 决定；前端 API 与 WebSocket 均通过同源代理自动跟随该端口，无需另外配置前端连接地址。
+以上为默认端口。使用 `./start.sh` 时，后端实际端口由 `.env` 中的 `BACKEND_PORT` 决定；Vite 构建时会把该值注入前端，WebSocket 将直接连接当前页面主机的后端端口，无需再配置重复的前端变量。修改端口后需要重新执行 `./start.sh` 以构建前端。
 
 `/docs` 使用仓库内固定版本的 Swagger UI 5.9.0 静态资源，约 1.5 MB，不依赖浏览器访问外部 CDN，适合无互联网的局域网环境。`/redoc` 默认关闭，接口结构仍可通过 `/openapi.json` 获取。
 

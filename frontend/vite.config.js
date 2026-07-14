@@ -24,7 +24,8 @@ export default defineConfig(({ mode }) => {
   return {
   envDir: '..',
   define: {
-    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion)
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+    'import.meta.env.VITE_BACKEND_PORT': JSON.stringify(backendPort)
   },
   plugins: [
     vue(),
