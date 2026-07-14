@@ -8,9 +8,9 @@ import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ...core.config import get_settings
@@ -47,6 +47,23 @@ class AppearanceConfig(BaseModel):
     theme: Literal["dark", "light"] = "dark"
 
 
+class VideoLayoutConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    x: Optional[float] = None
+    y: Optional[float] = None
+    width: float = Field(default=360, ge=160, le=4096)
+    height: float = Field(default=240, ge=160, le=2160)
+
+
+class VideoConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    sourceUrl: str = Field(default="", max_length=2048)
+    visible: bool = False
+    layout: VideoLayoutConfig = Field(default_factory=VideoLayoutConfig)
+
+
 class FrontendConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -55,6 +72,7 @@ class FrontendConfig(BaseModel):
     displays: List[DisplayConfig] = Field(default_factory=list, max_length=256)
     layout: LayoutConfig = Field(default_factory=LayoutConfig)
     appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
+    video: VideoConfig = Field(default_factory=VideoConfig)
 
 
 class ConfigPayload(BaseModel):
@@ -123,9 +141,14 @@ def _read_validated(path: Path) -> StoredConfig:
     if path.stat().st_size > settings.config_max_bytes:
         raise HTTPException(status_code=413, detail="配置文件超过大小限制")
     try:
-        return StoredConfig.model_validate_json(path.read_text(encoding="utf-8"))
+        return StoredConfig.model_validate_json(
+            path.read_text(encoding="utf-8")
+        )
     except (OSError, ValidationError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=422, detail=f"配置文件格式无效: {exc}") from exc
+        raise HTTPException(
+            status_code=422,
+            detail=f"配置文件格式无效: {exc}",
+        ) from exc
 
 
 def _modified_at(path: Path) -> datetime:
@@ -148,7 +171,10 @@ async def get_config(name: str) -> ConfigResponse:
     if not path.exists():
         raise HTTPException(status_code=404, detail="配置文件不存在")
     stored = _read_validated(path)
-    return ConfigResponse(**stored.model_dump(), modified_at=_modified_at(path))
+    return ConfigResponse(
+        **stored.model_dump(),
+        modified_at=_modified_at(path),
+    )
 
 
 @router.post(
@@ -166,11 +192,16 @@ async def save_config(name: str, payload: ConfigPayload) -> ConfigSaveResult:
     if path.exists():
         BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        shutil.copy2(path, BACKUP_DIR / f"{path.stem}.{stamp}{CONFIG_SUFFIX}.bak")
+        backup_path = BACKUP_DIR / f"{path.stem}.{stamp}{CONFIG_SUFFIX}.bak"
+        shutil.copy2(path, backup_path)
 
     temp_path: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(dir=CONFIG_DIR, prefix=f".{path.name}.", delete=False) as handle:
+        with tempfile.NamedTemporaryFile(
+            dir=CONFIG_DIR,
+            prefix=f".{path.name}.",
+            delete=False,
+        ) as handle:
             temp_path = Path(handle.name)
             handle.write(encoded)
             handle.flush()

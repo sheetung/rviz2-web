@@ -27,3 +27,22 @@ test('config fingerprints detect point cloud render style changes', () => {
 
   assert.notEqual(createConfigFingerprint(points), createConfigFingerprint(boxes))
 })
+
+test('config fingerprints detect RTSP source and overlay layout changes', () => {
+  const first = {
+    video: {
+      sourceUrl: 'rtsp://192.168.1.66:8554/1',
+      visible: true,
+      layout: { x: 20, y: 30, width: 360, height: 240 }
+    }
+  }
+  const moved = {
+    video: {
+      sourceUrl: 'rtsp://192.168.1.66:8554/1',
+      visible: true,
+      layout: { x: 80, y: 30, width: 480, height: 300 }
+    }
+  }
+
+  assert.notEqual(createConfigFingerprint(first), createConfigFingerprint(moved))
+})

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .core.config import get_settings
 from .core.version import APP_VERSION
-from .api.v1 import ros, configs
+from .api.v1 import configs, ros, video
 from .services.dependencies import get_rosbridge_service
 
 # 配置日志
@@ -65,6 +65,7 @@ async def swagger_ui_html():
 # 注册 API 路由
 app.include_router(ros.router, prefix="/api/v1", tags=["ROS"])
 app.include_router(configs.router, prefix="/api/v1", tags=["Configs"])
+app.include_router(video.router, prefix="/api/v1", tags=["Video"])
 
 # 静态文件服务 (用于单一容器部署)
 if os.path.exists("./static"):

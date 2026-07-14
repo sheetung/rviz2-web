@@ -154,3 +154,33 @@ async def test_theme_and_collapsed_panels_round_trip(config_storage):
         "settings": False,
         "controller": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_rtsp_video_settings_round_trip(config_storage):
+    config_dir, _, _ = config_storage
+    payload = configs.ConfigPayload(
+        name="camera.rvizweb",
+        config=configs.FrontendConfig(
+            fixedFrame="map",
+            displays=[],
+            video=configs.VideoConfig(
+                sourceUrl="rtsp://192.168.1.66:8554/1",
+                visible=True,
+                layout=configs.VideoLayoutConfig(
+                    x=120,
+                    y=80,
+                    width=480,
+                    height=300,
+                ),
+            ),
+        ),
+    )
+
+    await configs.save_config("camera", payload)
+    saved = configs._read_validated(config_dir / "camera.rvizweb")
+
+    assert saved.config.video.sourceUrl == "rtsp://192.168.1.66:8554/1"
+    assert saved.config.video.visible is True
+    assert saved.config.video.layout.x == 120
+    assert saved.config.video.layout.width == 480

@@ -88,4 +88,21 @@ export const configApi = {
   )
 }
 
+/**
+ * RTSP camera video API
+ */
+export const videoApi = {
+  getStatus: () => api.get('/video/status'),
+  createSession: (sourceUrl) => api.post(
+    '/video/sessions',
+    { source_url: sourceUrl },
+    { timeout: 35000 }
+  ),
+  deleteSession: (sessionId) => api.delete(`/video/sessions/${encodeURIComponent(sessionId)}`),
+  getStreamUrl: (sessionId) => api.getUri({
+    url: `/video/stream/${encodeURIComponent(sessionId)}`,
+    params: { t: Date.now() }
+  })
+}
+
 export default api

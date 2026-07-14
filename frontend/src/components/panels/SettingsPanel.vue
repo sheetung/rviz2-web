@@ -87,6 +87,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useConfigStatusStore } from '../../composables/useConfigStatusStore'
 import { configApi } from '../../services/api'
+import { systemMessage } from '../../composables/useSystemMessage'
 
 export default {
   name: 'SettingsPanel',
@@ -204,6 +205,15 @@ export default {
       })
 
       emit('settings-update', {
+        type: 'video',
+        video: cfg.video || {
+          sourceUrl: '',
+          visible: false,
+          layout: { x: null, y: null, width: 360, height: 240 }
+        }
+      })
+
+      emit('settings-update', {
         type: 'goal',
         goal: cfg.goal || { x: 0, y: 0, z: 0 }
       })
@@ -273,10 +283,6 @@ export default {
       return config
     }
 
-    const apiErrorMessage = (error, fallback) => {
-      return error?.response?.data?.detail || error?.message || fallback
-    }
-
     const saveConfig = async () => {
       try {
         emit('capture-scene-state')
@@ -288,9 +294,9 @@ export default {
         selectedConfigName.value = name
         configStatusStore.markSaved(name, config, result.modified_at)
         await loadConfigFiles()
-        ElMessage.success(`配置已保存: ${name}`)
+        systemMessage.success(`配置已保存: ${name}`)
       } catch (error) {
-        ElMessage.error(apiErrorMessage(error, '保存配置失败'))
+        systemMessage.fromError(error, '保存配置失败')
       }
     }
 
@@ -304,9 +310,10 @@ export default {
         configName.value = loadedName
         await nextTick()
         configStatusStore.markLoaded(loadedName, buildConfig(), data.modified_at)
-        ElMessage.success(`配置已读取: ${selectedConfigName.value}`)
+        systemMessage.success(`配置已读取: ${selectedConfigName.value}`)
       } catch (error) {
-        ElMessage.error(`${apiErrorMessage(error, '读取配置失败')}，当前界面未修改`)
+        const message = systemMessage.getErrorMessage(error, '读取配置失败')
+        systemMessage.error(`${message}，当前界面未修改`)
       }
     }
 
@@ -316,11 +323,11 @@ export default {
         const deletedName = selectedConfigName.value
         await configApi.deleteConfig(deletedName)
         configStatusStore.markDeleted(deletedName)
-        ElMessage.success(`配置已删除: ${deletedName}`)
+        systemMessage.success(`配置已删除: ${deletedName}`)
         selectedConfigName.value = ''
         await loadConfigFiles()
       } catch (error) {
-        ElMessage.error(apiErrorMessage(error, '删除配置失败'))
+        systemMessage.fromError(error, '删除配置失败')
       }
     }
 
@@ -331,7 +338,7 @@ export default {
         selectedConfigName.value = requestedConfig
         await loadSelectedConfig()
       } else {
-        ElMessage.error(`启动配置不存在: ${requestedConfig}`)
+        systemMessage.error(`启动配置不存在: ${requestedConfig}`)
       }
     }
 

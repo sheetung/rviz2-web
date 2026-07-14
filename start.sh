@@ -104,6 +104,8 @@ start_local() {
   load_env
   load_ros
 
+  check_command "${FFMPEG_PATH:-ffmpeg}"
+
   local backend_port="${BACKEND_PORT:?Set BACKEND_PORT in $ENV_FILE}"
   local frontend_port="${FRONTEND_PORT:?Set FRONTEND_PORT in $ENV_FILE}"
   local frontend_public_host="${FRONTEND_PUBLIC_HOST:-127.0.0.1}"

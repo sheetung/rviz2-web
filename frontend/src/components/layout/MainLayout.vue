@@ -76,6 +76,68 @@
               </div>
               <span class="tool-separator"></span>
               <div class="tool-group">
+                <el-popover
+                  v-model:visible="showRtspConnection"
+                  placement="bottom-end"
+                  :width="340"
+                  :hide-after="0"
+                  trigger="click"
+                  popper-class="rtsp-connection-popper"
+                >
+                  <template #reference>
+                    <el-button
+                      size="small"
+                      :type="showRtspVideo ? 'primary' : 'default'"
+                      :loading="rtspConnecting"
+                      class="tool-btn"
+                      title="RTSP 视频连接"
+                    >
+                      <el-icon :size="14"><Monitor /></el-icon>
+                      <el-icon class="dropdown-caret" :class="{ open: showRtspConnection }"><ArrowDown /></el-icon>
+                    </el-button>
+                  </template>
+
+                  <div class="rtsp-connection-panel">
+                    <div class="rtsp-connection-header">
+                      <div>
+                        <strong>RTSP 视频连接</strong>
+                        <small>{{ showRtspVideo ? '视频流已连接' : '输入网络流地址后连接' }}</small>
+                      </div>
+                      <span class="rtsp-status-dot" :class="{ connected: showRtspVideo, connecting: rtspConnecting }"></span>
+                    </div>
+
+                    <label for="rtsp-toolbar-source">网络流地址</label>
+                    <el-input
+                      id="rtsp-toolbar-source"
+                      v-model="rtspInputUrl"
+                      size="small"
+                      placeholder="rtsp://192.168.1.66:8554/1"
+                      clearable
+                      @keyup.enter="connectRtspVideo()"
+                    />
+                    <small class="rtsp-config-note">连接成功后，地址和视频窗口布局会随 .rvizweb 配置保存。</small>
+
+                    <div class="rtsp-connection-actions">
+                      <el-button
+                        size="small"
+                        type="primary"
+                        :loading="rtspConnecting"
+                        @click="connectRtspVideo()"
+                      >
+                        {{ showRtspVideo ? '切换视频流' : '连接' }}
+                      </el-button>
+                      <el-button
+                        v-if="showRtspVideo"
+                        size="small"
+                        type="danger"
+                        plain
+                        @click="disconnectRtspVideo()"
+                      >
+                        关闭视频
+                      </el-button>
+                    </div>
+                  </div>
+                </el-popover>
                 <el-button size="small" :type="showChartDock ? 'primary' : 'default'" @click="showChartDock = !showChartDock" class="tool-btn" title="数据图表">
                   <el-icon :size="14"><DataAnalysis /></el-icon>
                 </el-button>
@@ -90,6 +152,18 @@
               @tool-change="onSceneToolChange"
               @recording-change="isSceneRecording = $event"
               @frame-list-change="onFrameListChange"
+            />
+            <RtspVideoOverlay
+              v-if="showRtspVideo && rtspStreamUrl"
+              :key="rtspSessionId"
+              ref="rtspVideoRef"
+              :stream-url="rtspStreamUrl"
+              :layout-config="settingsSnapshot.video.layout"
+              @layout-change="onRtspLayoutChange"
+              @edit="openRtspConnection"
+              @reconnect="connectRtspVideo(settingsSnapshot.video.sourceUrl)"
+              @stream-error="handleRtspStreamError"
+              @close="disconnectRtspVideo()"
             />
           </div>
         </div>
@@ -251,13 +325,14 @@
 </template>
 
 <script>
-import { ref, nextTick, defineAsyncComponent } from 'vue'
+import { ref, nextTick, defineAsyncComponent, onBeforeUnmount } from 'vue'
 import {
-  ArrowDown, Aim, Search, Refresh, View, VideoCamera, VideoPause, Camera, MapLocation, Flag, DataAnalysis, Grid, Connection
+  ArrowDown, Aim, Search, Refresh, View, VideoCamera, VideoPause, Camera, MapLocation, Flag, DataAnalysis, Grid, Connection, Monitor
 } from '@element-plus/icons-vue'
 
 // 引入面板组件
 import Scene3D from '../RViz/Scene3D.vue'
+import RtspVideoOverlay from '../RViz/RtspVideoOverlay.vue'
 import GpsPanel from '../panels/GpsPanel.vue'
 import Scene3DController from '../RViz/Scene3DController.vue'
 import TopicConfigPanel from '../RViz/TopicConfigPanel.vue'
@@ -266,6 +341,8 @@ import ChartPanel from '../panels/ChartPanel.vue'
 const AsyncSettingsPanel = defineAsyncComponent(() => import('../panels/SettingsPanel.vue'))
 import ExpectedGoalPanel from '../panels/ExpectedGoalPanel.vue'
 import { getThemeColor } from '../../utils/theme'
+import { videoApi } from '../../services/api'
+import { systemMessage } from '../../composables/useSystemMessage'
 
 const DEFAULT_SIDE_PANEL_HEIGHTS = {
   gps: 220,
@@ -301,7 +378,9 @@ export default {
     DataAnalysis,
     Grid,
     Connection,
+    Monitor,
     Scene3D,
+    RtspVideoOverlay,
     GpsPanel,
     Scene3DController,
     TopicConfigPanel,
@@ -312,12 +391,20 @@ export default {
   },
   setup() {
     const scene3dRef = ref(null)
+    const rtspVideoRef = ref(null)
     const topicConfigRef = ref(null)
     const activeSceneTool = ref('move')
     const showChartDock = ref(false)
+    const showRtspVideo = ref(false)
+    const showRtspConnection = ref(false)
+    const rtspConnecting = ref(false)
+    const rtspInputUrl = ref('')
+    const rtspSessionId = ref('')
+    const rtspStreamUrl = ref('')
     const isSceneRecording = ref(false)
     const settingsCollapsed = ref(true)
     const controllerCollapsed = ref(true)
+    let rtspConnectAttempt = 0
 
     // 传统布局控制状态
     const sceneWidth = ref(68)
@@ -353,6 +440,16 @@ export default {
       },
       appearance: {
         theme: 'dark'
+      },
+      video: {
+        sourceUrl: '',
+        visible: false,
+        layout: {
+          x: null,
+          y: null,
+          width: 360,
+          height: 240
+        }
       },
       goal: {
         topic: '',
@@ -577,6 +674,95 @@ export default {
       }
     }
 
+    const releaseRtspSession = (sessionId) => {
+      if (sessionId) {
+        videoApi.deleteSession(sessionId).catch(() => {})
+      }
+    }
+
+    const disconnectRtspVideo = (options = {}) => {
+      rtspConnectAttempt += 1
+      rtspConnecting.value = false
+      const previousSessionId = rtspSessionId.value
+      rtspSessionId.value = ''
+      rtspStreamUrl.value = ''
+      showRtspVideo.value = false
+      if (options.updateConfig !== false) {
+        settingsSnapshot.value.video.visible = false
+      }
+      if (options.closeConnectionPanel !== false) {
+        showRtspConnection.value = false
+      }
+      releaseRtspSession(previousSessionId)
+      if (options.notify === true) {
+        systemMessage.info('RTSP 视频已关闭')
+      }
+    }
+
+    const connectRtspVideo = async (
+      sourceUrl = rtspInputUrl.value,
+      options = {}
+    ) => {
+      const normalizedSource = String(sourceUrl || '').trim()
+      rtspInputUrl.value = normalizedSource
+      if (!/^rtsps?:\/\/[^\s]+$/i.test(normalizedSource)) {
+        systemMessage.warning('请输入有效的 rtsp:// 或 rtsps:// 地址')
+        return false
+      }
+
+      const attempt = ++rtspConnectAttempt
+      rtspConnecting.value = true
+      try {
+        const session = await videoApi.createSession(normalizedSource)
+        if (attempt !== rtspConnectAttempt) {
+          releaseRtspSession(session.session_id)
+          return false
+        }
+
+        const previousSessionId = rtspSessionId.value
+        rtspSessionId.value = session.session_id
+        rtspStreamUrl.value = videoApi.getStreamUrl(session.session_id)
+        showRtspVideo.value = true
+        showRtspConnection.value = false
+        settingsSnapshot.value.video.sourceUrl = normalizedSource
+        settingsSnapshot.value.video.visible = true
+        releaseRtspSession(previousSessionId)
+
+        if (options.notifySuccess !== false) {
+          systemMessage.success('RTSP 视频流连接成功')
+        }
+        return true
+      } catch (error) {
+        if (attempt !== rtspConnectAttempt) return false
+        if (!showRtspVideo.value) {
+          settingsSnapshot.value.video.visible = false
+        }
+        systemMessage.fromError(error, 'RTSP 视频连接失败或没有可用画面')
+        return false
+      } finally {
+        if (attempt === rtspConnectAttempt) {
+          rtspConnecting.value = false
+        }
+      }
+    }
+
+    const openRtspConnection = () => {
+      rtspInputUrl.value = settingsSnapshot.value.video.sourceUrl || ''
+      showRtspConnection.value = true
+    }
+
+    const handleRtspStreamError = () => {
+      disconnectRtspVideo({ closeConnectionPanel: false })
+      systemMessage.error('RTSP 视频流已中断或没有输出画面')
+    }
+
+    const onRtspLayoutChange = (layout) => {
+      settingsSnapshot.value.video.layout = {
+        ...settingsSnapshot.value.video.layout,
+        ...layout
+      }
+    }
+
     const activateSceneTool = (tool) => {
       scene3dRef.value?.setGoalTopic?.(settingsSnapshot.value.goal.topic)
       scene3dRef.value?.setNavigationTool?.(tool)
@@ -622,15 +808,15 @@ export default {
     
     const setExpectedTargetTool = (tool) => {
       if (tool === '3d_goal') {
-        ElMessage.info('3D期望功能稍后开放')
+        systemMessage.info('3D期望功能稍后开放')
         return
       }
 
       if (scene3dRef.value?.setNavigationTool) {
         scene3dRef.value.setNavigationTool(tool)
-        ElMessage.info('左键按下选择目标点，移动鼠标设置方向，松开发送；按 X 取消')
+        systemMessage.info('左键按下选择目标点，移动鼠标设置方向，松开发送；按 X 取消')
       } else {
-        ElMessage.warning('3D场景未就绪')
+        systemMessage.warning('3D场景未就绪')
       }
     }
     
@@ -640,7 +826,7 @@ export default {
       if (scene3dRef.value && scene3dRef.value.subscribeToRosTopic) {
         // 直接让3D场景组件处理ROS主题订阅
         scene3dRef.value.subscribeToRosTopic(topicName, messageType)
-        ElMessage.success(`已订阅可视化主题: ${topicName}`)
+        systemMessage.success(`已订阅可视化主题: ${topicName}`)
       } else {
         console.warn('3D场景未就绪或不支持该消息类型')
       }
@@ -650,7 +836,7 @@ export default {
       console.log(`取消订阅主题: ${topicName}`)
       if (scene3dRef.value && scene3dRef.value.unsubscribeFromRosTopic) {
         scene3dRef.value.unsubscribeFromRosTopic(topicName)
-        ElMessage.info(`已取消订阅主题: ${topicName}`)
+        systemMessage.info(`已取消订阅主题: ${topicName}`)
       }
     }
     
@@ -683,7 +869,7 @@ export default {
       if (scene3dRef.value && scene3dRef.value.loadMapFile) {
         scene3dRef.value.loadMapFile(file)
       } else {
-        ElMessage.warning('3D场景未就绪，无法加载地图文件')
+        systemMessage.warning('3D场景未就绪，无法加载地图文件')
       }
     }
 
@@ -692,7 +878,7 @@ export default {
       if (scene3dRef.value && scene3dRef.value.loadMapFiles) {
         scene3dRef.value.loadMapFiles(yamlFile, pgmFile)
       } else {
-        ElMessage.warning('3D场景未就绪，无法加载地图文件')
+        systemMessage.warning('3D场景未就绪，无法加载地图文件')
       }
     }
 
@@ -751,6 +937,29 @@ export default {
         }
       } else if (settings.type === 'appearance') {
         applyTheme(settings.theme)
+      } else if (settings.type === 'video') {
+        const video = settings.video || settings
+        const sourceUrl = typeof video.sourceUrl === 'string' ? video.sourceUrl.trim() : ''
+        const shouldConnect = video.visible === true && Boolean(sourceUrl)
+        settingsSnapshot.value.video = {
+          sourceUrl,
+          visible: shouldConnect,
+          layout: {
+            x: Number.isFinite(video.layout?.x) ? video.layout.x : null,
+            y: Number.isFinite(video.layout?.y) ? video.layout.y : null,
+            width: Number.isFinite(video.layout?.width) ? video.layout.width : 360,
+            height: Number.isFinite(video.layout?.height) ? video.layout.height : 240
+          }
+        }
+        rtspInputUrl.value = sourceUrl
+        if (shouldConnect) {
+          connectRtspVideo(sourceUrl, { notifySuccess: false })
+        } else {
+          disconnectRtspVideo({
+            updateConfig: false,
+            closeConnectionPanel: false
+          })
+        }
       } else if (settings.type === 'layout') {
         if (typeof settings.sceneWidth === 'number') {
           const nextWidth = Math.max(42, Math.min(78, settings.sceneWidth))
@@ -825,7 +1034,7 @@ export default {
       settingsSnapshot.value.goal = nextGoal
       const published = scene3dRef.value?.publishGoalPoseFromInput?.(nextGoal, nextGoal.topic)
       if (published === undefined) {
-        ElMessage.warning('3D场景未就绪')
+        systemMessage.warning('3D场景未就绪')
       }
     }
 
@@ -882,7 +1091,7 @@ export default {
 
       const scene = scene3dRef.value
       if (!scene) {
-        ElMessage.warning('3D场景未就绪')
+        systemMessage.warning('3D场景未就绪')
         return
       }
 
@@ -1002,13 +1211,31 @@ export default {
         settings: settingsCollapsed.value,
         controller: controllerCollapsed.value
       }
+      const videoLayout = rtspVideoRef.value?.getLayout?.()
+      if (videoLayout) {
+        onRtspLayoutChange(videoLayout)
+      }
     }
+
+    onBeforeUnmount(() => {
+      rtspConnectAttempt += 1
+      releaseRtspSession(rtspSessionId.value)
+      rtspSessionId.value = ''
+      rtspStreamUrl.value = ''
+    })
 
     return {
       scene3dRef,
+      rtspVideoRef,
       topicConfigRef,
       activeSceneTool,
       showChartDock,
+      showRtspVideo,
+      showRtspConnection,
+      rtspConnecting,
+      rtspInputUrl,
+      rtspSessionId,
+      rtspStreamUrl,
       isSceneRecording,
       settingsCollapsed,
       controllerCollapsed,
@@ -1026,6 +1253,11 @@ export default {
       resetView,
       captureSceneScreenshot,
       toggleSceneRecording,
+      connectRtspVideo,
+      disconnectRtspVideo,
+      openRtspConnection,
+      handleRtspStreamError,
+      onRtspLayoutChange,
       activateSceneTool,
       onSceneToolChange,
       focusSelectedObject,
@@ -1278,6 +1510,80 @@ export default {
 .dropdown-caret {
   margin-left: 1px !important;
   font-size: 10px;
+  transition: transform 0.16s ease;
+}
+
+.dropdown-caret.open {
+  transform: rotate(180deg);
+}
+
+:global(.rtsp-connection-popper.el-popover) {
+  padding: 12px;
+  background: var(--bg-panel);
+  border-color: var(--border);
+  box-shadow: 0 16px 40px var(--shadow-color-35);
+}
+
+.rtsp-connection-panel {
+  display: grid;
+  gap: 9px;
+}
+
+.rtsp-connection-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.rtsp-connection-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.rtsp-connection-header strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.rtsp-connection-header small,
+.rtsp-config-note,
+.rtsp-connection-panel label {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.rtsp-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.rtsp-status-dot.connected {
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
+}
+
+.rtsp-status-dot.connecting {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px var(--warning-soft);
+}
+
+.rtsp-config-note {
+  line-height: 1.45;
+}
+
+.rtsp-connection-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
 }
 
 :deep(.recording-active),

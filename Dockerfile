@@ -28,6 +28,7 @@ RUN echo "deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy main restricted
 # 安装必要的系统包
 RUN apt-get update && apt-get install -y \
     curl \
+    ffmpeg \
     nginx \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
@@ -63,7 +64,9 @@ RUN echo 'server { \
     \
     # API 代理到后端 \
     location /api/ { \
-        proxy_pass http://localhost:8000/; \
+        proxy_pass http://localhost:8000; \
+        proxy_buffering off; \
+        proxy_read_timeout 3600s; \
         proxy_set_header Host $host; \
         proxy_set_header X-Real-IP $remote_addr; \
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
