@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { debugLog } from '../utils/debug'
+import { createWebSocketUrl } from '../utils/websocketUrl'
 import { systemMessage } from './useSystemMessage'
 
 export const useConnectionStore = defineStore('connection', () => {
@@ -17,18 +18,9 @@ export const useConnectionStore = defineStore('connection', () => {
   let latencyTimer = null
   let latencyMeasurementInFlight = false
   
-  const getDefaultWsUrl = () => {
-    if (typeof window === 'undefined') {
-      return 'ws://localhost:8000/ws'
-    }
-
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.hostname || 'localhost'
-    return `${protocol}//${host}:8000/ws`
-  }
-
-  // 连接配置 - 跟随当前页面主机，避免局域网访问时连到浏览器本机 localhost
-  const wsUrl = ref(getDefaultWsUrl())  // 后端 FastAPI WebSocket 端点
+  // 使用同源 /ws，由 Vite 或 Nginx 代理到 BACKEND_PORT。
+  const browserLocation = typeof window === 'undefined' ? null : window.location
+  const wsUrl = ref(createWebSocketUrl(browserLocation))
   const reconnectAttempts = ref(0)
   const maxReconnectAttempts = ref(5)
   const reconnectInterval = ref(3000)

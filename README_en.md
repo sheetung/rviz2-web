@@ -248,6 +248,8 @@ Access URLs:
 - Backend API: `http://localhost:8000/`
 - Backend docs: `http://localhost:8000/docs`
 
+These are the default ports. When using `./start.sh`, the backend port comes from `BACKEND_PORT` in `.env`; the frontend API and WebSocket use the same-origin proxy and follow that port automatically.
+
 ## FAQ
 
 ### File Watch Limit
