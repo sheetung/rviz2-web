@@ -251,6 +251,8 @@ class RosbridgeService:
                 await self._handle_get_topic_types(client_id, request_id)
             elif op == 'get_topic_frequencies':
                 await self._handle_get_topic_frequencies(client_id, request_id)
+            elif op == 'get_system_status':
+                await self._handle_get_system_status(client_id, request_id)
             elif op == 'get_services':
                 await self._handle_get_services(client_id, request_id)
             elif op == 'get_service_types':
@@ -1872,6 +1874,26 @@ class RosbridgeService:
                     'error': str(e)
                 })
     
+    async def _handle_get_system_status(self, client_id: str, request_id: str = None):
+        """Return host and ROS status through the existing WebSocket connection."""
+        try:
+            status = await self.get_system_status()
+            response = {
+                'op': 'get_system_status_result',
+                'status': jsonable_encoder(status)
+            }
+            if request_id:
+                response['id'] = request_id
+            await self.connection_manager.send_to_client(client_id, response)
+        except Exception as e:
+            logger.error(f"Failed to handle get_system_status for {client_id}: {e}")
+            if request_id:
+                await self.connection_manager.send_to_client(client_id, {
+                    'op': 'error',
+                    'id': request_id,
+                    'error': str(e)
+                })
+
     async def _handle_get_services(self, client_id: str, request_id: str = None):
         """处理获取服务请求"""
         try:

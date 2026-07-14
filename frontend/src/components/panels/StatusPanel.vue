@@ -60,7 +60,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Document, Setting, Link } from '@element-plus/icons-vue'
 import { useConfigStatusStore } from '../../composables/useConfigStatusStore'
 import { useConnectionStore } from '../../composables/useConnectionStore'
-import { rosApi } from '../../services/api'
 
 export default {
   name: 'StatusPanel',
@@ -190,11 +189,20 @@ export default {
     }
 
     const fetchSystemStatus = async () => {
+      if (!connectionStore.isConnected) {
+        systemData.value = {
+          cpuUsage: null,
+          memUsage: null,
+          temperature: null
+        }
+        return
+      }
+
       try {
-        const statusData = await rosApi.getSystemStatus()
-        updateSystemMetrics(statusData)
+        const statusData = await connectionStore.getSystemStatus()
+        if (statusData) updateSystemMetrics(statusData)
       } catch (error) {
-        console.warn('Failed to fetch system status:', error)
+        console.warn('Failed to fetch system status through WebSocket:', error)
       }
     }
     

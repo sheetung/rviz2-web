@@ -201,6 +201,9 @@ export const useConnectionStore = defineStore('connection', () => {
         debugLog(`[ConnectionStore] 📊 收到主题频率信息`)
         resolveRequest(id, message.frequencies || {})
         break
+      case 'get_system_status_result':
+        resolveRequest(id, message.status || null)
+        break
       case 'get_services_result':
         debugLog(`[ConnectionStore] 🔧 收到服务列表，数量: ${(message.services || []).length}`)
         resolveRequest(id, message.services || [])
@@ -543,6 +546,16 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
   
+  // 获取系统状态
+  const getSystemStatus = async () => {
+    try {
+      return await sendApiRequest('get_system_status')
+    } catch (error) {
+      console.error('获取系统状态失败:', error)
+      return null
+    }
+  }
+
   // 获取服务列表
   const getServices = async () => {
     try {
@@ -610,6 +623,7 @@ export const useConnectionStore = defineStore('connection', () => {
     getNodes,
     getTopicTypes,
     getTopicFrequencies,
+    getSystemStatus,
     getServices,
     getServiceTypes,
     getParams
