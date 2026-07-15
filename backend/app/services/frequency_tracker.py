@@ -7,7 +7,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict, deque
-from typing import Dict, Optional
+from typing import Awaitable, Callable, Dict, Optional
 
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
 
@@ -19,7 +19,17 @@ logger = logging.getLogger(__name__)
 class FrequencyTracker:
     """追踪和计算 ROS2 话题发布频率"""
 
-    def __init__(self):
+    def __init__(
+        self,
+        message_class_resolver: Optional[Callable[[str], object]] = None,
+        frequency_clock: Optional[Callable[[], float]] = None,
+        wall_clock: Optional[Callable[[], float]] = None,
+        sleep: Optional[Callable[[float], Awaitable[None]]] = None,
+    ):
+        self._message_class_resolver = message_class_resolver or get_message_class
+        self._monotonic_clock = frequency_clock or time.monotonic
+        self._wall_clock = wall_clock or time.time
+        self._sleep = sleep or asyncio.sleep
         self._topic_message_times: Dict[str, deque] = defaultdict(lambda: deque(maxlen=200))
         self._topic_last_message_times: Dict[str, float] = {}
         self._topic_observation_started_at: Dict[str, float] = {}
@@ -34,7 +44,7 @@ class FrequencyTracker:
 
     def mark_observation_start(self, topic: str):
         """标记话题订阅开始时间"""
-        self._topic_observation_started_at[topic] = time.time()
+        self._topic_observation_started_at[topic] = self._wall_clock()
 
     def cleanup_topic(self, topic: str):
         """清理话题相关状态（取消订阅时调用）"""
@@ -48,7 +58,7 @@ class FrequencyTracker:
 
     def get_frequency(self, topic_name: str, is_subscribed: bool, now: Optional[float] = None) -> Optional[float]:
         """计算话题当前频率"""
-        current_time = time.time() if now is None else now
+        current_time = self._wall_clock() if now is None else now
         timestamps = self._topic_message_times.get(topic_name)
         if timestamps:
             while timestamps and current_time - timestamps[0] > 5.0:
@@ -102,7 +112,7 @@ class FrequencyTracker:
                         frequencies[topic_name] = 0.0
                         continue
 
-                    msg_class = get_message_class(message_types[0])
+                    msg_class = self._message_class_resolver(message_types[0])
                     if msg_class is None:
                         logger.warning(
                             f"Cannot sample frequency for {topic_name}: unavailable type {message_types[0]}"
@@ -110,8 +120,8 @@ class FrequencyTracker:
                         continue
 
                     def callback(_msg, measured_topic=topic_name):
-                        sample_times[measured_topic].append(self._frequency_clock())
-                        self._topic_last_message_times[measured_topic] = time.time()
+                        sample_times[measured_topic].append(self._monotonic_clock())
+                        self._topic_last_message_times[measured_topic] = self._wall_clock()
 
                     # BEST_EFFORT + VOLATILE can receive both common sensor QoS and
                     # reliable publishers. raw=True avoids deserializing large point clouds.
@@ -135,7 +145,7 @@ class FrequencyTracker:
                     except Exception as e:
                         logger.warning(f"Could not monitor frequency for {topic_name}: {e}")
 
-                await asyncio.sleep(duration)
+                await self._sleep(duration)
             finally:
                 for subscription in monitor_subscriptions:
                     try:
@@ -149,7 +159,7 @@ class FrequencyTracker:
                     0.0 if not timestamps else self._from_samples(timestamps)
                 )
 
-            sampled_at = time.time()
+            sampled_at = self._wall_clock()
             self._sampled_topic_frequencies = frequencies.copy()
             self._frequency_sampled_at = sampled_at
             logger.info(
@@ -165,7 +175,3 @@ class FrequencyTracker:
         if duration <= 0:
             return None
         return (len(timestamps) - 1) / duration
-
-    @staticmethod
-    def _frequency_clock() -> float:
-        return time.monotonic()

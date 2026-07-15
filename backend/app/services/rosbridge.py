@@ -41,7 +41,12 @@ class RosbridgeService:
         self.settings = settings
         self.connection_manager = ConnectionManager(settings.max_connections)
         self._converter = MessageConverter(self)
-        self._freq = FrequencyTracker()
+        self._freq = FrequencyTracker(
+            message_class_resolver=lambda msg_type: self._get_message_class(msg_type),
+            frequency_clock=lambda: self._frequency_clock(),
+            wall_clock=lambda: time.time(),
+            sleep=lambda duration: asyncio.sleep(duration),
+        )
         self._ws_handler = WebSocketRequestHandler(self)
         self.node: Optional[Node] = None
         self.subscribers = {}
@@ -61,6 +66,60 @@ class RosbridgeService:
         
         self._cache_warning_counts = {}  # 缓存警告计数
         
+    # Compatibility aliases keep callers stable while state and behavior live
+    # in the focused helper modules.
+    @property
+    def _topic_message_times(self):
+        return self._freq._topic_message_times
+
+    @property
+    def _topic_last_message_times(self):
+        return self._freq._topic_last_message_times
+
+    @property
+    def _topic_observation_started_at(self):
+        return self._freq._topic_observation_started_at
+
+    @property
+    def _sampled_topic_frequencies(self):
+        return self._freq._sampled_topic_frequencies
+
+    @_sampled_topic_frequencies.setter
+    def _sampled_topic_frequencies(self, value):
+        self._freq._sampled_topic_frequencies = value
+
+    @property
+    def _frequency_sampled_at(self):
+        return self._freq._frequency_sampled_at
+
+    @_frequency_sampled_at.setter
+    def _frequency_sampled_at(self, value):
+        self._freq._frequency_sampled_at = value
+
+    @property
+    def _frequency_sample_lock(self):
+        return self._freq._sample_lock
+
+    def _get_message_class(self, msg_type: str):
+        return get_message_class(msg_type)
+
+    def _topic_frequency(self, topic_name: str, now: Optional[float] = None) -> Optional[float]:
+        return self._freq.get_frequency(topic_name, topic_name in self.subscribers, now)
+
+    @staticmethod
+    def _frequency_from_samples(timestamps) -> Optional[float]:
+        return FrequencyTracker._from_samples(timestamps)
+
+    @staticmethod
+    def _frequency_clock() -> float:
+        return time.monotonic()
+
+    async def _sample_topic_frequencies(
+        self,
+        sample_duration: float,
+    ) -> Dict[str, Optional[float]]:
+        return await self._freq.sample_frequencies(self.node, sample_duration)
+
     async def start(self):
         """启动服务"""
         try:
@@ -139,6 +198,42 @@ class RosbridgeService:
     async def _handle_message(self, client_id: str, message: dict):
         """处理收到的消息（委托到 WebSocketRequestHandler）"""
         await self._ws_handler.handle_operation(client_id, message)
+
+    async def _handle_unsubscribe(self, client_id: str, message: dict):
+        await self._ws_handler._handle_unsubscribe(client_id, message)
+
+    async def _handle_advertise(self, message: dict):
+        await self._ws_handler._handle_advertise(message)
+
+    async def _handle_unadvertise(self, message: dict):
+        await self._ws_handler._handle_unadvertise(message)
+
+    async def _handle_publish(self, message: dict):
+        await self._ws_handler._handle_publish(message)
+
+    async def _handle_get_topics(self, client_id: str, request_id: str = None):
+        await self._ws_handler._handle_get_topics(client_id, request_id)
+
+    async def _handle_get_nodes(self, client_id: str, request_id: str = None):
+        await self._ws_handler._handle_get_nodes(client_id, request_id)
+
+    async def _handle_get_topic_types(self, client_id: str, request_id: str = None):
+        await self._ws_handler._handle_get_topic_types(client_id, request_id)
+
+    async def _handle_get_topic_frequencies(self, client_id: str, request_id: str = None):
+        await self._ws_handler._handle_get_topic_frequencies(client_id, request_id)
+
+    async def _handle_get_system_status(self, client_id: str, request_id: str = None):
+        await self._ws_handler._handle_get_system_status(client_id, request_id)
+
+    async def _handle_get_services(self, client_id: str, request_id: str = None):
+        await self._ws_handler._handle_get_services(client_id, request_id)
+
+    async def _handle_get_service_types(self, client_id: str, request_id: str = None):
+        await self._ws_handler._handle_get_service_types(client_id, request_id)
+
+    async def _handle_get_params(self, client_id: str, request_id: str = None):
+        await self._ws_handler._handle_get_params(client_id, request_id)
 
     async def _handle_subscribe(self, client_id: str, message: dict):
         """处理订阅请求"""
@@ -525,11 +620,26 @@ class RosbridgeService:
             
     def _message_to_dict(self, msg) -> dict:
         """委托到 MessageConverter（保留以兼容测试）"""
-        return self._converter.to_dict(msg)
+        converter = getattr(self, '_converter', None)
+        if converter is None:
+            converter = self._converter = MessageConverter(self)
+        return converter.to_dict(msg)
 
     def _dict_to_message(self, msg_class, data: dict):
         """委托到 MessageConverter（保留以兼容测试）"""
-        return self._converter.from_dict(msg_class, data)
+        converter = getattr(self, '_converter', None)
+        if converter is None:
+            converter = self._converter = MessageConverter(self)
+        return converter.from_dict(msg_class, data)
+
+    def _process_pointcloud_data(self, pointcloud_msg) -> dict:
+        return self._converter.process_pointcloud(pointcloud_msg)
+
+    def _process_image_data(self, image_msg) -> dict:
+        return self._converter.process_image(image_msg)
+
+    def _process_compressed_image_data(self, image_msg) -> dict:
+        return self._converter.process_compressed_image(image_msg)
 
     # API 方法实现
     def _get_topics_from_cli_sync(self) -> List[TopicInfo]:
