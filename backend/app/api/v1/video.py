@@ -42,6 +42,7 @@ class VideoSessionResponse(BaseModel):
 
 
 _video_sessions: dict[str, tuple[str, float]] = {}
+_active_stream_processes: dict[str, set[asyncio.subprocess.Process]] = {}
 
 
 def _validated_rtsp_url(value: str) -> str:
@@ -235,7 +236,7 @@ async def get_video_status() -> VideoStatus:
     )
 
 
-def _clear_expired_sessions(now: Optional[float] = None) -> None:
+def _clear_expired_sessions(now: Optional[float] = None) -> list[str]:
     current_time = time.monotonic() if now is None else now
     expired_ids = [
         session_id
@@ -244,6 +245,53 @@ def _clear_expired_sessions(now: Optional[float] = None) -> None:
     ]
     for session_id in expired_ids:
         _video_sessions.pop(session_id, None)
+    return expired_ids
+
+
+def _register_stream_process(
+    session_id: str,
+    process: asyncio.subprocess.Process,
+) -> None:
+    _active_stream_processes.setdefault(session_id, set()).add(process)
+
+
+def _unregister_stream_process(
+    session_id: str,
+    process: asyncio.subprocess.Process,
+) -> None:
+    processes = _active_stream_processes.get(session_id)
+    if not processes:
+        return
+    processes.discard(process)
+    if not processes:
+        _active_stream_processes.pop(session_id, None)
+
+
+def _touch_video_session(session_id: str, ttl: int) -> None:
+    session = _video_sessions.get(session_id)
+    if session is None:
+        return
+    source_url, _ = session
+    _video_sessions[session_id] = (source_url, time.monotonic() + ttl)
+
+
+async def _stop_session_streams(session_id: str) -> None:
+    processes = list(_active_stream_processes.pop(session_id, set()))
+    if processes:
+        await asyncio.gather(
+            *(_stop_process(process) for process in processes),
+            return_exceptions=True,
+        )
+
+
+async def shutdown_video_streams() -> None:
+    session_ids = list(_active_stream_processes)
+    if session_ids:
+        await asyncio.gather(
+            *(_stop_session_streams(session_id) for session_id in session_ids),
+            return_exceptions=True,
+        )
+    _video_sessions.clear()
 
 
 @router.post("/video/sessions", response_model=VideoSessionResponse)
@@ -271,7 +319,8 @@ async def create_video_session(
             detail=f"未检测到可用视频流: {error}",
         ) from error
 
-    _clear_expired_sessions()
+    for expired_id in _clear_expired_sessions():
+        await _stop_session_streams(expired_id)
     session_id = secrets.token_urlsafe(24)
     _video_sessions[session_id] = (
         source_url,
@@ -286,13 +335,15 @@ async def create_video_session(
 @router.delete("/video/sessions/{session_id}")
 async def delete_video_session(session_id: str) -> dict[str, str]:
     _video_sessions.pop(session_id, None)
+    await _stop_session_streams(session_id)
     return {"status": "deleted"}
 
 
 @router.get("/video/stream/{session_id}")
 async def stream_video(session_id: str, request: Request) -> StreamingResponse:
     settings = get_settings()
-    _clear_expired_sessions()
+    for expired_id in _clear_expired_sessions():
+        await _stop_session_streams(expired_id)
     session = _video_sessions.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="RTSP 视频会话不存在或已过期")
@@ -307,8 +358,11 @@ async def stream_video(session_id: str, request: Request) -> StreamingResponse:
     except (FileNotFoundError, OSError, ValueError) as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
+    _register_stream_process(session_id, process)
+
     if process.stdout is None or process.stderr is None:
         await _stop_process(process)
+        _unregister_stream_process(session_id, process)
         raise HTTPException(status_code=500, detail="无法读取 FFmpeg 输出")
 
     stderr_messages: list[str] = []
@@ -325,12 +379,14 @@ async def stream_video(session_id: str, request: Request) -> StreamingResponse:
         )
     except asyncio.CancelledError:
         await _stop_process(process)
+        _unregister_stream_process(session_id, process)
         stderr_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await stderr_task
         raise
     except (asyncio.TimeoutError, RuntimeError) as error:
         await _stop_process(process)
+        _unregister_stream_process(session_id, process)
         with contextlib.suppress(asyncio.CancelledError):
             await stderr_task
         reason = stderr_messages[-1] if stderr_messages else str(error)
@@ -343,6 +399,7 @@ async def stream_video(session_id: str, request: Request) -> StreamingResponse:
 
     async def generate_frames():
         try:
+            _touch_video_session(session_id, settings.rtsp_session_ttl)
             yield _multipart_frame(first_frame)
             while not await request.is_disconnected():
                 try:
@@ -353,11 +410,13 @@ async def stream_video(session_id: str, request: Request) -> StreamingResponse:
                     continue
                 except RuntimeError:
                     break
+                _touch_video_session(session_id, settings.rtsp_session_ttl)
                 yield _multipart_frame(frame)
         except asyncio.CancelledError:
             raise
         finally:
             await _stop_process(process)
+            _unregister_stream_process(session_id, process)
             with contextlib.suppress(asyncio.CancelledError):
                 await stderr_task
 

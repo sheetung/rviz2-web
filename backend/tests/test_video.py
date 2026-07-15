@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -106,3 +107,33 @@ async def test_video_session_is_not_created_when_probe_fails(monkeypatch):
 
     assert error.value.status_code == 504
     assert "未检测到可用视频流" in error.value.detail
+
+
+@pytest.mark.asyncio
+async def test_deleting_session_stops_its_active_streams(monkeypatch):
+    session_id = "active-session"
+    process = object()
+    stop_process = AsyncMock()
+    monkeypatch.setattr(video, "_stop_process", stop_process)
+    video._video_sessions[session_id] = ("rtsp://127.0.0.1/live", 999999.0)
+    video._active_stream_processes[session_id] = {process}
+
+    await video.delete_video_session(session_id)
+
+    assert session_id not in video._video_sessions
+    assert session_id not in video._active_stream_processes
+    stop_process.assert_awaited_once_with(process)
+
+
+def test_touching_session_renews_its_expiration(monkeypatch):
+    session_id = "playing-session"
+    video._video_sessions[session_id] = ("rtsp://127.0.0.1/live", 10.0)
+    monkeypatch.setattr(video.time, "monotonic", lambda: 100.0)
+
+    video._touch_video_session(session_id, 300)
+
+    assert video._video_sessions[session_id] == (
+        "rtsp://127.0.0.1/live",
+        400.0,
+    )
+    video._video_sessions.pop(session_id)

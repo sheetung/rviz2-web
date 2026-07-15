@@ -73,7 +73,9 @@ const DEFAULT_HEIGHT = 240
 const MIN_WIDTH = 240
 const MIN_HEIGHT = 160
 const EDGE_GAP = 14
-const FRAME_STALL_TIMEOUT_MS = 6000
+const FRAME_STALL_TIMEOUT_MS = 12000
+const STREAM_RETRY_DELAY_MS = 800
+const MAX_STREAM_RESTARTS = 3
 
 export default {
   name: 'RtspVideoOverlay',
@@ -103,7 +105,10 @@ export default {
     let streamController = null
     let streamToken = 0
     let stallTimer = null
+    let retryTimer = null
+    let restartAttempts = 0
     let lastFrameAt = 0
+    let consecutiveDecodeErrors = 0
     let streamErrorReported = false
     let naturalRatioApplied = false
 
@@ -250,7 +255,6 @@ export default {
       const nextUrl = URL.createObjectURL(new Blob([frame], { type: 'image/jpeg' }))
       const previousUrl = frameUrl.value
       frameUrl.value = nextUrl
-      lastFrameAt = Date.now()
       if (previousUrl) window.setTimeout(() => revokeFrameUrl(previousUrl), 0)
     }
 
@@ -262,7 +266,7 @@ export default {
       emit('stream-error')
     }
 
-    const stopStream = ({ clear = true } = {}) => {
+    const stopCurrentStream = ({ clear = true } = {}) => {
       streamToken += 1
       streamController?.abort()
       streamController = null
@@ -273,22 +277,38 @@ export default {
       if (clear) clearFrame()
     }
 
-    const startStream = async () => {
-      stopStream()
+    const cancelRetry = () => {
+      if (retryTimer) {
+        window.clearTimeout(retryTimer)
+        retryTimer = null
+      }
+    }
+
+    const scheduleStreamRestart = (error) => {
+      if (streamErrorReported || retryTimer) return
+      stopCurrentStream({ clear: false })
+      if (restartAttempts >= MAX_STREAM_RESTARTS) {
+        reportStreamError(error)
+        return
+      }
+      restartAttempts += 1
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null
+        runStream()
+      }, STREAM_RETRY_DELAY_MS)
+    }
+
+    const runStream = async () => {
       const token = streamToken
       const controller = new AbortController()
       streamController = controller
-      isReady.value = false
-      streamErrorReported = false
-      naturalRatioApplied = false
       lastFrameAt = Date.now()
 
       const parser = createJpegFrameParser(publishFrame)
       stallTimer = window.setInterval(() => {
         if (token !== streamToken) return
         if (Date.now() - lastFrameAt > FRAME_STALL_TIMEOUT_MS) {
-          reportStreamError(new Error('等待新视频帧超时'))
-          controller.abort()
+          scheduleStreamRestart(new Error('等待新视频帧超时'))
         }
       }, 1000)
 
@@ -310,11 +330,29 @@ export default {
         }
       } catch (error) {
         if (token !== streamToken || controller.signal.aborted) return
-        reportStreamError(error)
+        scheduleStreamRestart(error)
       }
     }
 
+    const startStream = () => {
+      cancelRetry()
+      restartAttempts = 0
+      streamErrorReported = false
+      naturalRatioApplied = false
+      isReady.value = false
+      stopCurrentStream()
+      runStream()
+    }
+
+    const stopStream = () => {
+      cancelRetry()
+      stopCurrentStream()
+    }
+
     const onFrameLoaded = (event) => {
+      lastFrameAt = Date.now()
+      restartAttempts = 0
+      consecutiveDecodeErrors = 0
       if (!naturalRatioApplied && event.target.naturalWidth > 0 && event.target.naturalHeight > 0) {
         aspectRatio.value = event.target.naturalWidth / event.target.naturalHeight
         naturalRatioApplied = true
@@ -329,8 +367,10 @@ export default {
     }
 
     const onFrameError = () => {
-      reportStreamError(new Error('浏览器无法解码视频帧'))
-      streamController?.abort()
+      consecutiveDecodeErrors += 1
+      if (consecutiveDecodeErrors >= 3) {
+        scheduleStreamRestart(new Error('浏览器连续无法解码视频帧'))
+      }
     }
 
     onMounted(async () => {

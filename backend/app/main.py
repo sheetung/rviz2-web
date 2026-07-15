@@ -86,7 +86,9 @@ async def startup_event():
 async def shutdown_event():
     """应用关闭事件"""
     logger.info("Shutting down RViz2 Web Visualization System")
-    
+
+    await video.shutdown_video_streams()
+
     # 清理 Rosbridge 服务
     service = get_rosbridge_service()
     await service.stop()
