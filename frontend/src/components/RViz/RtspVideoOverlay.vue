@@ -8,72 +8,76 @@
     @mousedown.stop
     @click.stop
   >
-    <div class="video-actions">
-      <button
-        type="button"
-        title="编辑网络流地址"
-        aria-label="编辑网络流地址"
-        @pointerdown.stop
-        @click.stop="$emit('edit')"
-      >
-        <el-icon><Edit /></el-icon>
-      </button>
-      <button
-        type="button"
-        title="重新连接"
-        aria-label="重新连接"
-        @pointerdown.stop
-        @click.stop="$emit('reconnect')"
-      >
-        <el-icon><Refresh /></el-icon>
-      </button>
-      <button
-        type="button"
-        title="关闭视频"
-        aria-label="关闭视频"
-        @pointerdown.stop
-        @click.stop="$emit('close')"
-      >
-        <el-icon><Close /></el-icon>
-      </button>
-    </div>
-
     <div class="video-content" @pointerdown="startDrag">
       <img
-        :src="streamUrl"
+        v-if="frameUrl"
+        :src="frameUrl"
         alt="RTSP 相机实时视频"
         draggable="false"
-        @load="onStreamLoaded"
-        @error="onStreamError"
+        @load="onFrameLoaded"
+        @error="onFrameError"
       />
+      <div v-else class="video-loading">正在读取视频流</div>
     </div>
 
-    <span
-      class="resize-handle resize-bottom-left"
-      title="拖动调整大小"
-      @pointerdown.stop="startResize($event, 'bottom-left')"
-    ></span>
-    <span
-      class="resize-handle resize-bottom-right"
-      title="拖动调整大小"
-      @pointerdown.stop="startResize($event, 'bottom-right')"
-    ></span>
+    <button
+      type="button"
+      class="overlay-control resize-control"
+      title="拖动调整视频大小"
+      aria-label="调整视频大小"
+      @pointerdown.stop="startResize"
+    >
+      <el-icon><FullScreen /></el-icon>
+    </button>
+    <button
+      type="button"
+      class="overlay-control close-control"
+      title="关闭视频"
+      aria-label="关闭视频"
+      @pointerdown.stop
+      @click.stop="$emit('close')"
+    >
+      <el-icon><Close /></el-icon>
+    </button>
+    <button
+      type="button"
+      class="overlay-control reconnect-control"
+      title="重新连接"
+      aria-label="重新连接"
+      @pointerdown.stop
+      @click.stop="$emit('reconnect')"
+    >
+      <el-icon><Refresh /></el-icon>
+    </button>
+    <button
+      type="button"
+      class="overlay-control settings-control"
+      title="视频设置"
+      aria-label="视频设置"
+      @pointerdown.stop
+      @click.stop="$emit('edit')"
+    >
+      <el-icon><Setting /></el-icon>
+    </button>
   </section>
 </template>
 
 <script>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Close, Edit, Refresh } from '@element-plus/icons-vue'
+import { Close, FullScreen, Refresh, Setting } from '@element-plus/icons-vue'
+import { createJpegFrameParser } from '../../utils/jpegFrameParser'
+import { resizeFromTopLeft } from '../../utils/videoOverlayLayout'
 
 const DEFAULT_WIDTH = 360
 const DEFAULT_HEIGHT = 240
 const MIN_WIDTH = 240
 const MIN_HEIGHT = 160
 const EDGE_GAP = 14
+const FRAME_STALL_TIMEOUT_MS = 6000
 
 export default {
   name: 'RtspVideoOverlay',
-  components: { Close, Edit, Refresh },
+  components: { Close, FullScreen, Refresh, Setting },
   props: {
     streamUrl: {
       type: String,
@@ -87,13 +91,21 @@ export default {
   emits: ['close', 'edit', 'reconnect', 'ready', 'stream-error', 'layout-change'],
   setup(props, { emit, expose }) {
     const overlayRef = ref(null)
+    const frameUrl = ref('')
     const x = ref(0)
     const y = ref(0)
     const width = ref(DEFAULT_WIDTH)
     const height = ref(DEFAULT_HEIGHT)
+    const aspectRatio = ref(DEFAULT_WIDTH / DEFAULT_HEIGHT)
     const isReady = ref(false)
     let interaction = null
     let parentResizeObserver = null
+    let streamController = null
+    let streamToken = 0
+    let stallTimer = null
+    let lastFrameAt = 0
+    let streamErrorReported = false
+    let naturalRatioApplied = false
 
     const overlayStyle = computed(() => ({
       left: `${x.value}px`,
@@ -143,6 +155,8 @@ export default {
       const configuredY = Number(layout.y)
       width.value = Number.isFinite(configuredWidth) ? configuredWidth : DEFAULT_WIDTH
       height.value = Number.isFinite(configuredHeight) ? configuredHeight : DEFAULT_HEIGHT
+      if (width.value > 0 && height.value > 0) aspectRatio.value = width.value / height.value
+
       if (layout.x !== null && layout.x !== undefined && Number.isFinite(configuredX)
         && layout.y !== null && layout.y !== undefined && Number.isFinite(configuredY)) {
         x.value = configuredX
@@ -164,41 +178,38 @@ export default {
       if (layoutChanged) emit('layout-change', getLayout())
     }
 
-    const beginInteraction = (event, type, direction = '') => {
+    const beginInteraction = (event, type) => {
       if (event.button !== 0) return
       event.preventDefault()
       interaction = {
         type,
-        direction,
         pointerX: event.clientX,
         pointerY: event.clientY,
         x: x.value,
         y: y.value,
         width: width.value,
-        height: height.value
+        height: height.value,
+        aspectRatio: aspectRatio.value
       }
       window.addEventListener('pointermove', handlePointerMove)
       window.addEventListener('pointerup', stopInteraction)
       window.addEventListener('pointercancel', stopInteraction)
       document.body.style.userSelect = 'none'
-      document.body.style.cursor = type === 'drag'
-        ? 'grabbing'
-        : direction === 'bottom-left' ? 'nesw-resize' : 'nwse-resize'
+      document.body.style.cursor = type === 'drag' ? 'grabbing' : 'nwse-resize'
     }
 
     const startDrag = (event) => {
-      if (event.target.closest('.video-actions')) return
+      if (event.target.closest('.overlay-control')) return
       beginInteraction(event, 'drag')
     }
 
-    const startResize = (event, direction) => {
-      beginInteraction(event, 'resize', direction)
+    const startResize = (event) => {
+      beginInteraction(event, 'resize')
     }
 
     function handlePointerMove(event) {
       if (!interaction) return
       event.preventDefault()
-      const bounds = parentBounds()
       const deltaX = event.clientX - interaction.pointerX
       const deltaY = event.clientY - interaction.pointerY
 
@@ -209,38 +220,117 @@ export default {
         return
       }
 
-      const maxHeight = Math.max(MIN_HEIGHT, bounds.height - interaction.y)
-      height.value = Math.max(
-        Math.min(MIN_HEIGHT, bounds.height),
-        Math.min(interaction.height + deltaY, maxHeight)
-      )
-
-      if (interaction.direction === 'bottom-left') {
-        const rightEdge = interaction.x + interaction.width
-        const maxWidth = Math.max(MIN_WIDTH, rightEdge)
-        width.value = Math.max(
-          Math.min(MIN_WIDTH, bounds.width),
-          Math.min(interaction.width - deltaX, maxWidth)
-        )
-        x.value = rightEdge - width.value
-      } else {
-        const maxWidth = Math.max(MIN_WIDTH, bounds.width - interaction.x)
-        width.value = Math.max(
-          Math.min(MIN_WIDTH, bounds.width),
-          Math.min(interaction.width + deltaX, maxWidth)
-        )
-      }
+      const resized = resizeFromTopLeft({
+        ...interaction,
+        deltaX,
+        deltaY,
+        minWidth: MIN_WIDTH,
+        minHeight: MIN_HEIGHT
+      })
+      x.value = resized.x
+      y.value = resized.y
+      width.value = resized.width
+      height.value = resized.height
       clampLayout()
     }
 
-    const onStreamLoaded = () => {
-      isReady.value = true
-      emit('ready')
+    const revokeFrameUrl = (url) => {
+      if (url && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(url)
+      }
     }
 
-    const onStreamError = () => {
+    const clearFrame = () => {
+      const previousUrl = frameUrl.value
+      frameUrl.value = ''
+      revokeFrameUrl(previousUrl)
+    }
+
+    const publishFrame = (frame) => {
+      const nextUrl = URL.createObjectURL(new Blob([frame], { type: 'image/jpeg' }))
+      const previousUrl = frameUrl.value
+      frameUrl.value = nextUrl
+      lastFrameAt = Date.now()
+      if (previousUrl) window.setTimeout(() => revokeFrameUrl(previousUrl), 0)
+    }
+
+    const reportStreamError = (error) => {
+      if (streamErrorReported) return
+      streamErrorReported = true
       isReady.value = false
+      console.error('RTSP MJPEG stream stopped:', error)
       emit('stream-error')
+    }
+
+    const stopStream = ({ clear = true } = {}) => {
+      streamToken += 1
+      streamController?.abort()
+      streamController = null
+      if (stallTimer) {
+        window.clearInterval(stallTimer)
+        stallTimer = null
+      }
+      if (clear) clearFrame()
+    }
+
+    const startStream = async () => {
+      stopStream()
+      const token = streamToken
+      const controller = new AbortController()
+      streamController = controller
+      isReady.value = false
+      streamErrorReported = false
+      naturalRatioApplied = false
+      lastFrameAt = Date.now()
+
+      const parser = createJpegFrameParser(publishFrame)
+      stallTimer = window.setInterval(() => {
+        if (token !== streamToken) return
+        if (Date.now() - lastFrameAt > FRAME_STALL_TIMEOUT_MS) {
+          reportStreamError(new Error('等待新视频帧超时'))
+          controller.abort()
+        }
+      }, 1000)
+
+      try {
+        const response = await fetch(props.streamUrl, {
+          signal: controller.signal,
+          cache: 'no-store',
+          credentials: 'same-origin'
+        })
+        if (!response.ok || !response.body) {
+          throw new Error(`视频流请求失败 (${response.status})`)
+        }
+
+        const reader = response.body.getReader()
+        while (token === streamToken) {
+          const { done, value } = await reader.read()
+          if (done) throw new Error('视频流连接已结束')
+          parser.push(value)
+        }
+      } catch (error) {
+        if (token !== streamToken || controller.signal.aborted) return
+        reportStreamError(error)
+      }
+    }
+
+    const onFrameLoaded = (event) => {
+      if (!naturalRatioApplied && event.target.naturalWidth > 0 && event.target.naturalHeight > 0) {
+        aspectRatio.value = event.target.naturalWidth / event.target.naturalHeight
+        naturalRatioApplied = true
+        height.value = width.value / aspectRatio.value
+        clampLayout()
+        emit('layout-change', getLayout())
+      }
+      if (!isReady.value) {
+        isReady.value = true
+        emit('ready')
+      }
+    }
+
+    const onFrameError = () => {
+      reportStreamError(new Error('浏览器无法解码视频帧'))
+      streamController?.abort()
     }
 
     onMounted(async () => {
@@ -251,11 +341,12 @@ export default {
         parentResizeObserver = new ResizeObserver(clampLayout)
         parentResizeObserver.observe(parent)
       }
+      startStream()
     })
 
     watch(
       () => props.streamUrl,
-      () => { isReady.value = false }
+      () => startStream()
     )
 
     watch(
@@ -266,6 +357,7 @@ export default {
 
     onBeforeUnmount(() => {
       stopInteraction()
+      stopStream()
       parentResizeObserver?.disconnect()
     })
 
@@ -273,12 +365,13 @@ export default {
 
     return {
       overlayRef,
+      frameUrl,
       overlayStyle,
       isReady,
       startDrag,
       startResize,
-      onStreamLoaded,
-      onStreamError
+      onFrameLoaded,
+      onFrameError
     }
   }
 }
@@ -294,53 +387,16 @@ export default {
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  background: transparent;
+  background: #050709;
+  border: 1px solid rgba(255, 255, 255, 0.46);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
   transition: opacity 0.16s ease;
 }
 
 .rtsp-video-overlay.is-ready {
   opacity: 1;
   pointer-events: auto;
-}
-
-.video-actions {
-  position: absolute;
-  z-index: 5;
-  top: 6px;
-  right: 6px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  opacity: 0;
-  pointer-events: none;
-  border-radius: var(--radius-sm);
-  background: rgba(0, 0, 0, 0.58);
-  transition: opacity 0.15s ease;
-}
-
-.rtsp-video-overlay:hover .video-actions,
-.rtsp-video-overlay:focus-within .video-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.video-actions button {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(255, 255, 255, 0.78);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.video-actions button:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.16);
 }
 
 .video-content {
@@ -362,44 +418,58 @@ export default {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: contain;
+  object-fit: cover;
   pointer-events: none;
   user-select: none;
 }
 
-.resize-handle {
+.video-loading {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+}
+
+.overlay-control {
   position: absolute;
-  bottom: 0;
-  z-index: 2;
-  width: 18px;
-  height: 18px;
-  opacity: 0;
-  touch-action: none;
-  transition: opacity 0.15s ease;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(10, 13, 16, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.88;
+  transition: background 0.15s ease, opacity 0.15s ease;
 }
 
-.rtsp-video-overlay:hover .resize-handle {
-  opacity: 0.72;
+.overlay-control:hover,
+.overlay-control:focus-visible {
+  color: #fff;
+  background: rgba(10, 13, 16, 0.94);
+  opacity: 1;
 }
 
-.resize-bottom-left {
-  left: 0;
-  cursor: nesw-resize;
-}
-
-.resize-bottom-right {
-  right: 0;
+.resize-control {
+  top: 8px;
+  left: 8px;
   cursor: nwse-resize;
 }
 
-.resize-bottom-right::after {
-  content: '';
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid rgba(255, 255, 255, 0.55);
-  border-bottom: 2px solid rgba(255, 255, 255, 0.55);
+.close-control {
+  top: 8px;
+  right: 8px;
+}
+
+.reconnect-control {
+  bottom: 8px;
+  left: 8px;
+}
+
+.settings-control {
+  right: 8px;
+  bottom: 8px;
 }
 </style>

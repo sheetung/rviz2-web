@@ -80,8 +80,6 @@ def _build_ffmpeg_command(
         "nobuffer",
         "-flags",
         "low_delay",
-        "-rw_timeout",
-        str(int(settings.rtsp_startup_timeout * 1_000_000)),
         "-rtsp_transport",
         settings.rtsp_transport,
         "-i",

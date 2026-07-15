@@ -32,6 +32,7 @@ def test_ffmpeg_command_uses_configured_rtsp_source(monkeypatch):
     assert command[command.index("-rtsp_transport") + 1] == "tcp"
     assert "fps=12,scale=640:-2:force_original_aspect_ratio=decrease" in command
     assert command[-2:] == ["image2pipe", "pipe:1"]
+    assert "-rw_timeout" not in command
 
     probe_command = video._build_ffmpeg_command(
         _settings(),
@@ -39,6 +40,7 @@ def test_ffmpeg_command_uses_configured_rtsp_source(monkeypatch):
         frame_limit=1,
     )
     assert probe_command[probe_command.index("-frames:v") + 1] == "1"
+    assert "-rw_timeout" not in probe_command
 
 
 def test_jpeg_frames_are_extracted_without_losing_remainder():
