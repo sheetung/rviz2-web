@@ -4,25 +4,28 @@ Rosbridge 服务
 """
 
 import asyncio
-import importlib
 import json
 import logging
 import os
 import subprocess
 from typing import Dict, List, Optional, Any
-from collections import defaultdict, deque
+from collections import deque
 import time
 from datetime import datetime, timezone
 
 from fastapi import WebSocket, WebSocketDisconnect
-from fastapi.encoders import jsonable_encoder
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
-from std_msgs.msg import String
 
 from ..core.config import Settings
 from ..models.ros import TopicInfo, NodeInfo, SystemStatus, ConnectionInfo
+
+from .connection_manager import ConnectionManager
+from .message_types import get_message_class
+from .message_converter import MessageConverter
+from .frequency_tracker import FrequencyTracker
+from .ws_handlers import WebSocketRequestHandler
 
 logger = logging.getLogger(__name__)
 
@@ -31,98 +34,15 @@ try:
 except ImportError:
     psutil = None
 
-class ConnectionManager:
-    """WebSocket 连接管理器"""
-    
-    def __init__(self, max_connections: int = 100):
-        self.max_connections = max_connections
-        self.active_connections: Dict[str, WebSocket] = {}
-        self.connection_info: Dict[str, ConnectionInfo] = {}
-        
-    async def connect(self, websocket: WebSocket, client_id: str) -> bool:
-        """连接客户端"""
-        if len(self.active_connections) >= self.max_connections:
-            await websocket.close(code=1008, reason="Max connections reached")
-            return False
-            
-        await websocket.accept()
-        self.active_connections[client_id] = websocket
-        self.connection_info[client_id] = ConnectionInfo(
-            client_id=client_id,
-            connected_at=datetime.now(),
-            subscribed_topics=[],
-            message_count=0
-        )
-        logger.info(f"Client {client_id} connected")
-        return True
-        
-    def disconnect(self, client_id: str):
-        """断开客户端"""
-        if client_id in self.active_connections:
-            del self.active_connections[client_id]
-        if client_id in self.connection_info:
-            del self.connection_info[client_id]
-        logger.info(f"Client {client_id} disconnected")
-        
-    async def send_to_client(self, client_id: str, message: dict):
-        """发送消息给指定客户端"""
-        if client_id in self.active_connections:
-            try:
-                await self.active_connections[client_id].send_text(json.dumps(message))
-                self.connection_info[client_id].message_count += 1
-            except Exception as e:
-                logger.error(f"Failed to send message to {client_id}: {e}")
-                self.disconnect(client_id)
-                
-    async def broadcast(self, message: dict):
-        """广播消息给所有客户端"""
-        if not self.active_connections:
-            logger.debug("📭 No active connections for broadcast")
-            return False
-            
-        message_text = json.dumps(message)
-        disconnected_clients = []
-        sent_count = 0
-        
-        # 如果是主题消息，只发送给订阅了该主题的客户端
-        if message.get('op') == 'publish' and 'topic' in message:
-            topic = message['topic']
-            for client_id, websocket in self.active_connections.items():
-                if client_id in self.connection_info:
-                    client_info = self.connection_info[client_id]
-                    if topic in client_info.subscribed_topics:
-                        try:
-                            await websocket.send_text(message_text)
-                            client_info.message_count += 1
-                            sent_count += 1
-                            logger.debug(f"📤 Sent message to {client_id} for topic {topic}")
-                        except Exception as e:
-                            logger.error(f"Failed to send to {client_id}: {e}")
-                            disconnected_clients.append(client_id)
-        else:
-            # 非主题消息广播给所有客户端
-            for client_id, websocket in self.active_connections.items():
-                try:
-                    await websocket.send_text(message_text)
-                    self.connection_info[client_id].message_count += 1
-                    sent_count += 1
-                except Exception as e:
-                    logger.error(f"Failed to broadcast to {client_id}: {e}")
-                    disconnected_clients.append(client_id)
-                
-        # 清理断开的连接
-        for client_id in disconnected_clients:
-            self.disconnect(client_id)
-            
-        logger.debug(f"📊 Broadcast sent to {sent_count} clients, {len(disconnected_clients)} disconnected")
-        return sent_count > 0
-
 class RosbridgeService:
     """Rosbridge 核心服务"""
     
     def __init__(self, settings: Settings):
         self.settings = settings
         self.connection_manager = ConnectionManager(settings.max_connections)
+        self._converter = MessageConverter(self)
+        self._freq = FrequencyTracker()
+        self._ws_handler = WebSocketRequestHandler(self)
         self.node: Optional[Node] = None
         self.subscribers = {}
         self.publishers = {}
@@ -131,12 +51,6 @@ class RosbridgeService:
         self.topic_info_cache = {}
         self.node_info_cache = {}
         self._message_counts = {}
-        self._topic_message_times = defaultdict(lambda: deque(maxlen=200))
-        self._topic_last_message_times = {}
-        self._topic_observation_started_at = {}
-        self._sampled_topic_frequencies = {}
-        self._frequency_sampled_at = None
-        self._frequency_sample_lock = asyncio.Lock()
 
         # 异步消息处理队列
         self.message_queue = None
@@ -223,63 +137,9 @@ class RosbridgeService:
             self.connection_manager.disconnect(client_id)
             
     async def _handle_message(self, client_id: str, message: dict):
-        """处理收到的消息"""
-        try:
-            op = message.get('op')
-            request_id = message.get('id')  # 获取请求ID
-            
-            if op == 'ping':
-                await self.connection_manager.send_to_client(client_id, {
-                    'op': 'pong',
-                    'id': request_id
-                })
-            elif op == 'subscribe':
-                await self._handle_subscribe(client_id, message)
-            elif op == 'unsubscribe':
-                await self._handle_unsubscribe(client_id, message)
-            elif op == 'advertise':
-                await self._handle_advertise(message)
-            elif op == 'unadvertise':
-                await self._handle_unadvertise(message)
-            elif op == 'publish':
-                await self._handle_publish(message)
-            elif op == 'get_topics':
-                await self._handle_get_topics(client_id, request_id)
-            elif op == 'get_nodes':
-                await self._handle_get_nodes(client_id, request_id)
-            elif op == 'get_topic_types':
-                await self._handle_get_topic_types(client_id, request_id)
-            elif op == 'get_topic_frequencies':
-                await self._handle_get_topic_frequencies(client_id, request_id)
-            elif op == 'get_system_status':
-                await self._handle_get_system_status(client_id, request_id)
-            elif op == 'get_services':
-                await self._handle_get_services(client_id, request_id)
-            elif op == 'get_service_types':
-                await self._handle_get_service_types(client_id, request_id)
-            elif op == 'get_params':
-                await self._handle_get_params(client_id, request_id)
-            else:
-                logger.warning(f"Unknown operation: {op}")
-                # 发送错误响应
-                if request_id:
-                    await self.connection_manager.send_to_client(client_id, {
-                        'op': 'error',
-                        'id': request_id,
-                        'error': f'Unknown operation: {op}'
-                    })
-                
-        except Exception as e:
-            logger.error(f"Error handling message from {client_id}: {e}")
-            # 发送错误响应
-            request_id = message.get('id')
-            if request_id:
-                await self.connection_manager.send_to_client(client_id, {
-                    'op': 'error',
-                    'id': request_id,
-                    'error': str(e)
-                })
-            
+        """处理收到的消息（委托到 WebSocketRequestHandler）"""
+        await self._ws_handler.handle_operation(client_id, message)
+
     async def _handle_subscribe(self, client_id: str, message: dict):
         """处理订阅请求"""
         topic = message.get('topic')
@@ -338,121 +198,11 @@ class RosbridgeService:
         for topic in topics:
             await self._stop_ros_subscription_if_unused(topic)
             
-    def _get_message_class(self, msg_type: str):
-        """获取消息类型对应的类"""
-        # 消息类型注册表
-        message_type_registry = {
-            # 标准消息类型
-            'std_msgs/msg/String': ('std_msgs.msg', 'String'),
-            'std_msgs/msg/Float64': ('std_msgs.msg', 'Float64'),
-            'std_msgs/msg/Float32': ('std_msgs.msg', 'Float32'),
-            'std_msgs/msg/Int32': ('std_msgs.msg', 'Int32'),
-            'std_msgs/msg/Bool': ('std_msgs.msg', 'Bool'),
-            
-            # 传感器消息类型
-            'sensor_msgs/msg/PointCloud2': ('sensor_msgs.msg', 'PointCloud2'),
-            'sensor_msgs/msg/LaserScan': ('sensor_msgs.msg', 'LaserScan'),
-            'sensor_msgs/msg/Image': ('sensor_msgs.msg', 'Image'),
-            'sensor_msgs/msg/CompressedImage': ('sensor_msgs.msg', 'CompressedImage'),
-            'sensor_msgs/msg/CameraInfo': ('sensor_msgs.msg', 'CameraInfo'),
-            'sensor_msgs/msg/Imu': ('sensor_msgs.msg', 'Imu'),
-            'sensor_msgs/msg/JointState': ('sensor_msgs.msg', 'JointState'),
-            'sensor_msgs/msg/PointField': ('sensor_msgs.msg', 'PointField'),
-            'sensor_msgs/msg/NavSatFix': ('sensor_msgs.msg', 'NavSatFix'),
-            'sensor_msgs/msg/NavSatStatus': ('sensor_msgs.msg', 'NavSatStatus'),
-            
-            # 几何消息类型
-            'geometry_msgs/msg/Twist': ('geometry_msgs.msg', 'Twist'),
-            'geometry_msgs/msg/Pose': ('geometry_msgs.msg', 'Pose'),
-            'geometry_msgs/msg/PoseStamped': ('geometry_msgs.msg', 'PoseStamped'),
-            'geometry_msgs/msg/PoseWithCovariance': ('geometry_msgs.msg', 'PoseWithCovariance'),
-            'geometry_msgs/msg/PoseWithCovarianceStamped': ('geometry_msgs.msg', 'PoseWithCovarianceStamped'),
-            'geometry_msgs/msg/Point': ('geometry_msgs.msg', 'Point'),
-            'geometry_msgs/msg/Vector3': ('geometry_msgs.msg', 'Vector3'),
-            'geometry_msgs/msg/Quaternion': ('geometry_msgs.msg', 'Quaternion'),
-            'geometry_msgs/msg/Transform': ('geometry_msgs.msg', 'Transform'),
-            'geometry_msgs/msg/TransformStamped': ('geometry_msgs.msg', 'TransformStamped'),
-            
-            # 导航消息类型
-            'nav_msgs/msg/OccupancyGrid': ('nav_msgs.msg', 'OccupancyGrid'),
-            'nav_msgs/msg/Path': ('nav_msgs.msg', 'Path'),
-            'nav_msgs/msg/Odometry': ('nav_msgs.msg', 'Odometry'),
-            'nav_msgs/msg/MapMetaData': ('nav_msgs.msg', 'MapMetaData'),
-            'nav_msgs/msg/GridCells': ('nav_msgs.msg', 'GridCells'),
-
-            # GPS和导航
-            'sensor_msgs/msg/NavSatFix': ('sensor_msgs.msg', 'NavSatFix'),
-            'sensor_msgs/msg/NavSatStatus': ('sensor_msgs.msg', 'NavSatStatus'),
-            
-            # 可视化消息类型
-            'visualization_msgs/msg/Marker': ('visualization_msgs.msg', 'Marker'),
-            'visualization_msgs/msg/MarkerArray': ('visualization_msgs.msg', 'MarkerArray'),
-            'visualization_msgs/msg/InteractiveMarker': ('visualization_msgs.msg', 'InteractiveMarker'),
-            'visualization_msgs/msg/InteractiveMarkerUpdate': ('visualization_msgs.msg', 'InteractiveMarkerUpdate'),
-            
-            # TF和诊断消息
-            'tf2_msgs/msg/TFMessage': ('tf2_msgs.msg', 'TFMessage'),
-            'diagnostic_msgs/msg/DiagnosticArray': ('diagnostic_msgs.msg', 'DiagnosticArray'),
-            
-            # 轨迹消息
-            'trajectory_msgs/msg/JointTrajectory': ('trajectory_msgs.msg', 'JointTrajectory'),
-            'trajectory_msgs/msg/MultiDOFJointTrajectory': ('trajectory_msgs.msg', 'MultiDOFJointTrajectory'),
-
-            # Action和状态消息
-            'actionlib_msgs/msg/GoalStatus': ('actionlib_msgs.msg', 'GoalStatus'),
-            'rosgraph_msgs/msg/Log': ('rosgraph_msgs.msg', 'Log'),
-        }
-        
-        # 可选的消息类型（可能不存在的包）
-        optional_message_types = {
-            'move_base_msgs/msg/MoveBaseAction': ('move_base_msgs.msg', 'MoveBaseAction'),
-            'costmap_2d/msg/VoxelGrid': ('costmap_2d.msg', 'VoxelGrid'),
-            'map_msgs/msg/OccupancyGridUpdate': ('map_msgs.msg', 'OccupancyGridUpdate'),
-            'gps_msgs/msg/GPSStatus': ('gps_msgs.msg', 'GPSStatus'),
-            'gps_msgs/msg/GPSFix': ('gps_msgs.msg', 'GPSFix'),
-        }
-        
-        if msg_type in message_type_registry:
-            module_name, class_name = message_type_registry[msg_type]
-            try:
-                module = __import__(module_name, fromlist=[class_name])
-                return getattr(module, class_name)
-            except ImportError as e:
-                logger.error(f"Failed to import {module_name}.{class_name}: {e}")
-                return None
-                
-        elif msg_type in optional_message_types:
-            module_name, class_name = optional_message_types[msg_type]
-            try:
-                module = __import__(module_name, fromlist=[class_name])
-                return getattr(module, class_name)
-            except ImportError:
-                logger.warning(f"{module_name} not available, cannot use message type {msg_type}")
-                return None
-        else:
-            try:
-                package_name, namespace, class_name = msg_type.split('/')
-            except ValueError:
-                logger.warning(f"Invalid ROS message type format: {msg_type}")
-                return None
-
-            if namespace != 'msg':
-                logger.warning(f"Unsupported ROS interface namespace for {msg_type}")
-                return None
-
-            module_name = f"{package_name}.msg"
-            try:
-                module = importlib.import_module(module_name)
-                return getattr(module, class_name)
-            except (ImportError, AttributeError) as e:
-                logger.warning(f"Cannot import message type {msg_type} from {module_name}: {e}")
-            return None
-
     async def _create_subscriber(self, topic: str, msg_type: str):
         """创建 ROS2 订阅者"""
         try:
             # 获取消息类
-            msg_class = self._get_message_class(msg_type)
+            msg_class = get_message_class(msg_type)
             
             if msg_class is None:
                 logger.error(
@@ -559,7 +309,7 @@ class RosbridgeService:
                 )
 
                 self.subscribers[topic] = subscriber
-                self._topic_observation_started_at[topic] = time.time()
+                self._freq.mark_observation_start(topic)
                 logger.info(f"✅ Successfully created subscriber for {topic}")
                 logger.info(f"🎯 QoS: {reliability_name} + {durability_name} + {history_name} + depth={qos_profile.depth}")
 
@@ -668,8 +418,7 @@ class RosbridgeService:
                     if topic not in self._message_counts:
                         self._message_counts[topic] = 0
                     self._message_counts[topic] += 1
-                    self._topic_message_times[topic].append(timestamp)
-                    self._topic_last_message_times[topic] = timestamp
+                    self._freq.record_message(topic, timestamp)
 
                     # 只记录第一条消息，减少日志输出
                     if self._message_counts[topic] == 1:
@@ -727,7 +476,7 @@ class RosbridgeService:
                 return
 
             # 转换消息为字典格式
-            msg_dict = self._message_to_dict(msg)
+            msg_dict = self._converter.to_dict(msg)
 
             # 记录消息大小信息
             if 'data' in msg_dict:
@@ -774,253 +523,14 @@ class RosbridgeService:
         except Exception as e:
             logger.error(f"❌ Error processing message from {topic}: {e}", exc_info=True)
             
-    def _process_pointcloud_data(self, pointcloud_msg) -> dict:
-        """处理点云数据，保留完整 PointCloud2 二进制数据"""
-        try:
-            import struct
-            import numpy as np
-            from sensor_msgs.msg import PointField
-            
-            # 解析点云字段
-            fields = []
-            for field in pointcloud_msg.fields:
-                fields.append({
-                    'name': field.name,
-                    'offset': field.offset,
-                    'datatype': field.datatype,
-                    'count': field.count
-                })
-            
-            # 基本信息
-            result = {
-                'header': self._message_to_dict(pointcloud_msg.header),
-                'height': pointcloud_msg.height,
-                'width': pointcloud_msg.width,
-                'fields': fields,
-                'is_bigendian': pointcloud_msg.is_bigendian,
-                'point_step': pointcloud_msg.point_step,
-                'row_step': pointcloud_msg.row_step,
-                'is_dense': pointcloud_msg.is_dense
-            }
-            
-            # 处理点云数据
-            if len(pointcloud_msg.data) > 0:
-                logger.debug(f"Processing pointcloud data - Total bytes: {len(pointcloud_msg.data)}, Point step: {pointcloud_msg.point_step}")
-                
-                total_points = pointcloud_msg.width * pointcloud_msg.height
-                
-                logger.debug(f"Pointcloud info - Width: {pointcloud_msg.width}, Height: {pointcloud_msg.height}, Total points: {total_points}")
-
-                # 对于大型数据使用Base64编码，小型数据直接传输。这里不做点采样，避免地图在前端显示成被截断/抽稀。
-                if len(pointcloud_msg.data) > 10000:  # 大于10KB使用Base64
-                    import base64
-                    result['data'] = base64.b64encode(pointcloud_msg.data).decode('ascii')
-                    result['data_encoding'] = 'base64'
-                    logger.debug(f"Full pointcloud transmission - {len(pointcloud_msg.data)} bytes, {total_points} points, Base64 encoded")
-                else:
-                    result['data'] = list(pointcloud_msg.data)
-                    result['data_encoding'] = 'array'
-                    logger.debug(f"Full pointcloud transmission - {len(pointcloud_msg.data)} bytes, {total_points} points, as array")
-
-                result['sampled'] = False
-                result['original_points'] = total_points
-                result['sample_step'] = 1
-            else:
-                result['data'] = []
-                result['data_encoding'] = 'array'
-                result['sampled'] = False
-                logger.warning("Pointcloud data is empty")
-                
-            return result
-            
-        except Exception as e:
-            logger.error(f"Failed to process pointcloud data: {e}")
-            return {
-                'header': self._message_to_dict(pointcloud_msg.header),
-                'error': str(e),
-                'data': []
-            }
-
-    def _process_image_data(self, image_msg) -> dict:
-        """处理图像数据，进行压缩优化"""
-        try:
-            result = {
-                'header': self._message_to_dict(image_msg.header),
-                'height': image_msg.height,
-                'width': image_msg.width,
-                'encoding': image_msg.encoding,
-                'is_bigendian': image_msg.is_bigendian,
-                'step': image_msg.step
-            }
-            
-            # 检查图像大小，如果太大则进行缩放
-            max_pixels = 640 * 480  # 最大像素数
-            current_pixels = image_msg.height * image_msg.width
-            
-            if current_pixels > max_pixels:
-                # 计算缩放比例
-                scale_factor = (max_pixels / current_pixels) ** 0.5
-                new_height = int(image_msg.height * scale_factor)
-                new_width = int(image_msg.width * scale_factor)
-                
-                logger.info(f"Scaling image: {image_msg.width}x{image_msg.height} -> {new_width}x{new_height}")
-                
-                result['scaled'] = True
-                result['original_width'] = image_msg.width
-                result['original_height'] = image_msg.height
-                result['width'] = new_width
-                result['height'] = new_height
-                
-                # 这里可以添加实际的图像缩放逻辑
-                # 为了简化，我们暂时只记录元数据
-                result['data'] = []  # 实际实现中需要缩放后的图像数据
-            else:
-                result['data'] = list(image_msg.data)
-                result['scaled'] = False
-                
-            return result
-            
-        except Exception as e:
-            logger.error(f"Failed to process image data: {e}")
-            return {
-                'header': self._message_to_dict(image_msg.header),
-                'error': str(e),
-                'data': []
-            }
-
-    def _process_compressed_image_data(self, image_msg) -> dict:
-        """处理压缩图像数据"""
-        try:
-            result = {
-                'header': self._message_to_dict(image_msg.header),
-                'format': image_msg.format,
-                'compressed': True
-            }
-
-            if len(image_msg.data) > 10000:
-                import base64
-                result['data'] = base64.b64encode(image_msg.data).decode('ascii')
-                result['data_encoding'] = 'base64'
-            else:
-                result['data'] = list(image_msg.data)
-                result['data_encoding'] = 'array'
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Failed to process compressed image data: {e}")
-            return {
-                'header': self._message_to_dict(image_msg.header),
-                'error': str(e),
-                'data': []
-            }
-
     def _message_to_dict(self, msg) -> dict:
-        """将 ROS 消息转换为字典"""
-        try:
-            import numpy as np
-            from builtin_interfaces.msg import Time, Duration
-            from geometry_msgs.msg import Point, Quaternion, Pose, PoseStamped, PoseWithCovariance, PoseWithCovarianceStamped, Transform, TransformStamped
-            from nav_msgs.msg import Odometry
-            from std_msgs.msg import Header
-            from sensor_msgs.msg import PointCloud2, Image, CompressedImage
-            
-            # 特殊处理点云数据
-            if isinstance(msg, PointCloud2):
-                return self._process_pointcloud_data(msg)
-            
-            # 特殊处理图像数据
-            if isinstance(msg, Image):
-                return self._process_image_data(msg)
+        """委托到 MessageConverter（保留以兼容测试）"""
+        return self._converter.to_dict(msg)
 
-            # 特殊处理压缩图像数据
-            if isinstance(msg, CompressedImage):
-                return self._process_compressed_image_data(msg)
-            
-            if hasattr(msg, '__slots__'):
-                result = {}
-                for slot in msg.__slots__:
-                    value = getattr(msg, slot)
-                    field_name = slot.removeprefix('_')
-                    
-                    # 处理时间类型
-                    if isinstance(value, Time):
-                        result[field_name] = {
-                            'sec': int(value.sec),
-                            'nanosec': int(value.nanosec)
-                        }
-                    elif isinstance(value, Duration):
-                        result[field_name] = {
-                            'sec': int(value.sec),
-                            'nanosec': int(value.nanosec)
-                        }
-                    # 处理Header
-                    elif isinstance(value, Header):
-                        result[field_name] = {
-                            'stamp': {
-                                'sec': int(value.stamp.sec),
-                                'nanosec': int(value.stamp.nanosec)
-                            },
-                            'frame_id': str(value.frame_id)
-                        }
-                    # 处理几何类型
-                    elif isinstance(value, Point):
-                        result[field_name] = {'x': float(value.x), 'y': float(value.y), 'z': float(value.z)}
-                    elif isinstance(value, Quaternion):
-                        result[field_name] = {'x': float(value.x), 'y': float(value.y), 'z': float(value.z), 'w': float(value.w)}
-                    elif isinstance(value, Pose):
-                        result[field_name] = {
-                            'position': {'x': float(value.position.x), 'y': float(value.position.y), 'z': float(value.position.z)},
-                            'orientation': {'x': float(value.orientation.x), 'y': float(value.orientation.y), 'z': float(value.orientation.z), 'w': float(value.orientation.w)}
-                        }
-                    elif isinstance(value, PoseWithCovariance):
-                        result[field_name] = {
-                            'pose': {
-                                'position': {'x': float(value.pose.position.x), 'y': float(value.pose.position.y), 'z': float(value.pose.position.z)},
-                                'orientation': {'x': float(value.pose.orientation.x), 'y': float(value.pose.orientation.y), 'z': float(value.pose.orientation.z), 'w': float(value.pose.orientation.w)}
-                            },
-                            'covariance': [float(c) for c in value.covariance] if hasattr(value, 'covariance') else []
-                        }
-                    # 处理numpy数组
-                    elif isinstance(value, np.ndarray):
-                        if value.dtype == np.uint8:
-                            result[field_name] = value.tolist()
-                        else:
-                            result[field_name] = value.astype(float).tolist()
-                    # 处理bytes类型（点云数据等）
-                    elif isinstance(value, bytes):
-                        # 对于大型bytes数据，使用Base64编码
-                        if len(value) > 1000:
-                            import base64
-                            result[field_name] = base64.b64encode(value).decode('ascii')
-                            result[f"{field_name}_encoding"] = "base64"
-                        else:
-                            result[field_name] = list(value)  # 小数据直接转换为数组
-                    # 处理嵌套消息
-                    elif hasattr(value, '__slots__'):
-                        result[field_name] = self._message_to_dict(value)
-                    # 处理列表
-                    elif isinstance(value, list):
-                        result[field_name] = [
-                            self._message_to_dict(item) if hasattr(item, '__slots__') else 
-                            float(item) if isinstance(item, (int, float, np.number)) else 
-                            item
-                            for item in value
-                        ]
-                    # 处理基本数值类型
-                    elif isinstance(value, (int, float, np.number)):
-                        result[field_name] = float(value) if isinstance(value, (float, np.floating)) else int(value)
-                    # 处理字符串和其他类型
-                    else:
-                        result[field_name] = str(value) if value is not None else None
-                        
-                return result
-            else:
-                return {"data": str(msg)}
-        except Exception as e:
-            logger.error(f"Failed to convert message to dict: {e}")
-            return {"error": str(e), "message_type": type(msg).__name__}
-    
+    def _dict_to_message(self, msg_class, data: dict):
+        """委托到 MessageConverter（保留以兼容测试）"""
+        return self._converter.from_dict(msg_class, data)
+
     # API 方法实现
     def _get_topics_from_cli_sync(self) -> List[TopicInfo]:
         """Read the live ROS graph using the ros2 CLI."""
@@ -1077,132 +587,6 @@ class RosbridgeService:
             return ''
         return f"/{namespace}/{node_name}" if namespace else f"/{node_name}"
 
-    def _topic_frequency(self, topic_name: str, now: Optional[float] = None) -> Optional[float]:
-        current_time = time.time() if now is None else now
-        timestamps = self._topic_message_times.get(topic_name)
-        if timestamps:
-            while timestamps and current_time - timestamps[0] > 5.0:
-                timestamps.popleft()
-
-        if timestamps and len(timestamps) >= 2:
-            duration = timestamps[-1] - timestamps[0]
-            if duration > 0:
-                return (len(timestamps) - 1) / duration
-
-        observation_started_at = self._topic_observation_started_at.get(topic_name)
-        if (
-            topic_name in self.subscribers
-            and observation_started_at is not None
-            and current_time - observation_started_at >= 5.0
-        ):
-            return 0.0
-
-        if (
-            self._frequency_sampled_at is not None
-            and current_time - self._frequency_sampled_at <= 5.0
-        ):
-            return self._sampled_topic_frequencies.get(topic_name)
-        return None
-
-    @staticmethod
-    def _frequency_from_samples(timestamps) -> Optional[float]:
-        if len(timestamps) < 2:
-            return None
-        duration = timestamps[-1] - timestamps[0]
-        if duration <= 0:
-            return None
-        return (len(timestamps) - 1) / duration
-
-    @staticmethod
-    def _frequency_clock() -> float:
-        return time.monotonic()
-
-    async def _sample_topic_frequencies(
-        self,
-        sample_duration: float
-    ) -> Dict[str, Optional[float]]:
-        """Temporarily subscribe to published topics and measure callback rates."""
-        if not self.node:
-            return {}
-
-        duration = max(0.5, min(float(sample_duration), 5.0))
-        async with self._frequency_sample_lock:
-            topics = self.node.get_topic_names_and_types()
-            frequencies = {topic_name: None for topic_name, _ in topics}
-            sample_times = defaultdict(lambda: deque(maxlen=1000))
-            monitored_topics = set()
-            monitor_subscriptions = []
-
-            try:
-                for topic_name, message_types in topics:
-                    if not message_types:
-                        continue
-
-                    try:
-                        publisher_info = self.node.get_publishers_info_by_topic(topic_name)
-                    except Exception as e:
-                        logger.debug(f"Could not inspect publishers for {topic_name}: {e}")
-                        continue
-
-                    if not publisher_info:
-                        frequencies[topic_name] = 0.0
-                        continue
-
-                    msg_class = self._get_message_class(message_types[0])
-                    if msg_class is None:
-                        logger.warning(
-                            f"Cannot sample frequency for {topic_name}: unavailable type {message_types[0]}"
-                        )
-                        continue
-
-                    def callback(_msg, measured_topic=topic_name):
-                        sample_times[measured_topic].append(self._frequency_clock())
-                        self._topic_last_message_times[measured_topic] = time.time()
-
-                    # BEST_EFFORT + VOLATILE can receive both common sensor QoS and
-                    # reliable publishers. raw=True avoids deserializing large point clouds.
-                    qos_profile = QoSProfile(
-                        reliability=QoSReliabilityPolicy.BEST_EFFORT,
-                        durability=QoSDurabilityPolicy.VOLATILE,
-                        history=QoSHistoryPolicy.KEEP_LAST,
-                        depth=1,
-                    )
-
-                    try:
-                        subscription = self.node.create_subscription(
-                            msg_class,
-                            topic_name,
-                            callback,
-                            qos_profile,
-                            raw=True,
-                        )
-                        monitor_subscriptions.append(subscription)
-                        monitored_topics.add(topic_name)
-                    except Exception as e:
-                        logger.warning(f"Could not monitor frequency for {topic_name}: {e}")
-
-                await asyncio.sleep(duration)
-            finally:
-                for subscription in monitor_subscriptions:
-                    try:
-                        self.node.destroy_subscription(subscription)
-                    except Exception as e:
-                        logger.debug(f"Could not destroy frequency monitor: {e}")
-
-            for topic_name in monitored_topics:
-                timestamps = sample_times[topic_name]
-                frequencies[topic_name] = (
-                    0.0 if not timestamps else self._frequency_from_samples(timestamps)
-                )
-
-            sampled_at = time.time()
-            self._sampled_topic_frequencies = frequencies.copy()
-            self._frequency_sampled_at = sampled_at
-            logger.info(
-                f"Sampled frequencies for {len(monitored_topics)} topics over {duration:.1f}s"
-            )
-            return frequencies
-
     def _enrich_topic_info(self, topic: TopicInfo, now: float) -> TopicInfo:
         if self.node:
             try:
@@ -1221,8 +605,8 @@ class RosbridgeService:
             except Exception as e:
                 logger.debug(f"Could not get subscribers for {topic.name}: {e}")
 
-        topic.frequency = self._topic_frequency(topic.name, now)
-        last_message_time = self._topic_last_message_times.get(topic.name)
+        topic.frequency = self._freq.get_frequency(topic.name, topic.name in self.subscribers, now)
+        last_message_time = self._freq.get_last_message_time(topic.name)
         topic.last_message_time = (
             datetime.fromtimestamp(last_message_time, tz=timezone.utc)
             if last_message_time is not None
@@ -1345,8 +729,7 @@ class RosbridgeService:
             subscriber = self.subscribers.pop(topic_name, None)
             if subscriber and self.node:
                 self.node.destroy_subscription(subscriber)
-            self._topic_message_times.pop(topic_name, None)
-            self._topic_observation_started_at.pop(topic_name, None)
+            self._freq.cleanup_topic(topic_name)
             self._message_counts.pop(topic_name, None)
             return True
         except Exception as e:
@@ -1380,7 +763,7 @@ class RosbridgeService:
             if not publisher_record:
                 return False
 
-            ros_msg = self._dict_to_message(publisher_record['msg_class'], message)
+            ros_msg = self._converter.from_dict(publisher_record['msg_class'], message)
             if ros_msg is None:
                 return False
 
@@ -1468,7 +851,7 @@ class RosbridgeService:
             return {}
 
         if sample_duration is not None:
-            return await self._sample_topic_frequencies(sample_duration)
+            return await self._freq.sample_frequencies(self.node, sample_duration)
             
         try:
             frequencies = {}
@@ -1477,7 +860,7 @@ class RosbridgeService:
             
             for topic_name, _ in topic_names_and_types:
                 try:
-                    frequencies[topic_name] = self._topic_frequency(topic_name, now)
+                    frequencies[topic_name] = self._freq.get_frequency(topic_name, topic_name in self.subscribers, now)
                         
                 except Exception as e:
                     logger.warning(f"Could not get frequency for topic {topic_name}: {e}")
@@ -1611,83 +994,6 @@ class RosbridgeService:
             logger.debug(f"Could not read CPU temperature from thermal zone: {e}")
 
         return None
-    
-    async def _handle_unsubscribe(self, client_id: str, message: dict):
-        """处理取消订阅"""
-        topic = message.get('topic')
-        if not topic:
-            return
-            
-        # 从客户端订阅列表移除
-        info = self.connection_manager.connection_info.get(client_id)
-        if info and topic in info.subscribed_topics:
-            info.subscribed_topics.remove(topic)
-            await self._stop_ros_subscription_if_unused(topic)
-    
-    async def _handle_advertise(self, message: dict):
-        """处理前端声明发布者"""
-        topic = message.get('topic')
-        msg_type = message.get('type')
-        if not topic or not msg_type:
-            logger.error("❌ Invalid advertise request: missing topic or type")
-            return
-
-        try:
-            await self._ensure_publisher(topic, msg_type)
-            logger.info(f"✅ Advertised publisher for {topic} ({msg_type})")
-        except Exception as e:
-            logger.error(f"❌ Failed to advertise {topic}: {e}")
-
-    async def _handle_unadvertise(self, message: dict):
-        """处理前端取消发布者"""
-        topic = message.get('topic')
-        if not topic:
-            return
-        try:
-            if topic in self.publishers:
-                try:
-                    # rclpy Publisher 无显式销毁方法，随节点销毁；这里只移除引用
-                    del self.publishers[topic]
-                except Exception as e:
-                    logger.debug(f"Error removing publisher ref for {topic}: {e}")
-            logger.info(f"🗑️ Unadvertised publisher for {topic}")
-        except Exception as e:
-            logger.error(f"Failed to unadvertise {topic}: {e}")
-
-    async def _handle_publish(self, message: dict):
-        """处理发布消息"""
-        topic = message.get('topic')
-        msg_data = message.get('msg')
-        msg_type = message.get('type')
-
-        if not topic or msg_data is None:
-            logger.error("❌ Invalid publish: missing topic or msg")
-            return
-
-        try:
-            # 确保publisher存在（需要消息类型）
-            if topic not in self.publishers:
-                if not msg_type:
-                    logger.error(f"❌ Publish to {topic} without prior advertise and no type provided")
-                    return
-                await self._ensure_publisher(topic, msg_type)
-
-            publisher_record = self.publishers.get(topic)
-            if not publisher_record:
-                logger.error(f"❌ Publisher for {topic} not available")
-                return
-
-            msg_class = publisher_record['msg_class']
-            ros_msg = self._dict_to_message(msg_class, msg_data)
-            if ros_msg is None:
-                logger.error(f"❌ Failed to convert message for {topic} to {msg_class.__name__}")
-                return
-
-            publisher = publisher_record['publisher']
-            publisher.publish(ros_msg)
-            logger.info(f"📤 Published {msg_class.__name__} to {topic}")
-        except Exception as e:
-            logger.error(f"❌ Error publishing to {topic}: {e}", exc_info=True)
 
     async def _ensure_publisher(self, topic: str, msg_type: str):
         """创建或返回已存在的Publisher"""
@@ -1697,7 +1003,7 @@ class RosbridgeService:
         if topic in self.publishers:
             return
 
-        msg_class = self._get_message_class(msg_type)
+        msg_class = get_message_class(msg_type)
         if msg_class is None:
             raise RuntimeError(f"Unsupported message type: {msg_type}")
 
@@ -1724,235 +1030,3 @@ class RosbridgeService:
             'msg_type': msg_type
         }
         logger.info(f"🆕 Created publisher for {topic} ({msg_type})")
-
-    def _dict_to_message(self, msg_class, data: dict):
-        """将字典递归转换为ROS消息实例（按公开属性名赋值，兼容私有__slots__）。"""
-        try:
-            msg = msg_class()
-
-            def assign_by_public_fields(obj, value_dict):
-                if not isinstance(value_dict, dict):
-                    return
-                for key, val in value_dict.items():
-                    if not hasattr(obj, key):
-                        continue
-                    current_attr = getattr(obj, key)
-
-                    # 嵌套消息对象
-                    if hasattr(current_attr, '__slots__') and isinstance(val, dict):
-                        assign_by_public_fields(current_attr, val)
-                        continue
-
-                    # 若需要新建子对象（极少情况）
-                    if isinstance(val, dict) and hasattr(type(current_attr), '__slots__'):
-                        try:
-                            sub = type(current_attr)()
-                            assign_by_public_fields(sub, val)
-                            setattr(obj, key, sub)
-                            continue
-                        except Exception:
-                            pass
-
-                    # 列表/数组字段（如covariance）
-                    if isinstance(val, list):
-                        # 特殊处理协方差：必须是长度36的float序列
-                        if key == 'covariance':
-                            floats = [float(x) for x in val][:36]
-                            if len(floats) < 36:
-                                floats += [0.0] * (36 - len(floats))
-                            try:
-                                setattr(obj, key, floats)
-                            except Exception:
-                                # 最后兜底再次尝试直接设置list
-                                setattr(obj, key, floats)
-                            continue
-
-                        # 其他列表，尽量转float（数值型）后设置
-                        try:
-                            coerced = [float(x) if isinstance(x, (int, float)) else x for x in val]
-                            setattr(obj, key, coerced)
-                        except Exception:
-                            setattr(obj, key, val)
-                        continue
-
-                    # 基本类型
-                    try:
-                        if isinstance(current_attr, float) and isinstance(val, (int, float)):
-                            val = float(val)
-                        setattr(obj, key, val)
-                    except Exception:
-                        pass
-
-            # 顶层赋值（包含header/pose等）
-            assign_by_public_fields(msg, data)
-            return msg
-        except Exception as e:
-            logger.error(f"Failed to build message {msg_class.__name__}: {e}", exc_info=True)
-            return None
-    
-    async def _handle_get_topics(self, client_id: str, request_id: str = None):
-        """处理获取主题请求"""
-        try:
-            topics = await self.get_topics()
-            response = {
-                'op': 'get_topics_result',
-                'topics': jsonable_encoder(topics)
-            }
-            if request_id:
-                response['id'] = request_id
-            await self.connection_manager.send_to_client(client_id, response)
-            logger.info(f"Sent {len(topics)} topics to client {client_id}")
-        except Exception as e:
-            logger.error(f"Failed to handle get_topics for {client_id}: {e}")
-            if request_id:
-                await self.connection_manager.send_to_client(client_id, {
-                    'op': 'error',
-                    'id': request_id,
-                    'error': str(e)
-                })
-    
-    async def _handle_get_nodes(self, client_id: str, request_id: str = None):
-        """处理获取节点请求"""
-        try:
-            nodes = await self.get_nodes()
-            response = {
-                'op': 'get_nodes_result', 
-                'nodes': [node.dict() for node in nodes]
-            }
-            if request_id:
-                response['id'] = request_id
-            await self.connection_manager.send_to_client(client_id, response)
-            logger.info(f"Sent {len(nodes)} nodes to client {client_id}")
-        except Exception as e:
-            logger.error(f"Failed to handle get_nodes for {client_id}: {e}")
-            if request_id:
-                await self.connection_manager.send_to_client(client_id, {
-                    'op': 'error',
-                    'id': request_id,
-                    'error': str(e)
-                })
-    
-    async def _handle_get_topic_types(self, client_id: str, request_id: str = None):
-        """处理获取主题类型请求"""
-        try:
-            topic_types = await self.get_topic_types()
-            response = {
-                'op': 'get_topic_types_result',
-                'topic_types': topic_types
-            }
-            if request_id:
-                response['id'] = request_id
-            await self.connection_manager.send_to_client(client_id, response)
-            logger.info(f"Sent topic types to client {client_id}")
-        except Exception as e:
-            logger.error(f"Failed to handle get_topic_types for {client_id}: {e}")
-            if request_id:
-                await self.connection_manager.send_to_client(client_id, {
-                    'op': 'error',
-                    'id': request_id,
-                    'error': str(e)
-                })
-    
-    async def _handle_get_topic_frequencies(self, client_id: str, request_id: str = None):
-        """处理获取主题频率请求"""
-        try:
-            frequencies = await self.get_topic_frequencies(sample_duration=1.0)
-            response = {
-                'op': 'get_topic_frequencies_result',
-                'frequencies': frequencies
-            }
-            if request_id:
-                response['id'] = request_id
-            await self.connection_manager.send_to_client(client_id, response)
-            logger.info(f"Sent topic frequencies to client {client_id}")
-        except Exception as e:
-            logger.error(f"Failed to handle get_topic_frequencies for {client_id}: {e}")
-            if request_id:
-                await self.connection_manager.send_to_client(client_id, {
-                    'op': 'error',
-                    'id': request_id,
-                    'error': str(e)
-                })
-    
-    async def _handle_get_system_status(self, client_id: str, request_id: str = None):
-        """Return host and ROS status through the existing WebSocket connection."""
-        try:
-            status = await self.get_system_status()
-            response = {
-                'op': 'get_system_status_result',
-                'status': jsonable_encoder(status)
-            }
-            if request_id:
-                response['id'] = request_id
-            await self.connection_manager.send_to_client(client_id, response)
-        except Exception as e:
-            logger.error(f"Failed to handle get_system_status for {client_id}: {e}")
-            if request_id:
-                await self.connection_manager.send_to_client(client_id, {
-                    'op': 'error',
-                    'id': request_id,
-                    'error': str(e)
-                })
-
-    async def _handle_get_services(self, client_id: str, request_id: str = None):
-        """处理获取服务请求"""
-        try:
-            services = await self.get_services()
-            response = {
-                'op': 'get_services_result',
-                'services': services
-            }
-            if request_id:
-                response['id'] = request_id
-            await self.connection_manager.send_to_client(client_id, response)
-            logger.info(f"Sent {len(services)} services to client {client_id}")
-        except Exception as e:
-            logger.error(f"Failed to handle get_services for {client_id}: {e}")
-            if request_id:
-                await self.connection_manager.send_to_client(client_id, {
-                    'op': 'error',
-                    'id': request_id,
-                    'error': str(e)
-                })
-    
-    async def _handle_get_service_types(self, client_id: str, request_id: str = None):
-        """处理获取服务类型请求"""
-        try:
-            service_types = await self.get_service_types()
-            response = {
-                'op': 'get_service_types_result',
-                'service_types': service_types
-            }
-            if request_id:
-                response['id'] = request_id
-            await self.connection_manager.send_to_client(client_id, response)
-            logger.info(f"Sent service types to client {client_id}")
-        except Exception as e:
-            logger.error(f"Failed to handle get_service_types for {client_id}: {e}")
-            if request_id:
-                await self.connection_manager.send_to_client(client_id, {
-                    'op': 'error',
-                    'id': request_id,
-                    'error': str(e)
-                })
-    
-    async def _handle_get_params(self, client_id: str, request_id: str = None):
-        """处理获取参数请求"""
-        try:
-            params = await self.get_params()
-            response = {
-                'op': 'get_params_result',
-                'params': params
-            }
-            if request_id:
-                response['id'] = request_id
-            await self.connection_manager.send_to_client(client_id, response)
-            logger.info(f"Sent {len(params)} params to client {client_id}")
-        except Exception as e:
-            logger.error(f"Failed to handle get_params for {client_id}: {e}")
-            if request_id:
-                await self.connection_manager.send_to_client(client_id, {
-                    'op': 'error',
-                    'id': request_id,
-                    'error': str(e)
-                })
