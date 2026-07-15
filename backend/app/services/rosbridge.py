@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import subprocess
+import uuid
 from typing import Dict, List, Optional, Any
 from collections import deque
 import time
@@ -177,7 +178,7 @@ class RosbridgeService:
             
     async def handle_websocket(self, websocket: WebSocket):
         """处理 WebSocket 连接"""
-        client_id = f"client_{int(time.time() * 1000)}"
+        client_id = self._new_client_id()
         
         if not await self.connection_manager.connect(websocket, client_id):
             return
@@ -194,6 +195,10 @@ class RosbridgeService:
         finally:
             await self._cleanup_client_subscriptions(client_id)
             self.connection_manager.disconnect(client_id)
+
+    @staticmethod
+    def _new_client_id() -> str:
+        return f"client_{uuid.uuid4().hex}"
             
     async def _handle_message(self, client_id: str, message: dict):
         """处理收到的消息（委托到 WebSocketRequestHandler）"""
@@ -611,7 +616,6 @@ class RosbridgeService:
             # 缓存消息
             self.message_cache.append({
                 'topic': topic,
-                'message': msg_dict,
                 'timestamp': time.time()
             })
 
