@@ -1,6 +1,6 @@
 # RVizWeb
 
-> Current release: `v1.1.1`
+> Current release: `v1.1.3`
 
 ![RVizWeb](img/1.png)
 
@@ -9,6 +9,13 @@
 [中文](./README.md)
 
 RVizWeb is a browser-based visualization frontend for ROS2, supporting point clouds, odometry, paths, markers, and more. It provides UAV pose display, desired target input, real-time data charts, and RViz-style Displays management. The project consists of a Vue 3 + Three.js frontend and a FastAPI + rclpy backend.
+
+## v1.1.3 Changes
+
+- Fixed RTSP sessions connecting without continuously refreshing the displayed video.
+- Fixed resize controls separating from the video and overlays becoming difficult to shrink after enlargement.
+- Added automatic recovery from temporary RTSP interruptions while keeping the last frame visible during retries.
+- Fixed session expiry during long playback and ensured FFmpeg processes are cleaned up when video closes, sessions expire, or the backend stops.
 
 ## Features
 
@@ -38,7 +45,8 @@ RVizWeb is a browser-based visualization frontend for ROS2, supporting point clo
   - Supports recording the 3D canvas at 30 FPS; click again to stop and download as WebM. Selects VP9, VP8, or plain WebM based on browser capabilities.
   - The RTSP tool follows the same popover interaction as System Status. Clicking it only opens connection settings and status; it does not create a video window.
   - Titleless, borderless video appears at its saved position only after FFmpeg successfully probes the first frame. Connection failures, timeouts, and sources without a video track produce a system message without an empty window.
-  - Drag the video itself to move it. Edit, reconnect, close, and lower-corner resize controls appear only on hover. FFmpeg converts RTSP to MJPEG while the playback URL contains only a short-lived session ID.
+  - Drag the video itself to move it. Resize is at the top left, close at the top right, reconnect at the bottom left, and settings at the bottom right; controls appear on hover.
+  - FFmpeg converts RTSP to browser-compatible MJPEG while the playback URL contains only a short-lived session ID. Temporary stalls reconnect automatically while preserving the last frame.
 - Point Cloud & Path Styles:
   - PointCloud2 supports per-topic `Points` or `Boxes` rendering with independent `Point Size` or `Box Size` controls.
   - `Boxes` uses instanced cubes for occupied voxel maps, while `Points` is intended for high-frequency, large point clouds.
