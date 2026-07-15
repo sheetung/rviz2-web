@@ -1,7 +1,5 @@
 # RVizWeb
 
-> Current release: `v1.1.4`
-
 ![RVizWeb](img/1.png)
 
 ![RVizWeb](img/2.png)
@@ -9,20 +7,6 @@
 [中文](./README.md)
 
 RVizWeb is a browser-based visualization frontend for ROS2, supporting point clouds, odometry, paths, markers, and more. It provides UAV pose display, desired target input, real-time data charts, and RViz-style Displays management. The project consists of a Vue 3 + Three.js frontend and a FastAPI + rclpy backend.
-
-## v1.1.4 Changes
-
-- RTSP video controls and borders now appear only while hovered or focused, reducing visual obstruction.
-- The built-in UAV model is hidden by default and can be enabled from the pose panel after selecting an Odom topic.
-- The model visibility setting is saved in `.rvizweb` and the model follows only the Odom topic bound in the pose panel.
-- Disabling the built-in model does not affect custom models rendered through Marker or MarkerArray topics.
-
-## v1.1.3 Changes
-
-- Fixed RTSP sessions connecting without continuously refreshing the displayed video.
-- Fixed resize controls separating from the video and overlays becoming difficult to shrink after enlargement.
-- Added automatic recovery from temporary RTSP interruptions while keeping the last frame visible during retries.
-- Fixed session expiry during long playback and ensured FFmpeg processes are cleaned up when video closes, sessions expire, or the backend stops.
 
 ## Features
 
