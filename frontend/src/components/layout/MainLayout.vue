@@ -206,7 +206,9 @@
             <GpsPanel
               :compact="true"
               :current-odom-topic="settingsSnapshot.position.odomTopic"
+              :show-robot-model="settingsSnapshot.position.showRobotModel"
               @odom-topic-change="onOdomTopicChange"
+              @robot-model-visible-change="onRobotModelVisibleChange"
             />
           </WorkbenchPanel>
           <div
@@ -459,6 +461,7 @@ export default {
       },
       position: {
         odomTopic: '',
+        showRobotModel: false,
         showTrajectory: true,
         trajectoryLength: 100
       },
@@ -893,14 +896,30 @@ export default {
       }
 
       settingsSnapshot.value.position.odomTopic = nextTopic
+      if (!nextTopic) {
+        settingsSnapshot.value.position.showRobotModel = false
+      }
+
+      scene3dRef.value?.setPositionOdomTopic?.(nextTopic)
+      scene3dRef.value?.setRobotModelVisible?.(
+        Boolean(nextTopic && settingsSnapshot.value.position.showRobotModel)
+      )
 
       if (nextTopic) {
         onTopicSubscribe(nextTopic, 'nav_msgs/msg/Odometry')
       }
     }
 
+    const onRobotModelVisibleChange = (visible) => {
+      onSettingsUpdate({
+        type: 'position',
+        showRobotModel: visible === true
+      })
+    }
+
     const onSettingsUpdate = (settings) => {
       console.log('设置更新:', settings)
+      let sceneSettings = settings
       if (settings.type === 'laser') {
         settingsSnapshot.value.laser.showLaserPoints = settings.showLaserPoints
         settingsSnapshot.value.laser.showLaserLines = settings.showLaserLines
@@ -916,8 +935,18 @@ export default {
         if (settings.showGrid !== undefined) settingsSnapshot.value.map.showMapGrid = settings.showGrid
         if (settings.showOrigin !== undefined) settingsSnapshot.value.map.showMapOrigin = settings.showOrigin
       } else if (settings.type === 'position') {
-        settingsSnapshot.value.position.showTrajectory = settings.showTrajectory
-        settingsSnapshot.value.position.trajectoryLength = settings.trajectoryLength
+        if (settings.showTrajectory !== undefined) {
+          settingsSnapshot.value.position.showTrajectory = settings.showTrajectory
+        }
+        if (settings.trajectoryLength !== undefined) {
+          settingsSnapshot.value.position.trajectoryLength = settings.trajectoryLength
+        }
+        if (settings.showRobotModel !== undefined) {
+          const showRobotModel = settings.showRobotModel === true &&
+            Boolean(settingsSnapshot.value.position.odomTopic)
+          settingsSnapshot.value.position.showRobotModel = showRobotModel
+          sceneSettings = { ...settings, showRobotModel }
+        }
       } else if (settings.type === 'trajectory') {
         settingsSnapshot.value.position.trajectoryLength = settings.trajectoryLength
       } else if (settings.type === 'scene') {
@@ -985,7 +1014,7 @@ export default {
         onGoalUpdate(settings.goal || settings)
       }
       if (scene3dRef.value && scene3dRef.value.updateSettings) {
-        scene3dRef.value.updateSettings(settings)
+        scene3dRef.value.updateSettings(sceneSettings)
       }
     }
 
@@ -1276,6 +1305,7 @@ export default {
       onMapFileChange,
       onMapFilesChange,
       onOdomTopicChange,
+      onRobotModelVisibleChange,
       onSettingsUpdate,
       onCameraReset,
       onViewPreset,

@@ -54,6 +54,8 @@ RVizWeb is a browser-based visualization frontend for ROS2, supporting point clo
   - MarkerArray supports color override and opacity; leaving color empty uses the message's own color.
 - UAV Pose:
   - Select an odom topic in the position panel as the UAV model pose source.
+  - The built-in UAV model is hidden by default. Enable it with the `Show UAV model` checkbox after selecting odom; the choice is saved in `.rvizweb`.
+  - Hiding the built-in model does not affect custom robot models provided through Marker or MarkerArray topics.
   - The current odom subscription is protected from Display hiding to prevent the UAV model from stopping.
 - Desired Target:
   - Enter target `Topic`, `X/Y/Z` below the position info.

@@ -19,6 +19,16 @@
       </el-select>
     </div>
 
+    <div class="model-toggle">
+      <el-checkbox
+        :model-value="showRobotModel"
+        :disabled="!selectedOdomTopic"
+        @change="onRobotModelVisibleChange"
+      >
+        显示无人机模型
+      </el-checkbox>
+    </div>
+
     <div class="position-info compact">
       <div class="position-labels">
         <span>X</span>
@@ -63,9 +73,13 @@ export default {
     currentOdomTopic: {
       type: String,
       default: ''
+    },
+    showRobotModel: {
+      type: Boolean,
+      default: false
     }
   },
-  emits: ['odom-topic-change'],
+  emits: ['odom-topic-change', 'robot-model-visible-change'],
   setup(props, { emit }) {
     const rosbridge = useRosbridge()
     const connectionStore = useConnectionStore()
@@ -292,6 +306,10 @@ export default {
       subscribeToPosition()
     }
 
+    const onRobotModelVisibleChange = (visible) => {
+      emit('robot-model-visible-change', visible === true)
+    }
+
     const stopConnectionWatch = watch(
       () => connectionStore.isConnected,
       (isConnected) => {
@@ -334,7 +352,8 @@ export default {
       positionStatusClass,
       positionStatusText,
       onOdomSelectVisibleChange,
-      onOdomTopicChange
+      onOdomTopicChange,
+      onRobotModelVisibleChange
     }
   }
 }
@@ -390,6 +409,19 @@ export default {
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.model-toggle {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 24px;
+  margin: -4px 0 6px;
+}
+
+.model-toggle :deep(.el-checkbox) {
+  height: 24px;
+  margin-right: 0;
+  font-size: 12px;
 }
 
 .info-row {

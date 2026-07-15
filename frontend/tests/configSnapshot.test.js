@@ -46,3 +46,10 @@ test('config fingerprints detect RTSP source and overlay layout changes', () => 
 
   assert.notEqual(createConfigFingerprint(first), createConfigFingerprint(moved))
 })
+
+test('config fingerprints detect robot model visibility changes', () => {
+  const hidden = { position: { odomTopic: '/odom', showRobotModel: false } }
+  const visible = { position: { odomTopic: '/odom', showRobotModel: true } }
+
+  assert.notEqual(createConfigFingerprint(hidden), createConfigFingerprint(visible))
+})

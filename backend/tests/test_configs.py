@@ -184,3 +184,26 @@ async def test_rtsp_video_settings_round_trip(config_storage):
     assert saved.config.video.visible is True
     assert saved.config.video.layout.x == 120
     assert saved.config.video.layout.width == 480
+
+
+@pytest.mark.asyncio
+async def test_robot_model_visibility_round_trip(config_storage):
+    config_dir, _, _ = config_storage
+    payload = configs.ConfigPayload(
+        name="robot-model.rvizweb",
+        config=configs.FrontendConfig(
+            fixedFrame="map",
+            displays=[],
+            position=configs.PositionConfig(
+                odomTopic="/robot/odom",
+                showRobotModel=True,
+            ),
+        ),
+    )
+
+    await configs.save_config("robot-model", payload)
+    saved = configs._read_validated(config_dir / "robot-model.rvizweb")
+
+    assert saved.config.position.odomTopic == "/robot/odom"
+    assert saved.config.position.showRobotModel is True
+    assert configs.PositionConfig().showRobotModel is False

@@ -218,18 +218,18 @@ export default {
         goal: cfg.goal || { x: 0, y: 0, z: 0 }
       })
 
-      if (cfg.position) {
-        if (cfg.position.odomTopic) emit('odom-topic-change', cfg.position.odomTopic)
-        emit('settings-update', {
-          type: 'position',
-          showTrajectory: cfg.position.showTrajectory !== false,
-          trajectoryLength: cfg.position.trajectoryLength || 100
-        })
-        emit('settings-update', {
-          type: 'trajectory',
-          trajectoryLength: cfg.position.trajectoryLength || 100
-        })
-      }
+      const position = cfg.position || {}
+      emit('odom-topic-change', typeof position.odomTopic === 'string' ? position.odomTopic : '')
+      emit('settings-update', {
+        type: 'position',
+        showRobotModel: position.showRobotModel === true,
+        showTrajectory: position.showTrajectory !== false,
+        trajectoryLength: position.trajectoryLength || 100
+      })
+      emit('settings-update', {
+        type: 'trajectory',
+        trajectoryLength: position.trajectoryLength || 100
+      })
 
       if (cfg.laser) {
         if (cfg.laser.laserType) emit('laser-type-change', cfg.laser.laserType)

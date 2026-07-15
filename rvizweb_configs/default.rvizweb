@@ -9,7 +9,7 @@
     "appearance": { "theme": "dark" },
     "video": { "sourceUrl": "", "visible": false, "layout": { "x": null, "y": null, "width": 360, "height": 240 } },
     "goal": { "topic": "/goal_pose", "x": 0, "y": 0, "z": 0 },
-    "position": { "odomTopic": "", "showTrajectory": true, "trajectoryLength": 100 },
+    "position": { "odomTopic": "", "showRobotModel": false, "showTrajectory": true, "trajectoryLength": 100 },
     "laser": { "laserType": "3d", "laserScanTopic": "", "pointCloudTopic": "", "showLaserPoints": true, "showLaserLines": true, "showIntensity": false, "laserPointSize": 0.15, "pointSize": 0.03, "pointOpacity": 0.8 },
     "map": { "mapTopic": "", "showMap": true, "showMapGrid": false, "showMapOrigin": true, "mapOpacity": 0.8 },
     "displays": []

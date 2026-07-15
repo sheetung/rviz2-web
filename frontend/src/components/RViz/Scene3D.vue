@@ -349,6 +349,7 @@ export default {
         showOrigin: true
       },
       position: {
+        showRobotModel: false,
         showTrajectory: true,
         trajectoryLength: 20
       }
@@ -364,6 +365,7 @@ export default {
     // 导航工具状态
     let currentNavigationTool = 'move'
     let fixedFrameId = 'map'
+    let positionOdomTopic = ''
     let isDragging = false
     let dragStartPosition = null
     let dragCurrentPosition = null
@@ -613,6 +615,7 @@ export default {
           type: 'uav',
           lastUpdate: Date.now()
         }
+        robotModel.visible = persistentSettings.position.showRobotModel === true
 
         scene.add(robotModel)
         debugLog('UAV model created')
@@ -736,7 +739,7 @@ export default {
             }
 
             // 使用updateRobotPosition函数更新机器人位置
-            if (position) {
+            if (position && topic === positionOdomTopic) {
               updateRobotPosition(position, orientation)
               // 减少频繁的位置更新日志
               // debugLog(`[Scene3D] 机器人位置已更新: (${position.x?.toFixed(3)}, ${position.y?.toFixed(3)}, ${position.z?.toFixed(3)})`)
@@ -857,7 +860,7 @@ export default {
       while (root?.parent && root.parent !== scene) root = root.parent
       if (!root || root === gridHelper || root === axesHelper || root === selectionHelper) return null
       if (root === ambientLight || root === directionalLight || root === previewArrow) return null
-      if (root === robotModel) return root
+      if (root === robotModel) return root.visible ? root : null
       for (const visualizationObject of visualizationObjects.values()) {
         if (visualizationObject === root) return root
       }
@@ -871,6 +874,24 @@ export default {
         selectionHelper.geometry?.dispose()
         selectionHelper.material?.dispose()
         selectionHelper = null
+      }
+    }
+
+    const setRobotModelVisible = (visible) => {
+      const nextVisible = visible === true
+      persistentSettings.position.showRobotModel = nextVisible
+      if (!robotModel) return
+      robotModel.visible = nextVisible
+      if (!nextVisible && selectedObject === robotModel) {
+        clearSelection()
+        emit('object-selected', null)
+      }
+    }
+
+    const setPositionOdomTopic = (topic) => {
+      positionOdomTopic = typeof topic === 'string' ? topic.trim() : ''
+      if (!positionOdomTopic && robotModel) {
+        robotModel.visible = false
       }
     }
 
@@ -2410,9 +2431,11 @@ export default {
           return
         }
 
-        const transformedPose = transformPoseToFixed(topic, message, position, orientation)
-        if (!transformedPose) return
-        updateRobotPosition(transformedPose.position, transformedPose.orientation)
+        if (topic === positionOdomTopic) {
+          const transformedPose = transformPoseToFixed(topic, message, position, orientation)
+          if (!transformedPose) return
+          updateRobotPosition(transformedPose.position, transformedPose.orientation)
+        }
 
         // Odom from the position panel drives the UAV model itself. Do not draw
         // an extra odom arrow here; it can visually cover the aircraft model.
@@ -2436,8 +2459,9 @@ export default {
         const position = message.pose.position
         const orientation = message.pose.orientation
 
-        // 更新机器人模型位置
-        updateRobotPosition(position, orientation)
+        if (topic === positionOdomTopic) {
+          updateRobotPosition(position, orientation)
+        }
 
         // 创建位置指示器（坐标轴）
         const axesHelper = new THREE.AxesHelper(1)
@@ -3187,6 +3211,9 @@ export default {
 
         case 'position':
           // 更新位置显示设置
+          if (settings.showRobotModel !== undefined) {
+            setRobotModelVisible(settings.showRobotModel)
+          }
           visualizationObjects.forEach((object) => {
             // 轨迹显示
             if (settings.showTrajectory !== undefined) {
@@ -4085,6 +4112,8 @@ export default {
       setViewPreset,
       setNavigationTool,
       setGoalTopic,
+      setPositionOdomTopic,
+      setRobotModelVisible,
       focusSelection,
       previewGoalPoseFromInput,
       publishGoalPoseFromInput,

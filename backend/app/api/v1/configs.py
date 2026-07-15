@@ -64,6 +64,15 @@ class VideoConfig(BaseModel):
     layout: VideoLayoutConfig = Field(default_factory=VideoLayoutConfig)
 
 
+class PositionConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    odomTopic: str = Field(default="", max_length=512)
+    showRobotModel: bool = False
+    showTrajectory: bool = True
+    trajectoryLength: int = Field(default=100, ge=10, le=100)
+
+
 class FrontendConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -73,6 +82,7 @@ class FrontendConfig(BaseModel):
     layout: LayoutConfig = Field(default_factory=LayoutConfig)
     appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
     video: VideoConfig = Field(default_factory=VideoConfig)
+    position: PositionConfig = Field(default_factory=PositionConfig)
 
 
 class ConfigPayload(BaseModel):
