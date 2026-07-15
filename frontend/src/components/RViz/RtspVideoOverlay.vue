@@ -4,6 +4,9 @@
     class="rtsp-video-overlay"
     :class="{ 'is-ready': isReady }"
     :style="overlayStyle"
+    tabindex="0"
+    role="group"
+    aria-label="RTSP 视频窗口"
     @pointerdown.stop
     @mousedown.stop
     @click.stop
@@ -428,15 +431,21 @@ export default {
   opacity: 0;
   pointer-events: none;
   background: #050709;
-  border: 1px solid rgba(255, 255, 255, 0.46);
+  border: 1px solid transparent;
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-  transition: opacity 0.16s ease;
+  outline: none;
+  transition: opacity 0.16s ease, border-color 0.16s ease;
 }
 
 .rtsp-video-overlay.is-ready {
   opacity: 1;
   pointer-events: auto;
+}
+
+.rtsp-video-overlay:hover,
+.rtsp-video-overlay:focus-within {
+  border-color: rgba(255, 255, 255, 0.46);
 }
 
 .video-content {
@@ -481,8 +490,17 @@ export default {
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
   cursor: pointer;
-  opacity: 0.88;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.rtsp-video-overlay:hover .overlay-control,
+.rtsp-video-overlay:focus-within .overlay-control {
+  opacity: 0.88;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .overlay-control:hover,
