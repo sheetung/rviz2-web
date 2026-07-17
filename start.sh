@@ -39,14 +39,30 @@ check_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing command: $1"
 }
 
-ensure_uv() {
-  command -v uv >/dev/null 2>&1 && return
+is_initialized() {
+  (
+    [[ -f "$ENV_FILE" ]] || exit 1
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+    command -v uv >/dev/null 2>&1 || exit 1
+    command -v npm >/dev/null 2>&1 || exit 1
+    command -v "${FFMPEG_PATH:-ffmpeg}" >/dev/null 2>&1 || exit 1
+    [[ -x "$BACKEND_DIR/.venv/bin/python" ]] || exit 1
+    [[ -d "$FRONTEND_DIR/node_modules" ]] || exit 1
+  )
+}
 
-  check_command curl
-  log "uv not found; installing uv"
-  curl -LsSf https://astral.sh/uv/install.sh | sh
+ensure_initialized() {
+  is_initialized && return
+
+  local install_script="$PROJECT_ROOT/install.sh"
+  [[ -x "$install_script" ]] || fail "Installation script is missing or not executable: $install_script"
+  log "Project is not initialized; running install.sh"
+  "$install_script"
   hash -r
-  command -v uv >/dev/null 2>&1 || fail "uv installation completed but uv is not available in PATH"
+  is_initialized || fail "Installation completed but the project is still not initialized"
 }
 
 check_port() {
@@ -96,8 +112,9 @@ cleanup() {
 
 start_local() {
   local frontend_mode="${1:-local}"
+  ensure_initialized
   check_command curl
-  ensure_uv
+  check_command uv
   check_command npm
   check_command ss
   check_command setsid
@@ -113,8 +130,6 @@ start_local() {
   check_port "$backend_port"
   check_port "$frontend_port"
 
-  [[ -d "$BACKEND_DIR/.venv" ]] || fail "Backend environment missing. Run: cd backend && uv sync"
-  [[ -d "$FRONTEND_DIR/node_modules" ]] || fail "Frontend dependencies missing. Run: cd frontend && npm ci"
   [[ "$default_rvizweb_config" == *.rvizweb ]] || fail "Default frontend config must use the .rvizweb suffix"
   [[ -f "$PROJECT_ROOT/rvizweb_configs/$default_rvizweb_config" ]] || fail "Default frontend config not found: rvizweb_configs/$default_rvizweb_config"
   "$BACKEND_DIR/.venv/bin/python" -c "import rclpy" || fail "rclpy is unavailable; check the ROS2 setup files"
@@ -160,24 +175,15 @@ start_local() {
 }
 
 show_help() {
-  printf 'Usage: %s [local|dev|sync|help]\n' "$0"
-  printf '  sync   Install/update backend and frontend dependencies\n'
+  printf 'Usage: %s [local|dev|install|help]\n' "$0"
+  printf '  install  Install/update system, backend, and frontend dependencies\n'
   printf '  local  Build and start for normal local use (default)\n'
   printf '  dev    Start with Vite hot reload for development\n'
 }
 
 main() {
   case "${1:-local}" in
-    sync)
-      ensure_uv
-      check_command npm
-      (
-        cd "$BACKEND_DIR"
-        [[ -d .venv ]] || uv venv --system-site-packages .venv
-        VIRTUAL_ENV="$BACKEND_DIR/.venv" uv sync --active
-      )
-      (cd "$FRONTEND_DIR" && npm ci)
-      ;;
+    install) "$PROJECT_ROOT/install.sh" ;;
     local) start_local local ;;
     dev) start_local dev ;;
     help|-h|--help) show_help ;;
