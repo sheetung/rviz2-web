@@ -149,7 +149,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { Refresh, Aim, Folder } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
-import { ROS_TOPICS } from '../../config/rosTopics'
 import { systemMessage } from '../../composables/useSystemMessage'
 
 export default {
@@ -158,6 +157,10 @@ export default {
     showMapSettings: {
       type: Boolean,
       default: false
+    },
+    currentOdomTopic: {
+      type: String,
+      default: ''
     }
   },
   components: {
@@ -186,7 +189,7 @@ export default {
     const mapOpacity = ref(0.8)
     
     // 位置信息设置
-    const selectedOdomTopic = ref(ROS_TOPICS.odom)
+    const selectedOdomTopic = ref(props.currentOdomTopic || '')
     const showTrajectory = ref(true)
     const trajectoryLength = ref(100)
 
@@ -223,13 +226,6 @@ export default {
       angular: 0
     })
 
-    const preferTopic = (topics, preferred, currentValue) => {
-      if (preferred && topics.some(topic => topic.name === preferred)) {
-        return preferred
-      }
-      return currentValue || (topics[0] && topics[0].name) || ''
-    }
-
     // 方法定义
     const loadAvailableTopics = async () => {
       try {
@@ -247,14 +243,6 @@ export default {
         })
 
         console.log('加载可用主题:', availableTopics.value)
-        // 自动选择 RViz2 默认主题
-        selectedOdomTopic.value = preferTopic(availableOdomTopics.value, ROS_TOPICS.odom, selectedOdomTopic.value)
-        selectedMapTopic.value = preferTopic(availableMapTopics.value, '', selectedMapTopic.value)
-
-        if (selectedOdomTopic.value) {
-          emit('odom-topic-change', selectedOdomTopic.value)
-        }
-
       } catch (error) {
         console.error('加载主题列表失败:', error)
       }
@@ -300,13 +288,22 @@ export default {
 
     const onOdomTopicChange = (topic) => {
       console.log('里程计主题切换:', topic)
-      emit('odom-topic-change', topic)
-      subscribeToOdom(topic)
+      emit('odom-topic-change', topic || '')
     }
 
+    let odomSubscription = null
+
     const subscribeToOdom = (topic) => {
+      if (odomSubscription) {
+        rosbridge.unsubscribe(odomSubscription)
+        odomSubscription = null
+      }
+      if (!topic) {
+        currentPose.value = null
+        return
+      }
       console.log('订阅里程计数据:', topic)
-      rosbridge.subscribe(topic, 'nav_msgs/msg/Odometry', (message) => {
+      odomSubscription = rosbridge.subscribe(topic, 'nav_msgs/msg/Odometry', (message) => {
         updatePoseFromOdom(message)
       })
     }
@@ -382,10 +379,10 @@ export default {
       emit('settings-update', { type: 'map', action: 'center' })
     }
 
-    watch(() => selectedOdomTopic.value, (newTopic) => {
-      if (newTopic) {
-        onOdomTopicChange(newTopic)
-      }
+    watch(() => props.currentOdomTopic, (newTopic) => {
+      const nextTopic = newTopic || ''
+      selectedOdomTopic.value = nextTopic
+      subscribeToOdom(nextTopic)
     }, { immediate: true })
 
     // 生命周期

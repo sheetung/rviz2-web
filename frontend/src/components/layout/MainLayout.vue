@@ -308,6 +308,7 @@
           >
             <Scene3DController
               :compact="true"
+              :current-odom-topic="settingsSnapshot.position.odomTopic"
               @laser-type-change="onLaserTypeChange"
               @laser2d-change="onLaser2DChange"
               @pointcloud-change="onPointCloudChange"
@@ -849,22 +850,43 @@ export default {
       settingsSnapshot.value.laser.laserType = laserType
     }
 
+    const isTopicStillConfigured = (topicName) => {
+      if (!topicName) return false
+      return topicName === settingsSnapshot.value.position.odomTopic ||
+        topicName === settingsSnapshot.value.laser.laserScanTopic ||
+        topicName === settingsSnapshot.value.laser.pointCloudTopic ||
+        topicName === settingsSnapshot.value.map.mapTopic ||
+        displaySnapshot.value.some(display =>
+          display.visible !== false && display.name === topicName
+        )
+    }
+
+    const replaceConfiguredTopic = (section, key, topicName, messageType) => {
+      const nextTopic = topicName || ''
+      const previousTopic = settingsSnapshot.value[section][key]
+      settingsSnapshot.value[section][key] = nextTopic
+
+      if (previousTopic && previousTopic !== nextTopic && !isTopicStillConfigured(previousTopic)) {
+        scene3dRef.value?.unsubscribeFromRosTopic?.(previousTopic)
+      }
+      if (nextTopic) {
+        onTopicSubscribe(nextTopic, messageType)
+      }
+    }
+
     const onLaser2DChange = (topicName) => {
       console.log(`2D激光主题切换: ${topicName}`)
-      settingsSnapshot.value.laser.laserScanTopic = topicName
-      onTopicSubscribe(topicName, 'sensor_msgs/msg/LaserScan')
+      replaceConfiguredTopic('laser', 'laserScanTopic', topicName, 'sensor_msgs/msg/LaserScan')
     }
 
     const onPointCloudChange = (topicName) => {
       console.log(`点云主题切换: ${topicName}`)
-      settingsSnapshot.value.laser.pointCloudTopic = topicName
-      onTopicSubscribe(topicName, 'sensor_msgs/msg/PointCloud2')
+      replaceConfiguredTopic('laser', 'pointCloudTopic', topicName, 'sensor_msgs/msg/PointCloud2')
     }
 
     const onMapTopicChange = (topicName) => {
       console.log(`地图主题切换: ${topicName}`)
-      settingsSnapshot.value.map.mapTopic = topicName
-      onTopicSubscribe(topicName, 'nav_msgs/msg/OccupancyGrid')
+      replaceConfiguredTopic('map', 'mapTopic', topicName, 'nav_msgs/msg/OccupancyGrid')
     }
 
     const onMapFileChange = (file) => {
@@ -890,12 +912,10 @@ export default {
       const previousTopic = settingsSnapshot.value.position.odomTopic
       console.log(`里程计主题切换: ${nextTopic}`)
 
-      if (previousTopic && previousTopic !== nextTopic) {
-        scene3dRef.value?.unsubscribeFromRosTopic?.(previousTopic)
-        scene3dRef.value?.removeVisualization?.(previousTopic)
-      }
-
       settingsSnapshot.value.position.odomTopic = nextTopic
+      if (previousTopic && previousTopic !== nextTopic && !isTopicStillConfigured(previousTopic)) {
+        scene3dRef.value?.unsubscribeFromRosTopic?.(previousTopic)
+      }
       if (!nextTopic) {
         settingsSnapshot.value.position.showRobotModel = false
       }

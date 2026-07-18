@@ -710,14 +710,8 @@ export default {
 
     expose({ applyDisplays, getDisplays, setFixedFrame, setFixedFrameSilently, setFollowFrameSilently, setDisplayStatus })
 
-    const loadDefaultConfig = async () => {
-      updateFixedFrame()
-      applyDisplayTopics()
-    }
-
     onMounted(async () => {
       await loadAvailableTopics()
-      await loadDefaultConfig()
     })
 
     return {

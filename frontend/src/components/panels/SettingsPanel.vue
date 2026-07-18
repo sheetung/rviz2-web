@@ -231,34 +231,33 @@ export default {
         trajectoryLength: position.trajectoryLength || 100
       })
 
-      if (cfg.laser) {
-        if (cfg.laser.laserType) emit('laser-type-change', cfg.laser.laserType)
-        if (cfg.laser.laserScanTopic) emit('laser2d-change', cfg.laser.laserScanTopic)
-        emit('settings-update', {
-          type: 'laser',
-          showLaserPoints: cfg.laser.showLaserPoints !== false,
-          showLaserLines: cfg.laser.showLaserLines !== false,
-          showIntensity: !!cfg.laser.showIntensity,
-          pointSize: cfg.laser.laserPointSize || 0.15
-        })
-        emit('settings-update', {
-          type: 'pointcloud',
-          pointSize: cfg.laser.pointSize || 0.03,
-          opacity: cfg.laser.pointOpacity || 0.8,
-          showIntensity: !!cfg.laser.showIntensity
-        })
-      }
+      const laser = cfg.laser || {}
+      emit('laser-type-change', laser.laserType || '3d')
+      emit('laser2d-change', typeof laser.laserScanTopic === 'string' ? laser.laserScanTopic : '')
+      emit('pointcloud-change', typeof laser.pointCloudTopic === 'string' ? laser.pointCloudTopic : '')
+      emit('settings-update', {
+        type: 'laser',
+        showLaserPoints: laser.showLaserPoints !== false,
+        showLaserLines: laser.showLaserLines !== false,
+        showIntensity: !!laser.showIntensity,
+        pointSize: laser.laserPointSize || 0.15
+      })
+      emit('settings-update', {
+        type: 'pointcloud',
+        pointSize: laser.pointSize || 0.03,
+        opacity: laser.pointOpacity || 0.8,
+        showIntensity: !!laser.showIntensity
+      })
 
-      if (cfg.map) {
-        if (cfg.map.mapTopic) emit('map-topic-change', cfg.map.mapTopic)
-        emit('settings-update', {
-          type: 'map',
-          showMap: cfg.map.showMap !== false,
-          opacity: cfg.map.mapOpacity || 0.8,
-          showGrid: !!cfg.map.showMapGrid,
-          showOrigin: cfg.map.showMapOrigin !== false
-        })
-      }
+      const map = cfg.map || {}
+      emit('map-topic-change', typeof map.mapTopic === 'string' ? map.mapTopic : '')
+      emit('settings-update', {
+        type: 'map',
+        showMap: map.showMap !== false,
+        opacity: map.mapOpacity || 0.8,
+        showGrid: !!map.showMapGrid,
+        showOrigin: map.showMapOrigin !== false
+      })
 
       if (Array.isArray(cfg.displays)) {
         emit('display-config-apply', cfg.displays)
