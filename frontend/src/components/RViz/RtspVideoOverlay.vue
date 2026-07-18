@@ -114,6 +114,7 @@ export default {
     let consecutiveDecodeErrors = 0
     let streamErrorReported = false
     let naturalRatioApplied = false
+    let usesDefaultPosition = false
 
     const overlayStyle = computed(() => ({
       left: `${x.value}px`,
@@ -165,8 +166,13 @@ export default {
       height.value = Number.isFinite(configuredHeight) ? configuredHeight : DEFAULT_HEIGHT
       if (width.value > 0 && height.value > 0) aspectRatio.value = width.value / height.value
 
-      if (layout.x !== null && layout.x !== undefined && Number.isFinite(configuredX)
-        && layout.y !== null && layout.y !== undefined && Number.isFinite(configuredY)) {
+      const hasConfiguredPosition = layout.x !== null && layout.x !== undefined
+        && Number.isFinite(configuredX)
+        && layout.y !== null && layout.y !== undefined
+        && Number.isFinite(configuredY)
+      usesDefaultPosition = !hasConfiguredPosition
+
+      if (hasConfiguredPosition) {
         x.value = configuredX
         y.value = configuredY
         clampLayout()
@@ -360,7 +366,11 @@ export default {
         aspectRatio.value = event.target.naturalWidth / event.target.naturalHeight
         naturalRatioApplied = true
         height.value = width.value / aspectRatio.value
-        clampLayout()
+        if (usesDefaultPosition) {
+          placeAtBottomRight()
+        } else {
+          clampLayout()
+        }
         emit('layout-change', getLayout())
       }
       if (!isReady.value) {
