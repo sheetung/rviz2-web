@@ -53,3 +53,8 @@ def test_script_can_be_sourced_without_running_main():
     assert result.returncode == 0
     assert "start_local" in result.stdout
     assert "main" in result.stdout
+
+
+def test_health_checks_bypass_shell_proxy_settings():
+    script = START_SCRIPT.read_text(encoding="utf-8")
+    assert "curl --noproxy '*' -fsS" in script

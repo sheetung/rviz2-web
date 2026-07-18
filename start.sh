@@ -78,7 +78,9 @@ wait_for_http() {
 
   for ((attempt=1; attempt<=max_attempts; attempt++)); do
     kill -0 "$pid" 2>/dev/null || fail "$name exited during startup; see $LOG_DIR"
-    curl -fsS "$url" >/dev/null 2>&1 && return 0
+    # Health checks target loopback services and must never be routed through
+    # HTTP_PROXY/HTTPS_PROXY inherited from the user's shell.
+    curl --noproxy '*' -fsS "$url" >/dev/null 2>&1 && return 0
 
     if (( attempt % 20 == 0 )); then
       log "Still waiting for $name at $url ($attempt/$max_attempts)"
