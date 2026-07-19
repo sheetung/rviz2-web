@@ -151,7 +151,7 @@ start_local() {
   local frontend_public_host="${FRONTEND_PUBLIC_HOST:-127.0.0.1}"
   local backend_health_host
   local frontend_health_host
-  local allow_unauthenticated_lan="${ALLOW_UNAUTHENTICATED_LAN:-false}"
+  local allow_unauthenticated_lan="${ALLOW_UNAUTHENTICATED_LAN:-true}"
   local default_rvizweb_config="${RVIZWEB_CONFIG:?Set RVIZWEB_CONFIG in $ENV_FILE}"
   backend_health_host="$(health_host_for_bind "$backend_host")"
   frontend_health_host="$(health_host_for_bind "$frontend_host")"

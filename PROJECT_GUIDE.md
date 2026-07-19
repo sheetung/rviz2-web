@@ -55,8 +55,8 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 | `CHOKIDAR_USEPOLLING` | 开发模式使用轮询代替 inotify；正常模式不读取该变量 |
 | `CHOKIDAR_INTERVAL` | 开发模式的文件轮询间隔，单位为毫秒 |
 | `CORS_ORIGINS` | 允许访问后端 API 的前端来源，使用英文逗号分隔 |
-| `API_ACCESS_TOKEN` | 非回环访问的统一令牌，至少 32 字符；换取 HttpOnly 会话 |
-| `ALLOW_UNAUTHENTICATED_LAN` | 显式允许 RFC1918/ULA 局域网免令牌访问，默认关闭 |
+| `API_ACCESS_TOKEN` | 公网访问的统一令牌，至少 32 字符；换取 HttpOnly 会话 |
+| `ALLOW_UNAUTHENTICATED_LAN` | 允许 RFC1918/ULA 局域网免认证访问，默认开启 |
 | `ROS_SUBSCRIBE_TOPIC_ALLOWLIST` | WebSocket 可订阅 Topic glob |
 | `ROS_PUBLISH_TOPIC_ALLOWLIST` | HTTP/WebSocket 可发布 Topic glob |
 | `ROS_PUBLISH_TYPE_ALLOWLIST` | 可发布 ROS 消息类型 |

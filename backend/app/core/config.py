@@ -52,11 +52,11 @@ class Settings(BaseSettings):
     )
     api_access_token: str = Field(
         default="",
-        description="非回环访问 API 和 WebSocket 时必须配置的统一访问令牌",
+        description="公网访问 API 和 WebSocket 时使用的统一访问令牌",
     )
     allow_unauthenticated_lan: bool = Field(
-        default=False,
-        description="无访问令牌时是否允许 RFC1918/ULA 局域网客户端访问",
+        default=True,
+        description="是否允许 RFC1918/ULA 局域网客户端免认证访问",
     )
     auth_session_ttl: int = Field(default=28_800, ge=300, le=86_400)
     ros_subscribe_topic_allowlist: str = Field(

@@ -121,8 +121,6 @@ def request_is_authenticated(
         return True
     if valid_access_token(settings, _bearer_token(authorization) or api_token):
         return True
-    if settings.api_access_token:
-        return False
     forwarded_for = request.headers.get("x-forwarded-for")
     client = request.client.host if request.client else ""
     return client_is_allowed_without_token(
@@ -164,8 +162,6 @@ def websocket_is_authenticated(websocket: WebSocket, settings: Settings) -> bool
         _bearer_token(websocket.headers.get("authorization")),
     ):
         return True
-    if settings.api_access_token:
-        return False
     forwarded_for = websocket.headers.get("x-forwarded-for")
     client = websocket.client.host if websocket.client else ""
     return client_is_allowed_without_token(

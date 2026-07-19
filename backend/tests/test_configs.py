@@ -28,7 +28,7 @@ def config_storage(tmp_path, monkeypatch):
     backup_dir = config_dir / "backups"
     settings = SimpleNamespace(
         api_access_token="",
-        allow_unauthenticated_lan=False,
+        allow_unauthenticated_lan=True,
         auth_session_ttl=3600,
         config_api_token="",
         config_max_bytes=1_048_576,
@@ -107,26 +107,29 @@ def test_loopback_clients_are_allowed_without_a_token(config_storage, host):
     )
 
 
-@pytest.mark.parametrize("host", ["192.168.1.20", "10.0.0.2", "8.8.8.8"])
-def test_non_loopback_clients_require_a_token(config_storage, host):
-    assert not security.request_is_authenticated(
+@pytest.mark.parametrize(
+    "host",
+    ["192.168.1.20", "10.0.0.2", "172.16.8.9", "fd12:3456::20", "fe80::20"],
+)
+def test_private_clients_are_allowed_without_a_token_by_default(
+    config_storage,
+    host,
+):
+    assert security.request_is_authenticated(
         _request(host),
         config_storage[2],
     )
 
 
-@pytest.mark.parametrize(
-    "host",
-    ["192.168.1.20", "10.0.0.2", "172.16.8.9", "fd12:3456::20", "fe80::20"],
-)
-def test_private_clients_can_use_explicit_unauthenticated_lan_mode(
+@pytest.mark.parametrize("host", ["192.168.1.20", "10.0.0.2", "fd12:3456::20"])
+def test_private_clients_can_be_required_to_authenticate_explicitly(
     config_storage,
     host,
 ):
     settings = config_storage[2]
-    settings.allow_unauthenticated_lan = True
+    settings.allow_unauthenticated_lan = False
 
-    assert security.request_is_authenticated(_request(host), settings)
+    assert not security.request_is_authenticated(_request(host), settings)
 
 
 @pytest.mark.parametrize("host", ["8.8.8.8", "2001:4860:4860::8888"])
@@ -143,7 +146,7 @@ def test_public_clients_remain_blocked_in_unauthenticated_lan_mode(
 def test_local_proxy_uses_rightmost_forwarded_address(config_storage):
     request = _request("127.0.0.1", "127.0.0.1, 192.168.1.20")
 
-    assert not security.request_is_authenticated(
+    assert security.request_is_authenticated(
         request,
         config_storage[2],
     )
@@ -156,11 +159,22 @@ def test_valid_session_cookie_authenticates_when_token_is_enabled(config_storage
     cookie = security.create_session_cookie(settings)
 
     assert security.request_is_authenticated(
-        _request("192.168.1.20"),
+        _request("8.8.8.8"),
         settings,
         session_cookie=cookie,
     )
     assert not security.request_is_authenticated(
+        _request("8.8.8.8"),
+        settings,
+        session_cookie="invalid",
+    )
+
+
+def test_private_clients_bypass_a_configured_public_access_token(config_storage):
+    _, _, settings = config_storage
+    settings.api_access_token = "secret"
+
+    assert security.request_is_authenticated(
         _request("192.168.1.20"),
         settings,
         session_cookie="invalid",
