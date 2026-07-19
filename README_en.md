@@ -42,6 +42,7 @@ RVizWeb is a browser-based visualization frontend for ROS2, supporting point clo
   - PointCloud2 supports per-topic `Points` or `Boxes` rendering with independent `Point Size` or `Box Size` controls.
   - `Boxes` uses instanced cubes for occupied voxel maps, while `Points` is intended for high-frequency, large point clouds.
   - Path supports per-topic line width and color.
+  - Marker/MarkerArray updates by `(ns,id)` and supports `DELETE`, `DELETEALL`, lifetimes, and common geometry types. Unsupported types report an error instead of rendering a false fallback shape.
   - MarkerArray supports color override and opacity; leaving color empty uses the message's own color.
 - UAV Pose:
   - Select an odom topic in the position panel as the UAV model pose source.
@@ -131,6 +132,11 @@ Configuration files primarily include:
 - `laser`
 - `map`
 - `displays`
+- `extensions` (namespace for third-party extensions)
+
+The schema is strictly versioned. RTSP usernames, passwords, and query tokens are
+never persisted in `video.sourceUrl`; credential-bearing URLs live only for the
+current browser page lifetime.
 
 Backend config API:
 
@@ -206,15 +212,32 @@ Click the camera monitor button in the point cloud toolbar to open the connectio
 rtsp://192.168.1.66:8554/1
 ```
 
-Saving the `.rvizweb` configuration stores the RTSP URL, overlay visibility, position, and size. Credentials embedded in the URL are therefore stored as plain text; protect the configuration file accordingly.
+Saving a `.rvizweb` configuration stores overlay layout and a credential-free
+RTSP URL. Usernames, passwords, query parameters, and fragments remain only in
+the current page and must be entered again after a reload.
 
 Connect waits for the backend to receive a valid first frame. The video window is created only after that probe succeeds; failures and missing video are reported through the page notification system.
 
-Backend transcoding can be tuned with `RTSP_TRANSPORT`, `RTSP_FRAME_RATE`, `RTSP_WIDTH`, `RTSP_JPEG_QUALITY`, `RTSP_STARTUP_TIMEOUT`, `RTSP_SESSION_TTL`, and `FFMPEG_PATH` in `.env`.
+Backend transcoding can be tuned with `RTSP_TRANSPORT`, `RTSP_FRAME_RATE`,
+`RTSP_WIDTH`, `RTSP_JPEG_QUALITY`, `RTSP_STARTUP_TIMEOUT`,
+`RTSP_SESSION_TTL`, the `RTSP_MAX_*` process limits, and `FFMPEG_PATH`.
+Private destinations are denied by default; use `RTSP_ALLOWED_HOSTS` for exact
+camera hosts or explicitly enable `RTSP_ALLOW_PRIVATE_NETWORKS`. Hostnames are
+pinned to the validated IP before FFmpeg starts, preventing DNS rebinding during
+a second resolution.
 
 In normal mode, re-run `./start.sh` after changes to rebuild the frontend. In dev mode, changes take effect on Vite restart or environment reload.
 
-Config writes are restricted to localhost and LAN addresses by default. When a token is needed, set `CONFIG_API_TOKEN` and `VITE_CONFIG_API_TOKEN` to the same value in `.env`. `CORS_ORIGINS` should list the actual allowed frontend addresses.
+Both servers bind to `127.0.0.1` by default. For LAN exposure, set
+`FRONTEND_HOST` and, when needed, `BACKEND_HOST`; an `API_ACCESS_TOKEN` of at
+least 32 characters remains the recommended mode. A trusted isolated LAN may
+explicitly set `ALLOW_UNAUTHENTICATED_LAN=true`; only RFC1918, IPv6 ULA, and
+link-local clients are admitted without a token, while public addresses remain
+blocked. Set `CORS_ORIGINS` to the exact frontend origins.
+
+ROS publishing is restricted by `ROS_PUBLISH_TOPIC_ALLOWLIST` and
+`ROS_PUBLISH_TYPE_ALLOWLIST`; extend these lists explicitly for robot-specific
+control topics.
 
 The script sources setup.bash files in the order specified by `ROS2_SETUP_PATHS` in `.env`:
 
@@ -233,14 +256,14 @@ uv venv --system-site-packages .venv
 VIRTUAL_ENV="$PWD/.venv" uv sync --active
 source /opt/ros/humble/setup.bash
 source <your_workspace>/install/setup.bash
-uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv run --no-sync uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 ```bash
 cd frontend
 npm ci
 VITE_RVIZWEB_CONFIG=default.rvizweb npm run build
-npm run preview -- --host 0.0.0.0 --port 3000
+npm run preview -- --host 127.0.0.1 --port 3000
 ```
 
 Access URLs:
@@ -249,7 +272,9 @@ Access URLs:
 - Backend API: `http://localhost:8000/`
 - Backend docs: `http://localhost:8000/docs`
 
-These are the default ports. When using `./start.sh`, the backend port comes from `BACKEND_PORT` in `.env`. Vite injects that value into the frontend build, so WebSocket connects directly to the backend port on the current page host without a duplicate frontend variable. Re-run `./start.sh` after changing the port so the frontend is rebuilt.
+The frontend uses same-origin `/api` and `/ws` proxies, so reverse-proxy and
+HTTPS deployments do not expose the backend port to the browser. Set
+`VITE_BACKEND_PUBLIC_URL` only for a deliberately separated backend deployment.
 
 ## FAQ
 
@@ -320,10 +345,12 @@ Backend syntax check:
 ```bash
 cd backend
 uv run pytest -q
+uv run flake8 app
 uv run python -m compileall -q app
 ```
 
-Frontend unit tests (currently covering TF cache and interpolation):
+Frontend unit tests currently cover TF, config state, RTSP redaction, video
+frames, and backend URL construction:
 
 ```bash
 cd frontend

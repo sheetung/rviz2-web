@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
@@ -17,7 +18,11 @@ def test_client_ids_are_unique_under_connection_bursts(settings):
 
 
 @pytest.mark.asyncio
-async def test_message_cache_does_not_retain_serialized_payloads(settings):
+async def test_message_cache_does_not_retain_serialized_payloads(settings, monkeypatch):
+    async def run_inline(function, *args):
+        return function(*args)
+
+    monkeypatch.setattr(asyncio, "to_thread", run_inline)
     service = RosbridgeService(settings)
     service.connection_manager.connection_info["client-1"] = ConnectionInfo(
         client_id="client-1",

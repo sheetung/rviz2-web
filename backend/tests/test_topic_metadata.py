@@ -44,13 +44,23 @@ class FakeSamplingNode(FakeGraphNode):
 
 
 @pytest.mark.asyncio
-async def test_topics_include_graph_and_observed_message_metadata(settings, monkeypatch):
+async def test_topics_include_graph_and_observed_message_metadata(
+    settings, monkeypatch
+):
     service = RosbridgeService(settings)
     service.node = FakeGraphNode()
-    monkeypatch.setattr(service, "_get_topics_from_cli_sync", lambda: [TopicInfo(
-        name="/points",
-        message_type="sensor_msgs/msg/PointCloud2",
-    )])
+    monkeypatch.setattr(
+        service,
+        "_get_topics_from_cli",
+        AsyncMock(
+            return_value=[
+                TopicInfo(
+                    name="/points",
+                    message_type="sensor_msgs/msg/PointCloud2",
+                )
+            ]
+        ),
+    )
     monkeypatch.setattr("app.services.rosbridge.time.time", lambda: 1000.0)
     service.subscribers["/points"] = object()
     service._topic_observation_started_at["/points"] = 990.0
@@ -68,7 +78,9 @@ async def test_topics_include_graph_and_observed_message_metadata(settings, monk
 
 
 @pytest.mark.asyncio
-async def test_frequencies_distinguish_measured_zero_from_unobserved(settings, monkeypatch):
+async def test_frequencies_distinguish_measured_zero_from_unobserved(
+    settings, monkeypatch
+):
     service = RosbridgeService(settings)
     service.node = FakeGraphNode()
     monkeypatch.setattr("app.services.rosbridge.time.time", lambda: 1000.0)
@@ -86,7 +98,9 @@ async def test_frequencies_distinguish_measured_zero_from_unobserved(settings, m
 
 
 @pytest.mark.asyncio
-async def test_frequency_endpoint_actively_samples_published_topics(settings, monkeypatch):
+async def test_frequency_endpoint_actively_samples_published_topics(
+    settings, monkeypatch
+):
     service = RosbridgeService(settings)
     service.node = FakeSamplingNode()
     monotonic_times = iter([100.0, 100.1, 100.2])

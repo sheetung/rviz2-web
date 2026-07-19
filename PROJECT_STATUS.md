@@ -4,27 +4,33 @@
 
 整个工程只维护一套版本号，以根目录 `VERSION` 为准，并同步到工程清单和前端系统状态。
 
-更新时间：2026-07-18
+更新时间：2026-07-19
 
 ## 总体结论
 
-当前工程可作为 ROS2 本地网络中的浏览器可视化与调试工具使用。核心链路已经形成：FastAPI/rclpy 后端加入 ROS2 图，浏览器通过 `/ws` 收发消息，Three.js 场景按 `.rvizweb` 配置展示数据。
+当前工程可作为 ROS2 浏览器可视化与调试工具使用。默认仅监听回环地址；开放到
+局域网时强制使用统一访问令牌、HttpOnly 会话、WebSocket Origin 校验和 ROS
+发布白名单。
 
-当前最可靠的运行方式是 `./start.sh sync` 后执行 `./start.sh local`。Dockerfile 尚未按当前工程完整验证；自动化测试覆盖也不足，因此不再使用“100% 完成”或未经验证的完成度百分比描述项目状态。
+当前最可靠的运行方式是 `./start.sh sync` 后执行 `./start.sh local`。Dockerfile
+已按 Node 22、uv 锁文件与 Nginx 同源代理重写，但 DDS 容器网络仍需要在目标
+设备上集成验证。
 
 ## 已实现并在当前代码中保留的能力
 
 ### 启动与配置
 
-- `start.sh` 支持 `sync`、`local`、`dev`、`help`；默认 `local` 使用构建后的静态资源，`dev` 才启用热更新。
+- `start.sh` 支持 `install`、`sync`、`local`、`dev`、`help`；默认 `local` 使用构建后的静态资源，`dev` 才启用热更新。
 - 缺少 uv 时可通过官方安装脚本自动安装。
 - 后端使用 uv 锁定依赖，前端使用 `npm ci`。
-- 启动时读取 `.env`，端口使用 `BACKEND_PORT` 与 `FRONTEND_PORT`。
-- 支持通过 `RVIZWEB_CONFIG` 选择启动配置，默认使用 `uav1.rvizweb`。
+- 启动时以非执行方式解析 `.env`，文件由安装脚本收紧为 `0600`。
+- 前后端默认绑定 `127.0.0.1`；非回环绑定默认要求访问令牌，也可显式启用仅限私网的免认证 LAN 模式。
+- 支持通过 `RVIZWEB_CONFIG` 选择启动配置，默认使用 `default.rvizweb`。
 - 前后端健康检查、日志归档和退出时进程清理已集成到启动脚本。
 - `/docs` 使用仓库内 Swagger UI 5.9.0 资源，不依赖浏览器访问外部 CDN；`/redoc` 保持关闭。
 - 前端已升级到 Vite 8、Axios 1.18、Vue 3.5 和 Element Plus 2.14；当前 `npm audit` 为 0 项漏洞。
-- Element Plus 已改为组件、服务和样式按需引入；生产 JS 从约 973 KB 降至 342 KB，CSS 从约 356 KB 降至 111 KB。
+- Element Plus 已改为组件、服务和样式按需引入；生产构建按 Vue、Three.js、
+  Element Plus 和异步设置面板拆分 chunk。
 
 ### ROS2 与通信
 
@@ -32,8 +38,10 @@
 - FastAPI `/ws` 提供浏览器实时通信入口。
 - WebSocket 使用应用层 `ping/pong` 测量真实往返延迟，状态栏不再展示固定网络数值。
 - 后端通过 `ros2 topic list -t --no-daemon` 查询话题，不创建或依赖可能残留的 ROS2 CLI daemon。
-- 支持话题发现、订阅、取消订阅和发布。
-- 提供节点、话题频率和系统状态查询 API；发布者和订阅者来自实时 ROS2 图，频率接口使用临时 raw 订阅主动采样全部可用话题，采样时长可设为 0.5–5 秒且默认 1 秒，结束后立即释放订阅。
+- 支持话题发现、会话化订阅、取消订阅和带确认的发布；断线重连会恢复期望订阅。
+- WebSocket 为每个客户端使用有界发送队列，慢客户端不会串行阻塞其他客户端。
+- 提供节点、话题频率和系统状态查询 API；ROS 图查询带短 TTL 缓存，频率接口默认
+  返回已观测值，只有显式启用主动采样时才临时订阅全部可用话题。
 - 支持 `/tf`、`/tf_static` 与 Fixed Frame 转换的前端链路。
 - 动态 TF 按坐标边保留有限历史，并根据显示消息时间戳插值平移和旋转。
 
@@ -49,7 +57,8 @@
 - 网格、坐标轴、视角预设、相机状态及布局保存。
 - Displays 可从当前 ROS2 图选择话题，并保存每项显示配置。
 - Display 类型由当前 ROS2 话题自动绑定；按类型添加时只列出实际存在话题的消息类型。
-- MarkerArray 支持按 Display 覆盖颜色和透明度。
+- Marker/MarkerArray 按 `(ns,id)` 维护对象，支持删除、全部删除、生命周期和常用
+  几何类型；未知类型不会渲染成虚假立方体。
 - 隐藏 Display 会清理最后消息缓存，不会在后续 TF 更新时被重新创建。
 - 3D 工具栏提供紧邻排列的截图和录像按钮：截图下载 PNG，录像下载 WebM。
 - 录像按钮在录制期间显示红色停止状态，结束后自动恢复。
@@ -61,7 +70,8 @@
 - `.rvizweb` 可保存、读取和删除。
 - 配置写入包含名称、大小、版本和结构校验。
 - 覆盖与删除前创建备份，写入使用原子替换。
-- 配置写接口支持可选令牌。
+- 配置读写均要求统一访问会话；配置 schema 严格校验并提供 `extensions` 扩展区。
+- RTSP 凭据不持久化，目标地址经过 DNS/IP 策略检查，会话和 FFmpeg 进程有全局配额。
 - ROS 发布路径使用实时 WebSocket 连接状态，目标发布与订阅显示共享同一连接来源。
 - JSON 整数发布到 ROS 浮点字段时会统一转换为浮点数，避免 Pose、Twist 等消息保留为默认零值。
 - 系统状态显示当前配置名称、未保存修改和配置文件实际修改时间；设置、Displays、布局和相机视角均纳入变更判断。
@@ -71,9 +81,15 @@
 
 ### 自动化测试仍需扩展
 
-`backend/tests/` 已覆盖配置原子保存、备份、写入权限、路径安全、ROS 消息数值转换、WebSocket 心跳、本地 Swagger 资源和启动脚本基础行为。前端已有 TF 时间戳、插值、坐标链、静态变换、缓存裁剪、配置指纹与未保存状态测试，但仍没有组件或端到端测试，ROS2 实时链路也缺少自动化集成测试。现有验证主要依靠：
+`backend/tests/` 已覆盖配置原子保存、备份、访问会话、路径安全、RTSP
+地址策略/DNS 固定、ROS 消息数值转换与大小限制、WebSocket 心跳、慢客户端
+清理、publisher 所有权、本地 Swagger 资源和启动脚本基础行为。前端已有 TF
+时间戳、插值、坐标链、静态变换、缓存裁剪、配置指纹、未保存状态、RTSP
+脱敏和公开后端 URL 测试，但仍没有组件或端到端测试，ROS2 实时链路也缺少
+自动化集成测试。现有验证主要依靠：
 
 - `uv run pytest -q`
+- `uv run flake8 app`
 - `npm test`
 - `npm run lint:check`
 - `npm run build`
@@ -82,15 +98,17 @@
 
 因此当前测试可以防止配置存储与启动脚本的基础回归，但不能视为完整 API、前端或 ROS2 覆盖。
 
-### Docker 尚非推荐路径
+### Docker 仍需 ROS2 网络集成验证
 
 - `start.sh` 没有 `docker` 子命令。
 - 仓库没有 `docker-compose.yml`。
-- Dockerfile 保留了旧式单容器启动结构，尚需验证前端产物、后端依赖、环境变量和 DDS 网络。
+- Dockerfile 已修复前端 Node 版本、开发依赖构建、后端锁文件安装、同源 WebSocket
+  和健康检查；DDS 发现和宿主机网络模式仍需按部署环境验证。
 
-### ROS2 环境路径与发行版固定
+### ROS2 发行版与工作空间差异
 
-`start.sh` 当前写死尝试加载 ROS2 Humble 和 `/home/amov/super_ros2_ws`。在其他用户、工作空间或 ROS2 发行版上，需要调整脚本或预先加载环境。
+`.env.example` 默认加载 ROS2 Humble。其他发行版或工作空间应通过
+`ROS2_SETUP_PATHS` 配置，无需修改启动脚本。
 
 ### TF 时间语义仍有边界
 
@@ -106,6 +124,7 @@
 
 ```bash
 bash -n start.sh
+bash -n install.sh docker/start-container.sh
 
 cd frontend
 npm test
@@ -114,6 +133,7 @@ npm run build
 
 cd ../backend
 uv run pytest -q
+uv run flake8 app
 uv run python -m compileall -q app
 ```
 
@@ -131,14 +151,9 @@ uv run python -m compileall -q app
 
 ## 优先级建议
 
-### P0：配置与启动一致性
-
-- 让 ROS2 安装路径和工作空间路径可配置，避免绑定单台设备。
-- 明确 `DEBUG`、`FRONTEND_HOST` 的实际读取链路。
-
 ### P1：测试与稳定性
 
-- 为 `.rvizweb` 校验、原子保存、备份和令牌权限补充后端测试。
+- 为 HTTP/WebSocket 认证握手和 Origin 策略补充端到端测试。
 - 为 TF 外推错误、缺失 TF 状态和 Display 生命周期补充前端测试。
 - 增加 WebSocket 发布/订阅和重连的集成测试。
 - 在真实 ROS2 图中覆盖自定义消息、QoS 不匹配和高频点云。
@@ -153,7 +168,7 @@ uv run python -m compileall -q app
 
 ### P3：部署与清理
 
-- 决定是否正式维护 Docker；若维护，应重写并验证容器启动、健康检查和 DDS 网络说明。
+- 在真实设备上验证容器启动、健康检查和 DDS 网络模式。
 - 继续清理当前大组件内部的调试日志和可拆分逻辑。
 - 将用户指南、开发指南和状态报告中的重复内容继续收敛。
 
@@ -163,5 +178,6 @@ uv run python -m compileall -q app
 - ROS2 发现与 WebSocket 桥接：可用，需要网络与 DDS 环境正确。
 - 核心 3D 显示：可用，TF 已支持有限历史与插值，外推语义仍有限；截图可用，录像采用浏览器原生 WebM。
 - `.rvizweb` 配置管理：已实现，存储与前端变更状态已有单元测试，组件和端到端覆盖仍不足。
-- Docker 部署：保留实现，当前未验证。
-- 自动化测试：当前前端 13 项、后端 30 项通过，组件、端到端与 ROS2 集成覆盖仍不足。
+- Docker 部署：构建链路已重写，DDS 网络尚未做目标设备集成验证。
+- 自动化测试：当前前端 8 个测试套件、后端 59 项通过，组件、端到端与 ROS2
+  集成覆盖仍不足。

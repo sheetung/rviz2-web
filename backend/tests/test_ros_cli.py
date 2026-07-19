@@ -5,12 +5,14 @@ from app.services.rosbridge import RosbridgeService
 
 
 def test_topic_discovery_does_not_use_ros2_daemon(settings, monkeypatch):
-    run = Mock(return_value=subprocess.CompletedProcess(
-        args=[],
-        returncode=0,
-        stdout="/points [sensor_msgs/msg/PointCloud2]\n",
-        stderr="",
-    ))
+    run = Mock(
+        return_value=subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="/points [sensor_msgs/msg/PointCloud2]\n",
+            stderr="",
+        )
+    )
     monkeypatch.setattr("app.services.rosbridge.subprocess.run", run)
     service = RosbridgeService(settings)
 

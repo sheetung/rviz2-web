@@ -9,6 +9,7 @@ from ..core.config import get_settings
 # 全局 Rosbridge 服务实例
 _rosbridge_service = None
 
+
 def get_rosbridge_service() -> RosbridgeService:
     """获取 Rosbridge 服务实例"""
     global _rosbridge_service

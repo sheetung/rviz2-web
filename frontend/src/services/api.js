@@ -4,19 +4,52 @@
  */
 
 import axios from 'axios'
+import { createApiBaseUrl } from '../utils/websocketUrl'
 
 // 创建 axios 实例
+const browserLocation = typeof window === 'undefined' ? null : window.location
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: createApiBaseUrl(
+    browserLocation,
+    import.meta.env.VITE_BACKEND_PUBLIC_URL
+  ),
   timeout: 10000,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json'
   }
 })
 
-const configWriteHeaders = import.meta.env.VITE_CONFIG_API_TOKEN
-  ? { 'X-Config-Token': import.meta.env.VITE_CONFIG_API_TOKEN }
-  : {}
+let authenticationPromise = null
+
+const requestAccessToken = () => {
+  if (typeof window === 'undefined') return ''
+  return window.prompt('请输入 RVizWeb 访问令牌')?.trim() || ''
+}
+
+export const ensureAuthenticated = async () => {
+  if (authenticationPromise) return authenticationPromise
+
+  authenticationPromise = (async () => {
+    const status = await api.get('/auth/status')
+    if (status.authenticated) return true
+    if (!status.required) {
+      throw new Error('服务仅允许从本机访问')
+    }
+
+    const accessToken = requestAccessToken()
+    if (!accessToken) throw new Error('未提供访问令牌')
+    const result = await api.post('/auth/session', { access_token: accessToken })
+    if (!result.authenticated) throw new Error('访问令牌验证失败')
+    return true
+  })()
+
+  try {
+    return await authenticationPromise
+  } finally {
+    authenticationPromise = null
+  }
+}
 
 // 响应拦截器
 api.interceptors.response.use(
@@ -79,13 +112,9 @@ export const configApi = {
   getConfig: (name) => api.get(`/configs/${encodeURIComponent(name)}`),
   saveConfig: (name, config) => api.post(
     `/configs/${encodeURIComponent(name)}`,
-    { name, config },
-    { headers: configWriteHeaders }
+    { name, config }
   ),
-  deleteConfig: (name) => api.delete(
-    `/configs/${encodeURIComponent(name)}`,
-    { headers: configWriteHeaders }
-  )
+  deleteConfig: (name) => api.delete(`/configs/${encodeURIComponent(name)}`)
 }
 
 /**

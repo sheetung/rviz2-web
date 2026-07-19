@@ -3,19 +3,9 @@ pytest 配置文件
 """
 
 import pytest
-import asyncio
-from typing import Generator
 from unittest.mock import Mock
 
 from app.core.config import get_settings
-
-
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """创建事件循环"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture
@@ -33,9 +23,10 @@ def mock_rosbridge_service():
     mock_service.get_system_status.return_value = {
         "active_nodes": 0,
         "active_topics": 0,
-        "active_connections": 0
+        "active_connections": 0,
     }
     return mock_service
+
 
 # 测试数据
 @pytest.fixture
@@ -45,7 +36,7 @@ def sample_topic_data():
         "name": "/test_topic",
         "message_type": "std_msgs/msg/String",
         "publishers": ["test_node"],
-        "subscribers": []
+        "subscribers": [],
     }
 
 
@@ -59,13 +50,11 @@ def sample_node_data():
         "subscribers": [],
         "services": [],
         "actions": [],
-        "parameters": {}
+        "parameters": {},
     }
 
 
 @pytest.fixture
 def sample_message_data():
     """示例消息数据"""
-    return {
-        "data": "Hello, ROS2!"
-    }
+    return {"data": "Hello, ROS2!"}

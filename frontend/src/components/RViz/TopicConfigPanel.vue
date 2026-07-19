@@ -15,12 +15,22 @@
 
         <div class="property-row global-property">
           <span>Fixed Frame</span>
-          <el-input
+          <el-select
             v-model="fixedFrame"
+            filterable
+            allow-create
+            default-first-option
             placeholder="map"
             size="small"
             @change="updateFixedFrame"
-          />
+          >
+            <el-option
+              v-for="frameId in selectableFrameIds"
+              :key="frameId"
+              :label="frameId"
+              :value="frameId"
+            />
+          </el-select>
         </div>
 
         <div class="property-row global-property">
@@ -90,7 +100,7 @@
               @change="updateDisplayTopic(display)"
             >
               <el-option
-                v-for="topic in availableTopics"
+                v-for="topic in topicsForDisplay(display)"
                 :key="topic.name"
                 :label="topic.name"
                 :value="topic.name"
@@ -99,7 +109,16 @@
           </div>
 
           <div v-if="selectedDisplayId === display.id && display.error" class="display-error">
-            {{ display.error }}
+            <span>{{ display.error }}</span>
+            <el-button
+              v-if="missingTfSourceFrame(display)"
+              size="small"
+              text
+              type="primary"
+              @click.stop="useDisplaySourceFrame(display)"
+            >
+              切换到 {{ missingTfSourceFrame(display) }}
+            </el-button>
           </div>
 
           <div
@@ -363,6 +382,11 @@ import { getThemeColor } from '../../utils/theme'
 import { rosApi } from '../../services/api'
 import { ROS_TOPICS } from '../../config/rosTopics'
 import { systemMessage } from '../../composables/useSystemMessage'
+import {
+  sourceFrameFromMissingTfError,
+  sourceFramesFromDisplayErrors,
+  topicsMatchingMessageType
+} from '../../utils/topicCompatibility'
 
 export default {
   name: 'TopicConfigPanel',
@@ -456,9 +480,10 @@ export default {
       displayTopics.value.find(display => display.id === selectedDisplayId.value) || null
     )
     const topicsForSelectedType = computed(() => {
-      if (!newDisplayType.value) return availableTopics.value
-      return availableTopics.value.filter(topic => topic.messageType === newDisplayType.value)
+      return topicsMatchingMessageType(availableTopics.value, newDisplayType.value)
     })
+    const topicsForDisplay = display =>
+      topicsMatchingMessageType(availableTopics.value, display?.messageType)
     const availableMessageTypes = computed(() => {
       return [...new Set(
         availableTopics.value
@@ -468,7 +493,8 @@ export default {
     })
     const selectableFrameIds = computed(() => [...new Set([
       fixedFrame.value,
-      ...props.frameIds
+      ...props.frameIds,
+      ...sourceFramesFromDisplayErrors(displayTopics.value)
     ].filter(Boolean))].sort((left, right) => left.localeCompare(right)))
 
     const normalizeTopicList = (topicList = [], topicTypes = {}) => {
@@ -698,6 +724,13 @@ export default {
       updateFixedFrame()
     }
 
+    const missingTfSourceFrame = display =>
+      sourceFrameFromMissingTfError(display?.error)
+
+    const useDisplaySourceFrame = display => {
+      const sourceFrame = missingTfSourceFrame(display)
+      if (sourceFrame) setFixedFrame(sourceFrame)
+    }
 
     const setFollowFrameSilently = (frameId) => {
       followFrame.value = frameId || ''
@@ -723,6 +756,7 @@ export default {
       displayTopics,
       selectedDisplay,
       topicsForSelectedType,
+      topicsForDisplay,
       selectedDisplayId,
       isCreateOpen,
       isLoadingTopics,
@@ -747,6 +781,8 @@ export default {
       duplicateSelectedDisplay,
       rememberDisplayName,
       updateDisplayTopic,
+      missingTfSourceFrame,
+      useDisplaySourceFrame,
       toggleDisplayTopic,
       toggleDisplayVisible,
       removeDisplayTopic,
@@ -838,11 +874,24 @@ export default {
 }
 
 .display-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
   margin: 2px 8px 6px 39px;
   color: var(--danger);
   font-size: 11px;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.display-error :deep(.el-button) {
+  height: 22px;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--accent);
+  flex-shrink: 0;
 }
 
 .tree-label {

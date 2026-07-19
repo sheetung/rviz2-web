@@ -1,17 +1,12 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="theme-loading">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>%VITE_APP_TITLE%</title>
-    <style>
-      html.theme-loading { visibility: hidden; }
-    </style>
-    <script>
-      document.documentElement.classList.add('theme-loading')
-      setTimeout(() => document.documentElement.classList.remove('theme-loading'), 5000)
-    </script>
+    <link rel="stylesheet" href="/theme-bootstrap.css" />
+    <script src="/theme-bootstrap.js"></script>
   </head>
   <body>
     <div id="app"></div>

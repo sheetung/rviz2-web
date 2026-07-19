@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -14,10 +15,26 @@ def _settings(**overrides):
         "rtsp_jpeg_quality": 5,
         "rtsp_startup_timeout": 10.0,
         "rtsp_session_ttl": 300,
+        "rtsp_max_sessions": 4,
+        "rtsp_max_streams": 4,
+        "rtsp_max_streams_per_session": 1,
+        "rtsp_allow_private_networks": True,
+        "rtsp_allowed_hosts": "",
         "ffmpeg_path": "ffmpeg",
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+@pytest.fixture(autouse=True)
+def clear_video_state():
+    video._video_sessions.clear()
+    video._active_stream_processes.clear()
+    video._pending_probes = 0
+    yield
+    video._video_sessions.clear()
+    video._active_stream_processes.clear()
+    video._pending_probes = 0
 
 
 def test_ffmpeg_command_uses_configured_rtsp_source(monkeypatch):
@@ -57,6 +74,50 @@ def test_jpeg_frames_are_extracted_without_losing_remainder():
 def test_non_rtsp_source_is_rejected():
     with pytest.raises(ValueError):
         video._validated_rtsp_url("http://192.168.1.66/video")
+
+
+@pytest.mark.asyncio
+async def test_private_rtsp_destination_is_blocked_by_default():
+    with pytest.raises(ValueError, match="私网地址默认禁用"):
+        await video._validated_rtsp_destination(
+            _settings(rtsp_allow_private_networks=False),
+            "rtsp://192.168.1.66/live",
+        )
+
+
+@pytest.mark.asyncio
+async def test_loopback_rtsp_destination_is_blocked_even_when_private_is_enabled():
+    with pytest.raises(ValueError, match="不允许访问"):
+        await video._validated_rtsp_destination(
+            _settings(rtsp_allow_private_networks=True),
+            "rtsp://127.0.0.1/live",
+        )
+
+
+@pytest.mark.asyncio
+async def test_rtsp_domain_is_pinned_to_the_validated_address(monkeypatch):
+    monkeypatch.setattr(
+        asyncio.get_running_loop(),
+        "getaddrinfo",
+        AsyncMock(
+            return_value=[
+                (
+                    None,
+                    None,
+                    None,
+                    None,
+                    ("8.8.8.8", 554),
+                )
+            ]
+        ),
+    )
+
+    destination = await video._validated_rtsp_destination(
+        _settings(rtsp_allow_private_networks=False),
+        "rtsp://user:secret@camera.example:8554/live?profile=1",
+    )
+
+    assert destination == "rtsp://user:secret@8.8.8.8:8554/live?profile=1"
 
 
 @pytest.mark.asyncio
@@ -100,13 +161,29 @@ async def test_video_session_is_not_created_when_probe_fails(monkeypatch):
 
     with pytest.raises(video.HTTPException) as error:
         await video.create_video_session(
-            video.VideoSessionRequest(
-                source_url="rtsp://192.168.1.66:8554/1"
-            )
+            video.VideoSessionRequest(source_url="rtsp://192.168.1.66:8554/1")
         )
 
     assert error.value.status_code == 504
     assert "未检测到可用视频流" in error.value.detail
+
+
+@pytest.mark.asyncio
+async def test_video_session_limit_is_enforced(monkeypatch):
+    settings = _settings(rtsp_max_sessions=1)
+    monkeypatch.setattr(video, "get_settings", lambda: settings)
+    monkeypatch.setattr(video.shutil, "which", lambda _: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(video, "_probe_rtsp_source", AsyncMock(return_value=None))
+
+    await video.create_video_session(
+        video.VideoSessionRequest(source_url="rtsp://192.168.1.66/live")
+    )
+    with pytest.raises(video.HTTPException) as error:
+        await video.create_video_session(
+            video.VideoSessionRequest(source_url="rtsp://192.168.1.67/live")
+        )
+
+    assert error.value.status_code == 429
 
 
 @pytest.mark.asyncio

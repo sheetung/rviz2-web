@@ -16,19 +16,38 @@ check_command() {
 }
 
 ensure_env() {
-  [[ -f "$ENV_FILE" ]] && return
+  if [[ -f "$ENV_FILE" ]]; then
+    chmod 0600 "$ENV_FILE"
+    return
+  fi
 
   local env_example="$PROJECT_ROOT/.env.example"
   [[ -f "$env_example" ]] || fail "Missing environment template: $env_example"
   cp "$env_example" "$ENV_FILE"
+  chmod 0600 "$ENV_FILE"
   log "Created $ENV_FILE from $env_example"
 }
 
 load_env() {
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
+  local line key value first last
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || fail "Invalid .env entry: $line"
+    key="${line%%=*}"
+    value="${line#*=}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    first="${value:0:1}"
+    last="${value: -1}"
+    if [[ "$first" == "'" || "$first" == '"' ]]; then
+      [[ "$last" == "$first" ]] || fail "Unterminated quote for $key in $ENV_FILE"
+      value="${value:1:${#value}-2}"
+    fi
+    export "$key=$value"
+  done < "$ENV_FILE"
 }
 
 load_ros() {

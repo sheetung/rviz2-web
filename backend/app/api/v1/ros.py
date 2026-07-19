@@ -8,13 +8,13 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from ...models.ros import (
-    TopicInfo, NodeInfo, SystemStatus
-)
+from ...models.ros import TopicInfo, NodeInfo, SystemStatus
 from ...services.rosbridge import RosbridgeService
 from ...services.dependencies import get_rosbridge_service
+from ...core.config import get_settings
+from ...core.security import ensure_ros_operation_allowed, require_api_access
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_api_access)])
 logger = logging.getLogger(__name__)
 
 
@@ -30,9 +30,7 @@ class TopicPublishRequest(BaseModel):
 
 
 @router.get("/topics", response_model=List[TopicInfo])
-async def get_topics(
-    service: RosbridgeService = Depends(get_rosbridge_service)
-):
+async def get_topics(service: RosbridgeService = Depends(get_rosbridge_service)):
     """获取所有 ROS2 主题列表"""
     try:
         topics = await service.get_topics()
@@ -41,28 +39,35 @@ async def get_topics(
         logger.error(f"Failed to get topics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/topics/frequencies", response_model=Dict[str, Optional[float]])
 async def get_topic_frequencies(
+    active_sampling: bool = Query(
+        False,
+        description="是否临时订阅所有 topic 进行主动采样",
+    ),
     sample_seconds: float = Query(
         1.0,
         ge=0.5,
         le=5.0,
         description="主动订阅采样时长（秒）",
     ),
-    service: RosbridgeService = Depends(get_rosbridge_service)
+    service: RosbridgeService = Depends(get_rosbridge_service),
 ):
     """短时订阅当前 ROS2 主题并测量实际接收频率。"""
     try:
-        frequencies = await service.get_topic_frequencies(sample_duration=sample_seconds)
+        frequencies = await service.get_topic_frequencies(
+            sample_duration=sample_seconds if active_sampling else None
+        )
         return frequencies
     except Exception as e:
         logger.error(f"Failed to get topic frequencies: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/topic-info", response_model=TopicInfo)
 async def get_topic_info_by_query(
-    topic_name: str,
-    service: RosbridgeService = Depends(get_rosbridge_service)
+    topic_name: str, service: RosbridgeService = Depends(get_rosbridge_service)
 ):
     """通过 query 参数获取主题信息，支持包含 / 的 ROS topic 名。"""
     try:
@@ -76,53 +81,68 @@ async def get_topic_info_by_query(
         logger.error(f"Failed to get topic info for {topic_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/topics/subscribe")
 async def subscribe_topic_by_body(
     payload: TopicSubscriptionRequest,
-    service: RosbridgeService = Depends(get_rosbridge_service)
+    service: RosbridgeService = Depends(get_rosbridge_service),
 ):
-    """通过请求体订阅主题，支持包含 / 的 ROS topic 名。"""
-    try:
-        success = await service.subscribe_topic(payload.topic, payload.message_type)
-        return {"success": success, "topic": payload.topic, "action": "subscribed"}
-    except Exception as e:
-        logger.error(f"Failed to subscribe to {payload.topic}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """REST 订阅没有连接所有权，必须使用 WebSocket 会话。"""
+    raise HTTPException(
+        status_code=405,
+        detail="请通过 WebSocket 会话订阅 ROS topic",
+    )
+
 
 @router.post("/topics/unsubscribe")
 async def unsubscribe_topic_by_body(
     payload: TopicSubscriptionRequest,
-    service: RosbridgeService = Depends(get_rosbridge_service)
+    service: RosbridgeService = Depends(get_rosbridge_service),
 ):
-    """通过请求体取消订阅主题，支持包含 / 的 ROS topic 名。"""
-    try:
-        success = await service.unsubscribe_topic(payload.topic)
-        return {"success": success, "topic": payload.topic, "action": "unsubscribed"}
-    except Exception as e:
-        logger.error(f"Failed to unsubscribe from {payload.topic}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """REST 取消订阅没有连接所有权，必须使用 WebSocket 会话。"""
+    raise HTTPException(
+        status_code=405,
+        detail="请通过 WebSocket 会话取消订阅 ROS topic",
+    )
+
 
 @router.post("/topics/publish")
 async def publish_message_by_body(
     payload: TopicPublishRequest,
-    service: RosbridgeService = Depends(get_rosbridge_service)
+    service: RosbridgeService = Depends(get_rosbridge_service),
 ):
     """通过请求体发布消息，支持包含 / 的 ROS topic 名。"""
     try:
+        ensure_ros_operation_allowed(
+            get_settings(),
+            "publish",
+            payload.topic,
+            payload.message_type,
+        )
         success = await service.publish_message(
             payload.topic,
             payload.msg,
             payload.message_type,
         )
+        if not success:
+            raise HTTPException(
+                status_code=422,
+                detail=f"消息未能发布到 {payload.topic}",
+            )
         return {"success": success, "topic": payload.topic, "action": "published"}
+    except HTTPException:
+        raise
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Failed to publish to {payload.topic}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/nodes", response_model=List[NodeInfo])
-async def get_nodes(
-    service: RosbridgeService = Depends(get_rosbridge_service)
-):
+async def get_nodes(service: RosbridgeService = Depends(get_rosbridge_service)):
     """获取所有 ROS2 节点列表"""
     try:
         nodes = await service.get_nodes()
@@ -131,10 +151,10 @@ async def get_nodes(
         logger.error(f"Failed to get nodes: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/nodes/{node_name}", response_model=NodeInfo)
 async def get_node_info(
-    node_name: str,
-    service: RosbridgeService = Depends(get_rosbridge_service)
+    node_name: str, service: RosbridgeService = Depends(get_rosbridge_service)
 ):
     """获取特定节点信息"""
     try:
@@ -146,10 +166,9 @@ async def get_node_info(
         logger.error(f"Failed to get node info for {node_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/status", response_model=SystemStatus)
-async def get_system_status(
-    service: RosbridgeService = Depends(get_rosbridge_service)
-):
+async def get_system_status(service: RosbridgeService = Depends(get_rosbridge_service)):
     """获取系统状态"""
     try:
         status = await service.get_system_status()

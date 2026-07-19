@@ -161,7 +161,7 @@
               :layout-config="settingsSnapshot.video.layout"
               @layout-change="onRtspLayoutChange"
               @edit="openRtspConnection"
-              @reconnect="connectRtspVideo(settingsSnapshot.video.sourceUrl)"
+              @reconnect="connectRtspVideo(rtspRuntimeSourceUrl)"
               @stream-error="handleRtspStreamError"
               @close="disconnectRtspVideo()"
             />
@@ -345,6 +345,7 @@ const AsyncSettingsPanel = defineAsyncComponent(() => import('../panels/Settings
 import ExpectedGoalPanel from '../panels/ExpectedGoalPanel.vue'
 import { getThemeColor } from '../../utils/theme'
 import { videoApi } from '../../services/api'
+import { sanitizeRtspUrlForStorage } from '../../utils/rtspUrl'
 import { systemMessage } from '../../composables/useSystemMessage'
 
 const DEFAULT_SIDE_PANEL_HEIGHTS = {
@@ -402,6 +403,7 @@ export default {
     const showRtspConnection = ref(false)
     const rtspConnecting = ref(false)
     const rtspInputUrl = ref('')
+    const rtspRuntimeSourceUrl = ref('')
     const rtspSessionId = ref('')
     const rtspStreamUrl = ref('')
     const isSceneRecording = ref(false)
@@ -728,8 +730,13 @@ export default {
         rtspStreamUrl.value = videoApi.getStreamUrl(session.session_id)
         showRtspVideo.value = true
         showRtspConnection.value = false
-        settingsSnapshot.value.video.sourceUrl = normalizedSource
-        settingsSnapshot.value.video.visible = true
+        rtspRuntimeSourceUrl.value = normalizedSource
+        const persistedSource = sanitizeRtspUrlForStorage(normalizedSource)
+        settingsSnapshot.value.video.sourceUrl = persistedSource.sourceUrl
+        settingsSnapshot.value.video.visible = !persistedSource.containsSecrets
+        if (persistedSource.containsSecrets && options.notifySuccess !== false) {
+          systemMessage.info('RTSP 凭据仅保留在当前页面，本次连接不会写入配置文件')
+        }
         releaseRtspSession(previousSessionId)
 
         if (options.notifySuccess !== false) {
@@ -751,7 +758,9 @@ export default {
     }
 
     const openRtspConnection = () => {
-      rtspInputUrl.value = settingsSnapshot.value.video.sourceUrl || ''
+      rtspInputUrl.value = rtspRuntimeSourceUrl.value ||
+        settingsSnapshot.value.video.sourceUrl ||
+        ''
       showRtspConnection.value = true
     }
 
@@ -1001,6 +1010,7 @@ export default {
           }
         }
         rtspInputUrl.value = sourceUrl
+        rtspRuntimeSourceUrl.value = sourceUrl
         if (shouldConnect) {
           connectRtspVideo(sourceUrl, { notifySuccess: false })
         } else {
@@ -1078,13 +1088,15 @@ export default {
       scene3dRef.value?.previewGoalPoseFromInput?.(nextGoal)
     }
 
-    const onGoalPublish = (goal) => {
+    const onGoalPublish = async (goal) => {
       const nextGoal = normalizeGoal(goal)
       settingsSnapshot.value.goal = nextGoal
-      const published = scene3dRef.value?.publishGoalPoseFromInput?.(nextGoal, nextGoal.topic)
-      if (published === undefined) {
+      const publishGoal = scene3dRef.value?.publishGoalPoseFromInput
+      if (!publishGoal) {
         systemMessage.warning('3D场景未就绪')
+        return
       }
+      await publishGoal(nextGoal, nextGoal.topic)
     }
 
     const setDisplayTopicVisible = (topicName, visible) => {

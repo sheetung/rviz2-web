@@ -17,13 +17,28 @@ log() { printf '[rvizweb] %s\n' "$*"; }
 fail() { printf '[rvizweb] ERROR: %s\n' "$*" >&2; exit 1; }
 
 load_env() {
-  if [[ -f "$ENV_FILE" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$ENV_FILE"
-    set +a
-    log "Loaded $ENV_FILE"
-  fi
+  [[ -f "$ENV_FILE" ]] || return
+
+  local line key value first last
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || fail "Invalid .env entry: $line"
+    key="${line%%=*}"
+    value="${line#*=}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    first="${value:0:1}"
+    last="${value: -1}"
+    if [[ "$first" == "'" || "$first" == '"' ]]; then
+      [[ "$last" == "$first" ]] || fail "Unterminated quote for $key in $ENV_FILE"
+      value="${value:1:${#value}-2}"
+    fi
+    export "$key=$value"
+  done < "$ENV_FILE"
+  log "Loaded $ENV_FILE"
 }
 
 load_ros() {
@@ -42,10 +57,6 @@ check_command() {
 is_initialized() {
   (
     [[ -f "$ENV_FILE" ]] || exit 1
-    set -a
-    # shellcheck disable=SC1090
-    source "$ENV_FILE"
-    set +a
     command -v uv >/dev/null 2>&1 || exit 1
     command -v npm >/dev/null 2>&1 || exit 1
     command -v "${FFMPEG_PATH:-ffmpeg}" >/dev/null 2>&1 || exit 1
@@ -92,6 +103,14 @@ wait_for_http() {
   fail "$name did not become ready within ${timeout_seconds}s: $url"
 }
 
+health_host_for_bind() {
+  case "$1" in
+    0.0.0.0) printf '127.0.0.1' ;;
+    "::"|"::1") printf '[::1]' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 cleanup() {
   trap - INT TERM EXIT
   log "Stopping services"
@@ -127,10 +146,27 @@ start_local() {
 
   local backend_port="${BACKEND_PORT:?Set BACKEND_PORT in $ENV_FILE}"
   local frontend_port="${FRONTEND_PORT:?Set FRONTEND_PORT in $ENV_FILE}"
+  local backend_host="${BACKEND_HOST:-127.0.0.1}"
+  local frontend_host="${FRONTEND_HOST:-127.0.0.1}"
   local frontend_public_host="${FRONTEND_PUBLIC_HOST:-127.0.0.1}"
+  local backend_health_host
+  local frontend_health_host
+  local allow_unauthenticated_lan="${ALLOW_UNAUTHENTICATED_LAN:-false}"
   local default_rvizweb_config="${RVIZWEB_CONFIG:?Set RVIZWEB_CONFIG in $ENV_FILE}"
+  backend_health_host="$(health_host_for_bind "$backend_host")"
+  frontend_health_host="$(health_host_for_bind "$frontend_host")"
   check_port "$backend_port"
   check_port "$frontend_port"
+
+  if [[ "$backend_host" != "127.0.0.1" && "$backend_host" != "::1" && "$backend_host" != "localhost" && -z "${API_ACCESS_TOKEN:-}" && "${allow_unauthenticated_lan,,}" != "true" ]]; then
+    fail "API_ACCESS_TOKEN or ALLOW_UNAUTHENTICATED_LAN=true is required when BACKEND_HOST is not loopback"
+  fi
+  if [[ "$frontend_host" != "127.0.0.1" && "$frontend_host" != "::1" && "$frontend_host" != "localhost" && -z "${API_ACCESS_TOKEN:-}" && "${allow_unauthenticated_lan,,}" != "true" ]]; then
+    fail "API_ACCESS_TOKEN or ALLOW_UNAUTHENTICATED_LAN=true is required when FRONTEND_HOST is not loopback"
+  fi
+  if [[ -n "${API_ACCESS_TOKEN:-}" && "${#API_ACCESS_TOKEN}" -lt 32 ]]; then
+    fail "API_ACCESS_TOKEN must contain at least 32 characters"
+  fi
 
   [[ "$default_rvizweb_config" == *.rvizweb ]] || fail "Default frontend config must use the .rvizweb suffix"
   [[ -f "$PROJECT_ROOT/rvizweb_configs/$default_rvizweb_config" ]] || fail "Default frontend config not found: rvizweb_configs/$default_rvizweb_config"
@@ -149,7 +185,7 @@ start_local() {
   log "Starting backend on $backend_port"
   (
     cd "$BACKEND_DIR"
-    exec setsid uv run --no-sync uvicorn app.main:app --host "${BACKEND_HOST:?Set BACKEND_HOST in $ENV_FILE}" --port "$backend_port"
+    exec setsid uv run --no-sync uvicorn app.main:app --host "$backend_host" --port "$backend_port"
   ) >"$LOG_DIR/backend.log" 2>&1 &
   BACKEND_PID=$!
 
@@ -160,32 +196,33 @@ start_local() {
       export VITE_RVIZWEB_CONFIG="$default_rvizweb_config"
       export CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}"
       export CHOKIDAR_INTERVAL="${CHOKIDAR_INTERVAL:-500}"
-      exec setsid npm run dev -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "$frontend_port"
+      exec setsid npm run dev -- --host "$frontend_host" --port "$frontend_port"
     fi
-    exec setsid npm run preview -- --host "${FRONTEND_HOST:-0.0.0.0}" --port "$frontend_port"
+    exec setsid npm run preview -- --host "$frontend_host" --port "$frontend_port"
   ) >>"$LOG_DIR/frontend.log" 2>&1 &
   FRONTEND_PID=$!
 
-  wait_for_http "http://127.0.0.1:$backend_port/health" backend "$BACKEND_PID" 120
-  wait_for_http "http://127.0.0.1:$frontend_port" frontend "$FRONTEND_PID" 120
+  wait_for_http "http://$backend_health_host:$backend_port/health" backend "$BACKEND_PID" 120
+  wait_for_http "http://$frontend_health_host:$frontend_port" frontend "$FRONTEND_PID" 120
 
   log "Frontend: http://$frontend_public_host:$frontend_port"
-  log "Backend:  http://127.0.0.1:$backend_port"
+  log "Backend:  http://$backend_health_host:$backend_port"
   log "Config:   rvizweb_configs/$default_rvizweb_config"
   wait -n "$BACKEND_PID" "$FRONTEND_PID"
   fail "A service stopped unexpectedly; see $LOG_DIR"
 }
 
 show_help() {
-  printf 'Usage: %s [local|dev|install|help]\n' "$0"
+  printf 'Usage: %s [local|dev|install|sync|help]\n' "$0"
   printf '  install  Install/update system, backend, and frontend dependencies\n'
+  printf '  sync     Alias for install\n'
   printf '  local  Build and start for normal local use (default)\n'
   printf '  dev    Start with Vite hot reload for development\n'
 }
 
 main() {
   case "${1:-local}" in
-    install) "$PROJECT_ROOT/install.sh" ;;
+    install|sync) "$PROJECT_ROOT/install.sh" ;;
     local) start_local local ;;
     dev) start_local dev ;;
     help|-h|--help) show_help ;;

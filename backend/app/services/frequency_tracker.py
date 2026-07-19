@@ -9,7 +9,12 @@ import time
 from collections import defaultdict, deque
 from typing import Awaitable, Callable, Dict, Optional
 
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
+from rclpy.qos import (
+    QoSProfile,
+    QoSReliabilityPolicy,
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+)
 
 from .message_types import get_message_class
 
@@ -30,7 +35,9 @@ class FrequencyTracker:
         self._monotonic_clock = frequency_clock or time.monotonic
         self._wall_clock = wall_clock or time.time
         self._sleep = sleep or asyncio.sleep
-        self._topic_message_times: Dict[str, deque] = defaultdict(lambda: deque(maxlen=200))
+        self._topic_message_times: Dict[str, deque] = defaultdict(
+            lambda: deque(maxlen=200)
+        )
         self._topic_last_message_times: Dict[str, float] = {}
         self._topic_observation_started_at: Dict[str, float] = {}
         self._sampled_topic_frequencies: Dict[str, Optional[float]] = {}
@@ -56,7 +63,9 @@ class FrequencyTracker:
         """获取话题最后一条消息的时间戳"""
         return self._topic_last_message_times.get(topic)
 
-    def get_frequency(self, topic_name: str, is_subscribed: bool, now: Optional[float] = None) -> Optional[float]:
+    def get_frequency(
+        self, topic_name: str, is_subscribed: bool, now: Optional[float] = None
+    ) -> Optional[float]:
         """计算话题当前频率"""
         current_time = self._wall_clock() if now is None else now
         timestamps = self._topic_message_times.get(topic_name)
@@ -84,7 +93,9 @@ class FrequencyTracker:
             return self._sampled_topic_frequencies.get(topic_name)
         return None
 
-    async def sample_frequencies(self, node, sample_duration: float) -> Dict[str, Optional[float]]:
+    async def sample_frequencies(
+        self, node, sample_duration: float
+    ) -> Dict[str, Optional[float]]:
         """临时订阅所有已发布话题，测量回调频率"""
         if not node:
             return {}
@@ -105,7 +116,9 @@ class FrequencyTracker:
                     try:
                         publisher_info = node.get_publishers_info_by_topic(topic_name)
                     except Exception as e:
-                        logger.debug(f"Could not inspect publishers for {topic_name}: {e}")
+                        logger.debug(
+                            f"Could not inspect publishers for {topic_name}: {e}"
+                        )
                         continue
 
                     if not publisher_info:
@@ -121,7 +134,9 @@ class FrequencyTracker:
 
                     def callback(_msg, measured_topic=topic_name):
                         sample_times[measured_topic].append(self._monotonic_clock())
-                        self._topic_last_message_times[measured_topic] = self._wall_clock()
+                        self._topic_last_message_times[measured_topic] = (
+                            self._wall_clock()
+                        )
 
                     # BEST_EFFORT + VOLATILE can receive both common sensor QoS and
                     # reliable publishers. raw=True avoids deserializing large point clouds.
@@ -143,7 +158,9 @@ class FrequencyTracker:
                         monitor_subscriptions.append(subscription)
                         monitored_topics.add(topic_name)
                     except Exception as e:
-                        logger.warning(f"Could not monitor frequency for {topic_name}: {e}")
+                        logger.warning(
+                            f"Could not monitor frequency for {topic_name}: {e}"
+                        )
 
                 await self._sleep(duration)
             finally:

@@ -3,17 +3,19 @@ FastAPI 应用入口
 支持 RViz2 Web 可视化系统
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi import Depends, FastAPI, WebSocket
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from .core.config import get_settings
 from .core.version import APP_VERSION
-from .api.v1 import configs, ros, video
+from .api.v1 import auth, configs, ros, video
+from .core.security import require_api_access, websocket_is_authenticated
 from .services.dependencies import get_rosbridge_service
 
 # 配置日志
@@ -24,6 +26,33 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 DOCS_ASSETS_DIR = Path(__file__).resolve().parent / "static" / "swagger-ui"
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    logger.info("Starting RViz2 Web Visualization System")
+    if settings.api_access_token and len(settings.api_access_token) < 32:
+        raise RuntimeError("API_ACCESS_TOKEN 至少需要 32 个字符")
+    if (
+        settings.backend_host not in {"127.0.0.1", "::1", "localhost"}
+        and not settings.api_access_token
+        and not settings.allow_unauthenticated_lan
+    ):
+        raise RuntimeError(
+            "BACKEND_HOST 暴露到非回环地址时必须设置 API_ACCESS_TOKEN，"
+            "或显式启用 ALLOW_UNAUTHENTICATED_LAN"
+        )
+
+    service = get_rosbridge_service()
+    await service.start()
+    logger.info("Server started on port %s", settings.backend_port)
+    try:
+        yield
+    finally:
+        logger.info("Shutting down RViz2 Web Visualization System")
+        await video.shutdown_video_streams()
+        await service.stop()
+
+
 # 创建 FastAPI 应用
 app = FastAPI(
     title="RViz2 Web Visualization",
@@ -31,16 +60,31 @@ app = FastAPI(
     version=APP_VERSION,
     docs_url=None,
     redoc_url=None,
+    openapi_url=None,
+    lifespan=lifespan,
 )
 
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
-    allow_credentials=False,
+    allow_origins=[
+        origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
 
 app.mount(
     "/docs-assets",
@@ -49,54 +93,53 @@ app.mount(
 )
 
 
-@app.get("/docs", include_in_schema=False)
+@app.get(
+    "/docs",
+    include_in_schema=False,
+    dependencies=[Depends(require_api_access)],
+)
 async def swagger_ui_html():
     """使用仓库内静态资源提供 Swagger UI。"""
-    return get_swagger_ui_html(
-        openapi_url=app.openapi_url,
-        title=f"{app.title} - Swagger UI",
-        swagger_js_url="/docs-assets/swagger-ui-bundle.js",
-        swagger_css_url="/docs-assets/swagger-ui.css",
-        swagger_favicon_url="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E",
-    )
+    return HTMLResponse("""<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RViz2 Web Visualization - Swagger UI</title>
+    <link rel="stylesheet" href="/docs-assets/swagger-ui.css">
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="/docs-assets/swagger-ui-bundle.js"></script>
+    <script src="/docs-assets/swagger-init.js"></script>
+  </body>
+</html>
+""")
+
+
+@app.get(
+    "/openapi.json",
+    include_in_schema=False,
+    dependencies=[Depends(require_api_access)],
+)
+async def openapi_schema():
+    return JSONResponse(app.openapi())
+
 
 # 全局 Rosbridge 服务实例将通过依赖注入管理
 
 # 注册 API 路由
+app.include_router(auth.router, prefix="/api/v1", tags=["Auth"])
 app.include_router(ros.router, prefix="/api/v1", tags=["ROS"])
 app.include_router(configs.router, prefix="/api/v1", tags=["Configs"])
 app.include_router(video.router, prefix="/api/v1", tags=["Video"])
 
-# 静态文件服务 (用于单一容器部署)
-if os.path.exists("./static"):
-    app.mount("/", StaticFiles(directory="static", html=True), name="static")
-
-@app.on_event("startup")
-async def startup_event():
-    """应用启动事件"""
-    logger.info("Starting RViz2 Web Visualization System")
-    
-    # 初始化 Rosbridge 服务
-    service = get_rosbridge_service()
-    await service.start()
-    
-    logger.info(f"Server started on port {settings.backend_port}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭事件"""
-    logger.info("Shutting down RViz2 Web Visualization System")
-
-    await video.shutdown_video_streams()
-
-    # 清理 Rosbridge 服务
-    service = get_rosbridge_service()
-    await service.stop()
 
 @app.get("/")
 async def root():
     """根路径"""
     return {"message": "RViz2 Web Visualization System", "version": APP_VERSION}
+
 
 @app.get("/health")
 async def health_check():
@@ -115,17 +158,27 @@ async def version_info():
         "version": APP_VERSION,
     }
 
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket 端点 - Rosbridge 协议"""
+    if not websocket_is_authenticated(websocket, settings):
+        await websocket.close(code=4401, reason="Authentication required")
+        return
     service = get_rosbridge_service()
     await service.handle_websocket(websocket)
 
+
+# 单容器部署时提供 SPA；必须最后挂载，避免遮蔽 /health、/api 和 /ws。
+if os.path.exists("./static"):
+    app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "app.main:app",
         host=settings.backend_host,
         port=settings.backend_port,
-        reload=settings.debug
+        reload=settings.debug,
     )

@@ -5,7 +5,7 @@ export const ROS_TOPICS = {
   odom: '',
   pose: '',
   expectedControl: '',
-  initialPose: '',
+  initialPose: '/initialpose',
   goalMarker: '',
   expSfc: '',
   path: '',

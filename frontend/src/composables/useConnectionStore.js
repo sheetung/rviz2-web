@@ -6,6 +6,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { debugLog } from '../utils/debug'
 import { createWebSocketUrl } from '../utils/websocketUrl'
+import { ensureAuthenticated } from '../services/api'
 import { systemMessage } from './useSystemMessage'
 
 export const useConnectionStore = defineStore('connection', () => {
@@ -17,12 +18,15 @@ export const useConnectionStore = defineStore('connection', () => {
   const websocket = ref(null)
   let latencyTimer = null
   let latencyMeasurementInFlight = false
+  let reconnectTimer = null
+  let intentionalDisconnect = false
+  let socketGeneration = 0
   
-  // BACKEND_PORT 由 Vite 构建配置注入，浏览器直接连接 FastAPI WebSocket。
+  // 默认经当前页面同源代理连接；仅在独立部署后端时设置公开 URL。
   const browserLocation = typeof window === 'undefined' ? null : window.location
   const wsUrl = ref(createWebSocketUrl(
     browserLocation,
-    import.meta.env.VITE_BACKEND_PORT
+    import.meta.env.VITE_BACKEND_PUBLIC_URL
   ))
   const reconnectAttempts = ref(0)
   const maxReconnectAttempts = ref(5)
@@ -30,7 +34,9 @@ export const useConnectionStore = defineStore('connection', () => {
   
   // 订阅的主题
   const subscribedTopics = ref(new Set())
+  const desiredSubscriptions = ref(new Map())
   const messageHandlers = ref(new Map())
+  const subscriptionRequests = new Set()
   
   // API调用的Promise管理
   const pendingRequests = ref(new Map())
@@ -68,22 +74,40 @@ export const useConnectionStore = defineStore('connection', () => {
   
   // 连接 WebSocket
   const connect = async () => {
+    if (isConnected.value || isConnecting.value) return
+    const generation = ++socketGeneration
+    intentionalDisconnect = false
+
     try {
       isConnecting.value = true
       connectionError.value = null
-      
-      websocket.value = new WebSocket(wsUrl.value)
-      
-      websocket.value.onopen = () => {
+
+      await ensureAuthenticated()
+      if (generation !== socketGeneration) return
+
+      const socket = new WebSocket(wsUrl.value)
+      websocket.value = socket
+
+      socket.onopen = () => {
+        if (generation !== socketGeneration) {
+          socket.close(1000, 'Superseded connection')
+          return
+        }
         isConnected.value = true
         isConnecting.value = false
         reconnectAttempts.value = 0
+        subscribedTopics.value.clear()
+        subscriptionRequests.clear()
+        advertisedTopics.value.clear()
         startLatencyTracking()
+        desiredSubscriptions.value.forEach(({ messageType }, topic) => {
+          requestSubscription(topic, messageType)
+        })
         debugLog('WebSocket connected')
         systemMessage.success('已连接到 ROS2 服务')
       }
       
-      websocket.value.onmessage = (event) => {
+      socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data)
           debugLog(`[ConnectionStore] 📨 收到消息:`, message)
@@ -93,13 +117,17 @@ export const useConnectionStore = defineStore('connection', () => {
         }
       }
       
-      websocket.value.onclose = (event) => {
+      socket.onclose = (event) => {
+        if (generation !== socketGeneration) return
         isConnected.value = false
         isConnecting.value = false
+        websocket.value = null
+        subscribedTopics.value.clear()
+        advertisedTopics.value.clear()
         stopLatencyTracking()
         clearPendingRequests()
         
-        if (event.code !== 1000) {
+        if (!intentionalDisconnect && event.code !== 1000) {
           // 非正常关闭，尝试重连
           connectionError.value = `连接关闭 (${event.code})`
           console.warn('WebSocket closed unexpectedly:', event)
@@ -109,7 +137,8 @@ export const useConnectionStore = defineStore('connection', () => {
         }
       }
       
-      websocket.value.onerror = (error) => {
+      socket.onerror = (error) => {
+        if (generation !== socketGeneration) return
         isConnected.value = false
         isConnecting.value = false
         stopLatencyTracking()
@@ -127,6 +156,12 @@ export const useConnectionStore = defineStore('connection', () => {
   
   // 断开连接
   const disconnect = () => {
+    intentionalDisconnect = true
+    socketGeneration++
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
     stopLatencyTracking()
     if (websocket.value) {
       websocket.value.close(1000, 'Normal closure')
@@ -136,6 +171,8 @@ export const useConnectionStore = defineStore('connection', () => {
     isConnecting.value = false
     connectionError.value = null
     subscribedTopics.value.clear()
+    subscriptionRequests.clear()
+    desiredSubscriptions.value.clear()
     messageHandlers.value.clear()
     advertisedTopics.value.clear()  // 清理发布者声明
     clearPendingRequests()
@@ -143,6 +180,7 @@ export const useConnectionStore = defineStore('connection', () => {
   
   // 重连逻辑
   const attemptReconnect = () => {
+    if (intentionalDisconnect || reconnectTimer) return
     if (reconnectAttempts.value >= maxReconnectAttempts.value) {
       console.error('Max reconnect attempts reached')
       systemMessage.error('连接失败，请检查服务器状态')
@@ -152,14 +190,19 @@ export const useConnectionStore = defineStore('connection', () => {
     reconnectAttempts.value++
     debugLog(`Attempting to reconnect (${reconnectAttempts.value}/${maxReconnectAttempts.value})`)
     
-    setTimeout(() => {
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
       connect()
     }, reconnectInterval.value)
   }
   
   // 发送消息
   const sendMessage = (message) => {
-    if (!isConnected.value || !websocket.value) {
+    if (
+      !isConnected.value ||
+      !websocket.value ||
+      websocket.value.readyState !== WebSocket.OPEN
+    ) {
       console.warn('WebSocket not connected')
       return false
     }
@@ -219,6 +262,13 @@ export const useConnectionStore = defineStore('connection', () => {
       case 'pong':
         resolveRequest(id, true)
         break
+      case 'subscribe_result':
+      case 'unsubscribe_result':
+      case 'advertise_result':
+      case 'unadvertise_result':
+      case 'publish_result':
+        resolveRequest(id, message)
+        break
       case 'error':
         console.error(`[ConnectionStore] ❌ 收到错误消息:`, message.error)
         rejectRequest(id, message.error || 'Unknown error')
@@ -236,7 +286,8 @@ export const useConnectionStore = defineStore('connection', () => {
   // 解决请求Promise
   const resolveRequest = (requestId, data) => {
     if (requestId && pendingRequests.value.has(requestId)) {
-      const { resolve } = pendingRequests.value.get(requestId)
+      const { resolve, timeoutId } = pendingRequests.value.get(requestId)
+      clearTimeout(timeoutId)
       resolve(data)
       pendingRequests.value.delete(requestId)
     }
@@ -245,7 +296,8 @@ export const useConnectionStore = defineStore('connection', () => {
   // 拒绝请求Promise
   const rejectRequest = (requestId, error) => {
     if (requestId && pendingRequests.value.has(requestId)) {
-      const { reject } = pendingRequests.value.get(requestId)
+      const { reject, timeoutId } = pendingRequests.value.get(requestId)
+      clearTimeout(timeoutId)
       reject(new Error(error))
       pendingRequests.value.delete(requestId)
     }
@@ -266,18 +318,19 @@ export const useConnectionStore = defineStore('connection', () => {
         ...params
       }
       
-      // 存储Promise的resolve/reject
-      pendingRequests.value.set(requestId, { resolve, reject })
-      
       // 设置超时
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         if (pendingRequests.value.has(requestId)) {
           pendingRequests.value.delete(requestId)
           reject(new Error(`Request timeout: ${operation}`))
         }
       }, 10000) // 10秒超时
+
+      // 存储 Promise 及其超时句柄
+      pendingRequests.value.set(requestId, { resolve, reject, timeoutId })
       
       if (!sendMessage(message)) {
+        clearTimeout(timeoutId)
         pendingRequests.value.delete(requestId)
         reject(new Error(`Failed to send message: ${operation}`))
       }
@@ -344,51 +397,54 @@ export const useConnectionStore = defineStore('connection', () => {
   
   // 清理待处理请求（连接关闭时）
   const clearPendingRequests = () => {
-    pendingRequests.value.forEach(({ reject }) => {
+    pendingRequests.value.forEach(({ reject, timeoutId }) => {
+      clearTimeout(timeoutId)
       reject(new Error('Connection closed'))
     })
     pendingRequests.value.clear()
   }
   
   // 订阅主题
+  const requestSubscription = async (topic, messageType) => {
+    if (
+      !isConnected.value ||
+      subscribedTopics.value.has(topic) ||
+      subscriptionRequests.has(topic)
+    ) return
+    subscriptionRequests.add(topic)
+    try {
+      const result = await sendApiRequest('subscribe', {
+        topic,
+        type: messageType
+      })
+      if (!result?.success) throw new Error(`订阅 ${topic} 未被后端确认`)
+      if (desiredSubscriptions.value.has(topic)) {
+        subscribedTopics.value.add(topic)
+      }
+      debugLog(`[ConnectionStore] ✅ Subscribed to ${topic}`)
+    } catch (error) {
+      subscribedTopics.value.delete(topic)
+      console.error(`[ConnectionStore] ❌ Failed to subscribe ${topic}:`, error)
+      systemMessage.error(`订阅 ${topic} 失败: ${error.message}`)
+    } finally {
+      subscriptionRequests.delete(topic)
+    }
+  }
+
   const subscribeTopic = (topic, messageType, handler) => {
     debugLog(`[ConnectionStore] 🔔 subscribeTopic called: topic=${topic}, type=${messageType}, connected=${isConnected.value}`)
-
-    if (!isConnected.value) {
-      console.warn('[ConnectionStore] ❌ Not connected to ROS')
-      return false
-    }
 
     // 添加消息处理器
     if (!messageHandlers.value.has(topic)) {
       messageHandlers.value.set(topic, new Set())
     }
     messageHandlers.value.get(topic).add(handler)
+    desiredSubscriptions.value.set(topic, { messageType })
     debugLog(`[ConnectionStore] ✅ Added handler for ${topic}, total handlers: ${messageHandlers.value.get(topic).size}`)
 
     // 如果还没有订阅这个主题，发送订阅请求
-    if (!subscribedTopics.value.has(topic)) {
-      const subscribeMsg = {
-        op: 'subscribe',
-        topic: topic,
-        type: messageType
-      }
-
-      debugLog(`[ConnectionStore] 📤 Sending subscription request:`, subscribeMsg)
-
-      if (sendMessage(subscribeMsg)) {
-        subscribedTopics.value.add(topic)
-        debugLog(`[ConnectionStore] ✅ Subscribed to ${topic}`)
-        debugLog(`[ConnectionStore] 📊 Current subscriptions: ${Array.from(subscribedTopics.value)}`)
-        return true
-      } else {
-        console.error(`[ConnectionStore] ❌ Failed to send subscription message for ${topic}`)
-        return false
-      }
-    } else {
-      debugLog(`[ConnectionStore] 📝 Already subscribed to ${topic}`)
-      return true
-    }
+    if (isConnected.value) requestSubscription(topic, messageType)
+    return true
   }
   
   // 取消订阅主题
@@ -401,14 +457,13 @@ export const useConnectionStore = defineStore('connection', () => {
       // 如果没有处理器了，取消订阅
       if (handlers.size === 0) {
         messageHandlers.value.delete(topic)
+        desiredSubscriptions.value.delete(topic)
         subscribedTopics.value.delete(topic)
         
         if (isConnected.value) {
-          const unsubscribeMsg = {
-            op: 'unsubscribe',
-            topic: topic
-          }
-          sendMessage(unsubscribeMsg)
+          sendApiRequest('unsubscribe', { topic }).catch(error => {
+            console.error(`[ConnectionStore] ❌ Failed to unsubscribe ${topic}:`, error)
+          })
           debugLog(`Unsubscribed from ${topic}`)
         }
       }
@@ -419,10 +474,10 @@ export const useConnectionStore = defineStore('connection', () => {
   const advertisedTopics = ref(new Set())
 
   // 声明发布者
-  const advertise = (topic, messageType) => {
+  const advertise = async (topic, messageType) => {
     if (!isConnected.value) {
       console.warn('Not connected to ROS')
-      return false
+      throw new Error('Not connected to ROS')
     }
 
     if (advertisedTopics.value.has(topic)) {
@@ -430,37 +485,28 @@ export const useConnectionStore = defineStore('connection', () => {
       return true
     }
 
-    const advertiseMsg = {
-      op: 'advertise',
+    const result = await sendApiRequest('advertise', {
       topic: topic,
       type: messageType
-    }
+    })
 
-    debugLog(`[ConnectionStore] 声明发布者:`, advertiseMsg)
-    const result = sendMessage(advertiseMsg)
-    if (result) {
+    if (result?.success) {
       advertisedTopics.value.add(topic)
       debugLog(`[ConnectionStore] ✅ 成功声明发布者: ${topic}`)
-    } else {
-      console.error(`[ConnectionStore] ❌ 声明发布者失败: ${topic}`)
+      return true
     }
-    return result
+    throw new Error(`后端未确认发布者声明: ${topic}`)
   }
 
   // 取消声明发布者
-  const unadvertise = (topic) => {
+  const unadvertise = async (topic) => {
     if (!isConnected.value) {
       return false
     }
 
-    const unadvertiseMsg = {
-      op: 'unadvertise',
-      topic: topic
-    }
-
     debugLog(`[ConnectionStore] 取消声明发布者: ${topic}`)
-    const result = sendMessage(unadvertiseMsg)
-    if (result) {
+    const result = await sendApiRequest('unadvertise', { topic })
+    if (result?.success) {
       advertisedTopics.value.delete(topic)
       debugLog(`[ConnectionStore] ✅ 成功取消声明发布者: ${topic}`)
     }
@@ -468,32 +514,21 @@ export const useConnectionStore = defineStore('connection', () => {
   }
 
   // 发布消息到主题
-  const publishMessage = (topic, messageType, message) => {
+  const publishMessage = async (topic, messageType, message) => {
     if (!isConnected.value) {
       console.warn('[ConnectionStore] Not connected to ROS')
-      return false
+      throw new Error('Not connected to ROS')
     }
 
-    // 自动声明发布者（如果尚未声明）
-    if (!advertisedTopics.value.has(topic)) {
-      debugLog(`[ConnectionStore] 自动声明发布者: ${topic}`)
-      if (!advertise(topic, messageType)) {
-        console.error(`[ConnectionStore] ❌ 无法声明发布者: ${topic}`)
-        return false
-      }
-    }
-
-    const publishMsg = {
-      op: 'publish',
+    const result = await sendApiRequest('publish', {
       topic: topic,
       type: messageType,
       msg: message
-    }
+    })
 
-    debugLog(`[ConnectionStore] 发布消息:`, publishMsg)
-    const result = sendMessage(publishMsg)
-    debugLog(`[ConnectionStore] 发布结果: ${result}`)
-    return result
+    if (!result?.success) throw new Error(`后端未确认消息发布: ${topic}`)
+    advertisedTopics.value.add(topic)
+    return true
   }
   
   // ROS API 方法 - 返回Promise
@@ -600,6 +635,7 @@ export const useConnectionStore = defineStore('connection', () => {
     connectionLatency,
     connectionStatus,
     connectionStatusText,
+    websocket,
     subscribedTopics: computed(() => Array.from(subscribedTopics.value)),
     
     // 配置

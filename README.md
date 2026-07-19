@@ -42,6 +42,7 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - PointCloud2 支持按话题选择 `Points` 或 `Boxes` 渲染，并分别设置 `Point Size` 或 `Box Size`。
   - `Boxes` 使用实例化立方体渲染，适合占用体素地图；`Points` 适合高频、大规模实时点云。
   - Path 支持按话题设置线宽和颜色。
+  - Marker/MarkerArray 按 `(ns,id)` 更新，支持 `DELETE`、`DELETEALL`、生命周期以及常用几何类型；未知类型会显示错误，不会伪装成其他几何体。
   - MarkerArray 支持颜色覆盖和透明度设置；颜色留空时使用消息自身颜色。
 - 无人机位姿：
   - 位置面板中选择 odom 话题作为无人机模型位姿来源。
@@ -133,6 +134,10 @@ RVIZWEB_CONFIG=<name>.rvizweb ./start.sh local
 - `laser`
 - `map`
 - `displays`
+- `extensions`（第三方扩展的命名空间）
+
+配置结构采用严格版本化校验。RTSP 用户名、密码和查询令牌不会写入
+`video.sourceUrl`；含凭据的地址仅在当前浏览器页面生命周期内使用。
 
 后端配置 API：
 
@@ -208,7 +213,9 @@ VITE_APP_TITLE=RVizWeb
 rtsp://192.168.1.66:8554/1
 ```
 
-点击“保存”时，RTSP 地址、浮窗开关、位置和大小会写入当前 `.rvizweb` 配置。若地址包含用户名或密码，它们也会以明文保存在配置文件中，请妥善控制文件权限。
+点击“保存”时，浮窗位置、大小和不含凭据的 RTSP 地址会写入当前
+`.rvizweb` 配置。地址中的用户名、密码、查询参数和片段只保留在当前页面内；
+刷新页面后需要重新输入，后端也会拒绝把这些内容写入配置文件。
 
 “连接”会先等待后端取得有效视频首帧。只有探测成功才显示视频窗口；失败或无画面时不会创建空白窗口，而是通过页面系统消息报告具体错误。
 
@@ -221,12 +228,30 @@ RTSP_WIDTH=640
 RTSP_JPEG_QUALITY=5
 RTSP_STARTUP_TIMEOUT=10
 RTSP_SESSION_TTL=300
+RTSP_MAX_SESSIONS=4
+RTSP_MAX_STREAMS=4
+RTSP_MAX_STREAMS_PER_SESSION=1
+RTSP_ALLOW_PRIVATE_NETWORKS=false
+RTSP_ALLOWED_HOSTS=192.168.1.66
 FFMPEG_PATH=ffmpeg
 ```
 
 正常模式修改后重新执行 `./start.sh` 以重新构建前端；开发模式会随 Vite 重启或环境重新加载后生效。
 
-配置写入默认只允许本机和局域网地址。需要令牌时，在 `.env` 中将 `CONFIG_API_TOKEN` 与 `VITE_CONFIG_API_TOKEN` 设置成相同值。`CORS_ORIGINS` 应列出实际允许访问的前端地址。
+前后端默认只绑定 `127.0.0.1`。若要开放到局域网，应设置
+`FRONTEND_HOST`、必要时设置 `BACKEND_HOST`，并配置至少 32 字符的
+`API_ACCESS_TOKEN`。可信隔离局域网也可显式设置
+`ALLOW_UNAUTHENTICATED_LAN=true` 免除登录；该模式只放行 RFC1918、IPv6 ULA
+和链路本地客户端，公网地址仍拒绝。`CORS_ORIGINS` 必须精确列出实际前端 Origin。
+
+ROS 发布默认只允许 `/goal_pose`、`/initialpose` 和 `/cmd_vel`，消息类型也受
+`ROS_PUBLISH_TYPE_ALLOWLIST` 限制。部署其他机器人话题时应在 `.env` 中显式扩展
+白名单。
+
+RTSP 默认禁止私网、回环、链路本地和保留地址。局域网相机应优先通过
+`RTSP_ALLOWED_HOSTS` 精确放行；确需允许整个私网时再设置
+`RTSP_ALLOW_PRIVATE_NETWORKS=true`。域名在策略校验后会固定到已验证的 IP，
+避免 FFmpeg 二次解析时发生 DNS 重绑定。
 
 脚本会按 `.env` 中 `ROS2_SETUP_PATHS` 的顺序依次 source 各个 setup.bash 文件：
 
@@ -245,14 +270,14 @@ uv venv --system-site-packages .venv
 VIRTUAL_ENV="$PWD/.venv" uv sync --active
 source /opt/ros/humble/setup.bash
 source <your_workspace>/install/setup.bash
-uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv run --no-sync uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 ```bash
 cd frontend
 npm ci
 VITE_RVIZWEB_CONFIG=default.rvizweb npm run build
-npm run preview -- --host 0.0.0.0 --port 3000
+npm run preview -- --host 127.0.0.1 --port 3000
 ```
 
 访问地址：
@@ -261,9 +286,12 @@ npm run preview -- --host 0.0.0.0 --port 3000
 - 后端 API：`http://localhost:8000/`
 - 后端文档：`http://localhost:8000/docs`
 
-以上为默认端口。使用 `./start.sh` 时，后端实际端口由 `.env` 中的 `BACKEND_PORT` 决定；Vite 构建时会把该值注入前端，WebSocket 将直接连接当前页面主机的后端端口，无需再配置重复的前端变量。修改端口后需要重新执行 `./start.sh` 以构建前端。
+以上为默认端口。前端默认通过同源 `/api` 与 `/ws` 代理访问后端，因此反向代理和
+HTTPS 部署不需要向浏览器暴露后端端口。只有前后端分离部署时才设置
+`VITE_BACKEND_PUBLIC_URL`。
 
-`/docs` 使用仓库内固定版本的 Swagger UI 5.9.0 静态资源，约 1.5 MB，不依赖浏览器访问外部 CDN，适合无互联网的局域网环境。`/redoc` 默认关闭，接口结构仍可通过 `/openapi.json` 获取。
+`/docs` 使用仓库内固定版本的 Swagger UI 5.9.0 静态资源，不依赖浏览器访问外部
+CDN。`/docs` 与 `/openapi.json` 都需要有效访问会话，`/redoc` 默认关闭。
 
 ## 常见问题
 
@@ -334,10 +362,11 @@ npm run lint:check
 ```bash
 cd backend
 uv run pytest -q
+uv run flake8 app
 uv run python -m compileall -q app
 ```
 
-前端单元测试（当前覆盖 TF 缓存与插值、配置指纹和未保存状态）：
+前端单元测试（当前覆盖 TF、配置状态、RTSP 脱敏、视频帧与后端 URL）：
 
 ```bash
 cd frontend

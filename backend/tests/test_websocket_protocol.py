@@ -1,9 +1,10 @@
+import asyncio
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from app.models.ros import SystemStatus
+from app.models.ros import ConnectionInfo, SystemStatus
 from app.services.rosbridge import RosbridgeService
 
 
@@ -24,17 +25,19 @@ async def test_ping_returns_matching_pong(settings):
 async def test_system_status_returns_over_websocket(settings):
     service = RosbridgeService(settings)
     service.connection_manager.send_to_client = AsyncMock()
-    service.get_system_status = AsyncMock(return_value=SystemStatus(
-        ros_domain_id=0,
-        active_nodes=3,
-        active_topics=12,
-        active_connections=1,
-        system_time=datetime(2026, 7, 14, 9, 0, tzinfo=timezone.utc),
-        uptime=120.0,
-        memory_usage=42.5,
-        cpu_usage=17.25,
-        cpu_temperature=51.0,
-    ))
+    service.get_system_status = AsyncMock(
+        return_value=SystemStatus(
+            ros_domain_id=0,
+            active_nodes=3,
+            active_topics=12,
+            active_connections=1,
+            system_time=datetime(2026, 7, 14, 9, 0, tzinfo=timezone.utc),
+            uptime=120.0,
+            memory_usage=42.5,
+            cpu_usage=17.25,
+            cpu_temperature=51.0,
+        )
+    )
 
     await service._handle_message(
         "client-1",
@@ -59,3 +62,159 @@ async def test_system_status_returns_over_websocket(settings):
             "id": "status-7",
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_publish_success_is_acknowledged_after_ros_publish(settings):
+    service = RosbridgeService(settings)
+    service.node = Mock()
+    publisher = Mock()
+
+    class FakeMessage:
+        pass
+
+    service.publishers["/goal_pose"] = {
+        "publisher": publisher,
+        "msg_class": FakeMessage,
+        "msg_type": "geometry_msgs/msg/PoseStamped",
+        "owners": set(),
+    }
+    service.connection_manager.connection_info["client-1"] = ConnectionInfo(
+        client_id="client-1",
+        connected_at=datetime.now(),
+    )
+    service.connection_manager.send_to_client = AsyncMock()
+    ros_message = object()
+    service._converter.from_dict = Mock(return_value=ros_message)
+
+    await service._handle_message(
+        "client-1",
+        {
+            "op": "publish",
+            "id": "publish-1",
+            "topic": "/goal_pose",
+            "type": "geometry_msgs/msg/PoseStamped",
+            "msg": {"pose": {}},
+        },
+    )
+
+    publisher.publish.assert_called_once_with(ros_message)
+    service.connection_manager.send_to_client.assert_awaited_once_with(
+        "client-1",
+        {
+            "op": "publish_result",
+            "success": True,
+            "topic": "/goal_pose",
+            "id": "publish-1",
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_publish_conversion_failure_returns_matching_error(settings):
+    service = RosbridgeService(settings)
+    service.node = Mock()
+
+    class FakeMessage:
+        pass
+
+    service.publishers["/goal_pose"] = {
+        "publisher": Mock(),
+        "msg_class": FakeMessage,
+        "msg_type": "geometry_msgs/msg/PoseStamped",
+        "owners": set(),
+    }
+    service.connection_manager.send_to_client = AsyncMock()
+    service._converter.from_dict = Mock(return_value=None)
+    service.connection_manager.connection_info["client-1"] = ConnectionInfo(
+        client_id="client-1",
+        connected_at=datetime.now(),
+    )
+
+    await service._handle_message(
+        "client-1",
+        {
+            "op": "publish",
+            "id": "publish-failed",
+            "topic": "/goal_pose",
+            "type": "geometry_msgs/msg/PoseStamped",
+            "msg": {"pose": {}},
+        },
+    )
+
+    response = service.connection_manager.send_to_client.await_args.args[1]
+    assert response["op"] == "error"
+    assert response["id"] == "publish-failed"
+    assert (
+        "/goal_pose"
+        in service.connection_manager.connection_info["client-1"].advertised_topics
+    )
+
+
+@pytest.mark.asyncio
+async def test_concurrent_publisher_owners_share_one_ros_publisher(settings):
+    service = RosbridgeService(settings)
+    service.node = Mock()
+    publisher = Mock()
+    service.node.create_publisher.return_value = publisher
+
+    await asyncio.gather(
+        service._ensure_publisher(
+            "/goal_pose",
+            "geometry_msgs/msg/PoseStamped",
+            "client-1",
+        ),
+        service._ensure_publisher(
+            "/goal_pose",
+            "geometry_msgs/msg/PoseStamped",
+            "client-2",
+        ),
+    )
+
+    service.node.create_publisher.assert_called_once()
+    assert service.publishers["/goal_pose"]["owners"] == {"client-1", "client-2"}
+
+
+@pytest.mark.asyncio
+async def test_rest_publish_releases_temporary_publisher(settings):
+    service = RosbridgeService(settings)
+    service.node = Mock()
+    publisher = Mock()
+    service.node.create_publisher.return_value = publisher
+    service._converter.from_dict = Mock(return_value=object())
+
+    success = await service.publish_message(
+        "/goal_pose",
+        {"pose": {}},
+        "geometry_msgs/msg/PoseStamped",
+    )
+
+    assert success
+    publisher.publish.assert_called_once()
+    assert "/goal_pose" not in service.publishers
+    service.node.destroy_publisher.assert_called_once_with(publisher)
+
+
+@pytest.mark.asyncio
+async def test_client_publisher_is_destroyed_on_disconnect(settings):
+    service = RosbridgeService(settings)
+    publisher = object()
+    service.node = Mock()
+    service.publishers["/goal_pose"] = {
+        "publisher": publisher,
+        "msg_class": object,
+        "msg_type": "geometry_msgs/msg/PoseStamped",
+        "owners": {"client-1"},
+    }
+    service.connection_manager.connection_info["client-1"] = ConnectionInfo(
+        client_id="client-1",
+        connected_at=datetime.now(),
+        advertised_topics={
+            "/goal_pose": "geometry_msgs/msg/PoseStamped",
+        },
+    )
+
+    await service._cleanup_client_publishers("client-1")
+
+    assert "/goal_pose" not in service.publishers
+    service.node.destroy_publisher.assert_called_once_with(publisher)

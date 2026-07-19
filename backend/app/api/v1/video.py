@@ -2,26 +2,31 @@
 
 import asyncio
 import contextlib
+import ipaddress
 import logging
+import re
 import secrets
 import shutil
+import socket
 import time
 from typing import Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ...core.config import Settings, get_settings
+from ...core.security import require_api_access
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_api_access)])
 logger = logging.getLogger(__name__)
 
 JPEG_START = b"\xff\xd8"
 JPEG_END = b"\xff\xd9"
 MAX_JPEG_BUFFER_BYTES = 20 * 1024 * 1024
 MJPEG_BOUNDARY = "frame"
+RTSP_URL_IN_TEXT = re.compile(r"rtsps?://[^\s\"']+", re.IGNORECASE)
 
 
 class VideoStatus(BaseModel):
@@ -43,14 +48,108 @@ class VideoSessionResponse(BaseModel):
 
 _video_sessions: dict[str, tuple[str, float]] = {}
 _active_stream_processes: dict[str, set[asyncio.subprocess.Process]] = {}
+_video_state_lock = asyncio.Lock()
+_pending_probes = 0
 
 
 def _validated_rtsp_url(value: str) -> str:
     url = value.strip()
     parsed = urlsplit(url)
-    if parsed.scheme not in {"rtsp", "rtsps"} or not parsed.hostname:
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError("RTSP 端口无效") from error
+    if (
+        parsed.scheme not in {"rtsp", "rtsps"}
+        or not parsed.hostname
+        or any(character.isspace() for character in url)
+        or (port is not None and not 1 <= port <= 65535)
+    ):
         raise ValueError("网络流地址必须是有效的 rtsp:// 或 rtsps:// 地址")
     return url
+
+
+def _pin_rtsp_hostname(
+    url: str,
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> str:
+    """让 FFmpeg 使用已通过策略校验的地址，避免二次 DNS 解析被重绑定。"""
+    parsed = urlsplit(url)
+    userinfo = ""
+    if "@" in parsed.netloc:
+        userinfo = f"{parsed.netloc.rsplit('@', 1)[0]}@"
+    host = f"[{address}]" if address.version == 6 else str(address)
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return urlunsplit(
+        (
+            parsed.scheme,
+            f"{userinfo}{host}{port}",
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+
+def _redact_rtsp_details(detail: str, source_url: str) -> str:
+    redacted = detail.replace(source_url, "<RTSP source>")
+    return RTSP_URL_IN_TEXT.sub("<RTSP source>", redacted)
+
+
+async def _validated_rtsp_destination(settings: Settings, value: str) -> str:
+    """解析最终目标地址，避免 FFmpeg 被用作内网探测器。"""
+    url = _validated_rtsp_url(value)
+    parsed = urlsplit(url)
+    hostname = (parsed.hostname or "").rstrip(".").lower()
+    allowed_hosts = {
+        item.strip().rstrip(".").lower()
+        for item in settings.rtsp_allowed_hosts.split(",")
+        if item.strip()
+    }
+    explicitly_allowed = hostname in allowed_hosts
+
+    try:
+        resolved = {ipaddress.ip_address(hostname)}
+    except ValueError:
+        try:
+            port = parsed.port or 554
+            addresses = await asyncio.wait_for(
+                asyncio.get_running_loop().getaddrinfo(
+                    hostname,
+                    port,
+                    type=socket.SOCK_STREAM,
+                ),
+                timeout=3.0,
+            )
+        except (asyncio.TimeoutError, OSError, ValueError) as exc:
+            raise ValueError(f"无法解析 RTSP 主机: {hostname}") from exc
+        resolved = {
+            ipaddress.ip_address(sockaddr[0]) for _, _, _, _, sockaddr in addresses
+        }
+    if not resolved:
+        raise ValueError(f"RTSP 主机没有可用地址: {hostname}")
+
+    for address in resolved:
+        if explicitly_allowed:
+            continue
+        if (
+            address.is_loopback
+            or address.is_link_local
+            or address.is_multicast
+            or address.is_unspecified
+            or address.is_reserved
+        ):
+            raise ValueError(f"RTSP 目标地址不允许访问: {address}")
+        if address.is_private and not settings.rtsp_allow_private_networks:
+            raise ValueError(
+                "RTSP 私网地址默认禁用；请使用 RTSP_ALLOWED_HOSTS 精确放行"
+            )
+        if not address.is_private and not address.is_global:
+            raise ValueError(f"RTSP 目标地址不允许访问: {address}")
+    # 即使域名第一次解析到了公网地址，也不能让 FFmpeg 再次解析并被
+    # DNS rebinding 引导到内网。数字地址会被规范化为等价 URL。
+    selected_address = sorted(resolved, key=lambda item: (item.version, str(item)))[0]
+    return _pin_rtsp_hostname(url, selected_address)
 
 
 def _ffmpeg_executable(settings: Settings) -> Optional[str]:
@@ -187,9 +286,7 @@ async def _probe_rtsp_source(settings: Settings, source_url: str) -> None:
         raise RuntimeError("无法读取 FFmpeg 探测输出")
 
     stderr_messages: list[str] = []
-    stderr_task = asyncio.create_task(
-        _collect_stderr(process.stderr, stderr_messages)
-    )
+    stderr_task = asyncio.create_task(_collect_stderr(process.stderr, stderr_messages))
     try:
         await _read_jpeg_frame(
             process.stdout,
@@ -201,7 +298,7 @@ async def _probe_rtsp_source(settings: Settings, source_url: str) -> None:
     except (asyncio.TimeoutError, RuntimeError) as error:
         reason = stderr_messages[-1] if stderr_messages else str(error)
         reason = reason or "等待视频首帧超时"
-        reason = reason.replace(source_url, "<RTSP source>")
+        reason = _redact_rtsp_details(reason, source_url)
         raise RuntimeError(reason) from error
     finally:
         await _stop_process(process)
@@ -211,10 +308,14 @@ async def _probe_rtsp_source(settings: Settings, source_url: str) -> None:
 
 def _multipart_frame(frame: bytes) -> bytes:
     return (
-        f"--{MJPEG_BOUNDARY}\r\n"
-        "Content-Type: image/jpeg\r\n"
-        f"Content-Length: {len(frame)}\r\n\r\n"
-    ).encode("ascii") + frame + b"\r\n"
+        (
+            f"--{MJPEG_BOUNDARY}\r\n"
+            "Content-Type: image/jpeg\r\n"
+            f"Content-Length: {len(frame)}\r\n\r\n"
+        ).encode("ascii")
+        + frame
+        + b"\r\n"
+    )
 
 
 @router.get("/video/status", response_model=VideoStatus)
@@ -298,34 +399,50 @@ async def shutdown_video_streams() -> None:
 async def create_video_session(
     payload: VideoSessionRequest,
 ) -> VideoSessionResponse:
+    global _pending_probes
+
     settings = get_settings()
     status = await get_video_status()
     if not status.ready:
         raise HTTPException(status_code=503, detail=status.detail)
 
     try:
-        source_url = _validated_rtsp_url(payload.source_url)
+        source_url = await _validated_rtsp_destination(settings, payload.source_url)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    try:
-        await _probe_rtsp_source(settings, source_url)
-    except (FileNotFoundError, OSError) as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-    except RuntimeError as error:
-        logger.warning("RTSP source probe failed: %s", error)
-        raise HTTPException(
-            status_code=504,
-            detail=f"未检测到可用视频流: {error}",
-        ) from error
-
-    for expired_id in _clear_expired_sessions():
+    async with _video_state_lock:
+        expired_ids = _clear_expired_sessions()
+        if len(_video_sessions) + _pending_probes >= settings.rtsp_max_sessions:
+            raise HTTPException(status_code=429, detail="RTSP 视频会话数量已达上限")
+        _pending_probes += 1
+    for expired_id in expired_ids:
         await _stop_session_streams(expired_id)
-    session_id = secrets.token_urlsafe(24)
-    _video_sessions[session_id] = (
-        source_url,
-        time.monotonic() + settings.rtsp_session_ttl,
-    )
+
+    try:
+        try:
+            await _probe_rtsp_source(settings, source_url)
+        except (FileNotFoundError, OSError) as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except RuntimeError as error:
+            logger.warning("RTSP source probe failed: %s", error)
+            raise HTTPException(
+                status_code=504,
+                detail=f"未检测到可用视频流: {error}",
+            ) from error
+
+        # 保留 pending 名额直到成功会话已经写入，避免“pending--”与插入
+        # 之间被并发请求抢占并突破 rtsp_max_sessions。
+        async with _video_state_lock:
+            session_id = secrets.token_urlsafe(24)
+            _video_sessions[session_id] = (
+                source_url,
+                time.monotonic() + settings.rtsp_session_ttl,
+            )
+    finally:
+        async with _video_state_lock:
+            _pending_probes -= 1
+
     return VideoSessionResponse(
         session_id=session_id,
         stream_path=f"/api/v1/video/stream/{session_id}",
@@ -334,7 +451,8 @@ async def create_video_session(
 
 @router.delete("/video/sessions/{session_id}")
 async def delete_video_session(session_id: str) -> dict[str, str]:
-    _video_sessions.pop(session_id, None)
+    async with _video_state_lock:
+        _video_sessions.pop(session_id, None)
     await _stop_session_streams(session_id)
     return {"status": "deleted"}
 
@@ -342,23 +460,33 @@ async def delete_video_session(session_id: str) -> dict[str, str]:
 @router.get("/video/stream/{session_id}")
 async def stream_video(session_id: str, request: Request) -> StreamingResponse:
     settings = get_settings()
-    for expired_id in _clear_expired_sessions():
+    async with _video_state_lock:
+        expired_ids = _clear_expired_sessions()
+        session = _video_sessions.get(session_id)
+    for expired_id in expired_ids:
         await _stop_session_streams(expired_id)
-    session = _video_sessions.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="RTSP 视频会话不存在或已过期")
     source_url, _ = session
 
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *_build_ffmpeg_command(settings, source_url),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+    async with _video_state_lock:
+        total_streams = sum(
+            len(processes) for processes in _active_stream_processes.values()
         )
-    except (FileNotFoundError, OSError, ValueError) as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-
-    _register_stream_process(session_id, process)
+        session_streams = len(_active_stream_processes.get(session_id, set()))
+        if total_streams >= settings.rtsp_max_streams:
+            raise HTTPException(status_code=429, detail="RTSP 转码进程数量已达上限")
+        if session_streams >= settings.rtsp_max_streams_per_session:
+            raise HTTPException(status_code=429, detail="该 RTSP 会话已有活动视频流")
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *_build_ffmpeg_command(settings, source_url),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except (FileNotFoundError, OSError, ValueError) as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        _register_stream_process(session_id, process)
 
     if process.stdout is None or process.stderr is None:
         await _stop_process(process)
@@ -366,9 +494,7 @@ async def stream_video(session_id: str, request: Request) -> StreamingResponse:
         raise HTTPException(status_code=500, detail="无法读取 FFmpeg 输出")
 
     stderr_messages: list[str] = []
-    stderr_task = asyncio.create_task(
-        _collect_stderr(process.stderr, stderr_messages)
-    )
+    stderr_task = asyncio.create_task(_collect_stderr(process.stderr, stderr_messages))
     buffer = bytearray()
 
     try:
@@ -390,7 +516,7 @@ async def stream_video(session_id: str, request: Request) -> StreamingResponse:
         with contextlib.suppress(asyncio.CancelledError):
             await stderr_task
         reason = stderr_messages[-1] if stderr_messages else str(error)
-        reason = reason.replace(source_url, "<RTSP source>")
+        reason = _redact_rtsp_details(reason, source_url)
         logger.warning("RTSP stream startup failed: %s", reason)
         raise HTTPException(
             status_code=504,

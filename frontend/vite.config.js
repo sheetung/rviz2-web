@@ -13,19 +13,20 @@ export default defineConfig(({ mode }) => {
   const backendProxy = {
     '/api': {
       target: `http://localhost:${backendPort}`,
-      changeOrigin: true
+      changeOrigin: true,
+      xfwd: true
     },
     '/ws': {
       target: `ws://localhost:${backendPort}`,
-      ws: true
+      ws: true,
+      xfwd: true
     }
   }
 
   return {
   envDir: '..',
   define: {
-    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
-    'import.meta.env.VITE_BACKEND_PORT': JSON.stringify(backendPort)
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion)
   },
   plugins: [
     vue(),
@@ -50,7 +51,7 @@ export default defineConfig(({ mode }) => {
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    sourcemap: env.VITE_BUILD_SOURCEMAP === 'true',
     rollupOptions: {
       output: {
         manualChunks(id) {

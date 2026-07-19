@@ -183,9 +183,11 @@ export default {
     const visualizationObjects = new Map()
     const rosSubscriptions = new Map()
     const displayConfigs = new Map()
+    const markerLifetimeTimers = new Map()
     const positionCommandPaths = new Map()
     const tfBuffer = new TfBuffer()
     const followFrameTracker = new FollowFrameTracker()
+    const observedFrameIds = new Set()
     const pendingPointClouds = new Map()
     const latestDisplayMessages = new Map()
     let pointCloudFrameRequest = null
@@ -193,11 +195,24 @@ export default {
     let frameListSignature = ''
 
     const emitFrameList = () => {
-      const frameIds = tfBuffer.frameIds()
+      const frameIds = [...new Set([
+        ...tfBuffer.frameIds(),
+        ...observedFrameIds
+      ])].sort((left, right) => left.localeCompare(right))
       const signature = frameIds.join('\n')
       if (signature === frameListSignature) return
       frameListSignature = signature
       emit('frame-list-change', frameIds)
+    }
+
+    const observeMessageFrames = (message) => {
+      const frames = [
+        frameIdFromMessage(message),
+        ...(message?.markers || []).map(marker => frameIdFromMessage(marker))
+      ].filter(Boolean)
+      const previousSize = observedFrameIds.size
+      frames.forEach(frame => observedFrameIds.add(frame))
+      if (observedFrameIds.size !== previousSize) emitFrameList()
     }
 
     const applyFollowFrame = () => {
@@ -560,8 +575,6 @@ export default {
         const rotorMaterial = new THREE.MeshLambertMaterial({ color: 0x90a4ae, transparent: true, opacity: 0.75 })
         const frontRotorMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000, transparent: true, opacity: 0.75 })
         const lidarMaterial = new THREE.MeshLambertMaterial({ color: 0x1e88e5 })
-        const accentMaterial = new THREE.MeshLambertMaterial({ color: 0xff7043 })
-
         // Central UAV body, slightly flattened for a clear top-down silhouette.
         const bodyGeometry = new THREE.BoxGeometry(0.55, 0.42, 0.16)
         const body = new THREE.Mesh(bodyGeometry, bodyMaterial)
@@ -1388,6 +1401,7 @@ export default {
 
       try {
         if (!(messageType || '').includes('TFMessage')) {
+          observeMessageFrames(message)
           latestDisplayMessages.set(topic, { messageType, message })
         }
         if (isPositionCommandMessage(topic, messageType, message)) {
@@ -1558,6 +1572,13 @@ export default {
     }
 
     const removeVisualization = (topic) => {
+      const markerTimerPrefix = `${topic}\u0000`
+      markerLifetimeTimers.forEach((timer, key) => {
+        if (key.startsWith(markerTimerPrefix)) {
+          clearTimeout(timer)
+          markerLifetimeTimers.delete(key)
+        }
+      })
       const object = visualizationObjects.get(topic)
       if (object) {
         if (selectedObject === object) clearSelection()
@@ -1654,6 +1675,10 @@ export default {
       try {
         // 移除旧的点云
         removeVisualization(topic)
+        if (message?.error) {
+          setDisplayStatus(topic, String(message.error))
+          return
+        }
         
         // 创建新的点云几何体
         const geometry = new THREE.BufferGeometry()
@@ -1778,26 +1803,12 @@ export default {
           }
         }
         
-        // 如果没有成功解析出点，创建测试数据以验证渲染
+        // 空数据或解析失败必须显式失败，不能伪造点云误导用户。
         if (pointsProcessed === 0) {
-          debugLog('No valid points parsed, creating test point cloud')
-          systemMessage.warning(`主题 ${topic} 的点云数据解析失败，显示测试数据`)
-          
-          for (let i = 0; i < 2000; i++) {
-            const angle = (i / 2000) * Math.PI * 4
-            const radius = (i / 2000) * 10
-            const x = Math.cos(angle) * radius
-            const y = Math.sin(angle) * radius
-            const z = Math.sin(i / 100) * 2
-            
-            positions.push(x, y, z)
-            
-            // 彩色螺旋
-            const hue = (i / 2000) % 1
-            const color = new THREE.Color().setHSL(hue, 0.8, 0.6)
-            colors.push(color.r, color.g, color.b)
-          }
-          pointsProcessed = 2000
+          geometry.dispose()
+          removeVisualization(topic)
+          setDisplayStatus(topic, '点云为空或数据格式无效')
+          return
         }
         
         // 创建点云对象
@@ -2210,28 +2221,7 @@ export default {
       }
     }
     
-    const updateMarker = (topic, message, displayConfig = displayConfigs.get(topic) || {}) => {
-      // 标记可视化实现
-      // debugLog(`Updating marker for ${topic}:`, message)
-      
-      removeVisualization(topic)
-      
-      let geometry, material, mesh
-      
-      switch (message.type) {
-        case 1: // CUBE
-          geometry = new THREE.BoxGeometry(1, 1, 1)
-          break
-        case 2: // SPHERE
-          geometry = new THREE.SphereGeometry(0.5, 32, 32)
-          break
-        case 3: // CYLINDER
-          geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32)
-          break
-        default:
-          geometry = new THREE.BoxGeometry(1, 1, 1)
-      }
-      
+    const markerMaterial = (message, displayConfig) => {
       const messageOpacity = message.color?.a ?? 1
       const opacity = displayConfig.opacity === undefined
         ? messageOpacity
@@ -2243,79 +2233,305 @@ export default {
           message.color?.g ?? 0,
           message.color?.b ?? 0
         )
-
-      material = new THREE.MeshLambertMaterial({
+      return new THREE.MeshLambertMaterial({
         color: markerColor,
         transparent: opacity < 1,
         opacity,
         depthWrite: opacity >= 1
       })
-      
-      mesh = new THREE.Mesh(geometry, material)
-      
-      // 设置位置和旋转
+    }
+
+    const markerPoints = (message) => (message.points || []).map(point => (
+      new THREE.Vector3(point?.x ?? 0, point?.y ?? 0, point?.z ?? 0)
+    ))
+
+    const applyMarkerPose = (object, message, applyScale = false) => {
       if (message.pose) {
-        mesh.position.set(
-          message.pose.position?.x || 0,
-          message.pose.position?.y || 0,
-          message.pose.position?.z || 0
+        object.position.set(
+          message.pose.position?.x ?? 0,
+          message.pose.position?.y ?? 0,
+          message.pose.position?.z ?? 0
         )
-        
         if (message.pose.orientation) {
-          mesh.quaternion.set(
-            message.pose.orientation.x || 0,
-            message.pose.orientation.y || 0,
-            message.pose.orientation.z || 0,
-            message.pose.orientation.w || 1
+          const orientation = new THREE.Quaternion(
+            message.pose.orientation.x ?? 0,
+            message.pose.orientation.y ?? 0,
+            message.pose.orientation.z ?? 0,
+            message.pose.orientation.w ?? 1
           )
+          if (orientation.lengthSq() > Number.EPSILON) {
+            object.quaternion.copy(orientation.normalize())
+          } else {
+            object.quaternion.identity()
+          }
         }
       }
-      
-      // 设置缩放
-      if (message.scale) {
-        mesh.scale.set(
-          message.scale.x || 1,
-          message.scale.y || 1,
-          message.scale.z || 1
+      if (applyScale && message.scale) {
+        object.scale.set(
+          message.scale.x ?? 1,
+          message.scale.y ?? 1,
+          message.scale.z ?? 1
         )
       }
-      
-      mesh.userData = { topic, messageType: 'visualization_msgs/msg/Marker' }
-      
-      scene.add(mesh)
-      visualizationObjects.set(topic, mesh)
     }
-    
-    const updateMarkerArray = (topic, message) => {
-      // 标记数组可视化实现
-      // debugLog(`Updating marker array for ${topic}:`, message)
-      
-      removeVisualization(topic)
-      
-      const group = new THREE.Group()
-      const displayConfig = displayConfigs.get(topic) || {}
-      
-      let transformError = ''
-      if (message.markers && message.markers.length > 0) {
-        message.markers.forEach((marker, index) => {
-          updateMarker(`${topic}_${index}`, marker, displayConfig)
-          const markerObject = visualizationObjects.get(`${topic}_${index}`)
-          if (markerObject) {
-            if (!applyFixedFrame(topic, marker, markerObject, false)) {
-              const frame = frameIdFromMessage(marker) || 'unknown'
-              transformError = `缺少 ${frame} → ${fixedFrameId} 的 TF`
+
+    const createMarkerObject = (message, displayConfig) => {
+      const material = markerMaterial(message, displayConfig)
+      const points = markerPoints(message)
+      let object = null
+      let applyScale = false
+
+      switch (message.type) {
+        case 0: { // ARROW
+          const usesPointEndpoints = points.length >= 2
+          const start = points[0] || new THREE.Vector3()
+          const end = points[1] || new THREE.Vector3(message.scale?.x ?? 1, 0, 0)
+          const direction = end.clone().sub(start)
+          const length = Math.max(direction.length(), 0.0001)
+          const headLength = usesPointEndpoints
+            ? (message.scale?.z ?? Math.min(length * 0.25, 0.3))
+            : Math.min(length * 0.25, 0.3)
+          const headWidth = usesPointEndpoints
+            ? (message.scale?.y ?? Math.min(length * 0.12, 0.15))
+            : (message.scale?.z ?? Math.min(length * 0.12, 0.15))
+          const arrow = new THREE.ArrowHelper(
+            direction.normalize(),
+            start,
+            length,
+            material.color.getHex(),
+            headLength,
+            headWidth
+          )
+          arrow.traverse(child => {
+            if (child.material) {
+              child.material.transparent = material.opacity < 1
+              child.material.opacity = material.opacity
+              child.material.depthWrite = material.opacity >= 1
             }
-            group.add(markerObject)
-            visualizationObjects.delete(`${topic}_${index}`)
-          }
-        })
+          })
+          // ArrowHelper 自身的 position 表示端点起点，直接应用 Marker pose
+          // 会覆盖它；使用外层 Group 才能正确组合局部端点和 Marker pose。
+          object = new THREE.Group()
+          object.add(arrow)
+          material.dispose()
+          break
+        }
+        case 1: // CUBE
+          object = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material)
+          applyScale = true
+          break
+        case 2: // SPHERE
+          object = new THREE.Mesh(new THREE.SphereGeometry(0.5, 24, 16), material)
+          applyScale = true
+          break
+        case 3: { // CYLINDER，ROS 轴向为 Z
+          const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 24)
+          geometry.rotateX(Math.PI / 2)
+          object = new THREE.Mesh(geometry, material)
+          applyScale = true
+          break
+        }
+        case 4: // LINE_STRIP
+        case 5: { // LINE_LIST
+          const lineColor = material.color.clone()
+          const lineOpacity = material.opacity
+          material.dispose()
+          const geometry = new THREE.BufferGeometry().setFromPoints(points)
+          const lineMaterial = new THREE.LineBasicMaterial({
+            color: lineColor,
+            transparent: lineOpacity < 1,
+            opacity: lineOpacity,
+            linewidth: message.scale?.x ?? 1
+          })
+          object = message.type === 4
+            ? new THREE.Line(geometry, lineMaterial)
+            : new THREE.LineSegments(geometry, lineMaterial)
+          break
+        }
+        case 6: // CUBE_LIST
+        case 7: { // SPHERE_LIST
+          object = new THREE.Group()
+          const geometry = message.type === 6
+            ? new THREE.BoxGeometry(
+              message.scale?.x ?? 1,
+              message.scale?.y ?? 1,
+              message.scale?.z ?? 1
+            )
+            : new THREE.SphereGeometry(0.5, 16, 12).scale(
+              message.scale?.x ?? 1,
+              message.scale?.y ?? 1,
+              message.scale?.z ?? 1
+            )
+          points.forEach(point => {
+            const item = new THREE.Mesh(geometry.clone(), material.clone())
+            item.position.copy(point)
+            object.add(item)
+          })
+          geometry.dispose()
+          material.dispose()
+          break
+        }
+        case 8: { // POINTS
+          const color = material.color.clone()
+          const opacity = material.opacity
+          material.dispose()
+          object = new THREE.Points(
+            new THREE.BufferGeometry().setFromPoints(points),
+            new THREE.PointsMaterial({
+              color,
+              size: Math.max(message.scale?.x ?? 0.05, 0.001),
+              transparent: opacity < 1,
+              opacity
+            })
+          )
+          break
+        }
+        case 9: { // TEXT_VIEW_FACING
+          const canvas = document.createElement('canvas')
+          const context = canvas.getContext('2d')
+          canvas.width = 512
+          canvas.height = 128
+          context.clearRect(0, 0, canvas.width, canvas.height)
+          context.fillStyle = `#${material.color.getHexString()}`
+          context.font = '64px sans-serif'
+          context.textAlign = 'center'
+          context.textBaseline = 'middle'
+          context.fillText(String(message.text || ''), 256, 64)
+          const texture = new THREE.CanvasTexture(canvas)
+          const opacity = material.opacity
+          material.dispose()
+          object = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            opacity
+          }))
+          const height = Math.max(message.scale?.z ?? 1, 0.001)
+          object.scale.set(height * 4, height, 1)
+          break
+        }
+        case 11: { // TRIANGLE_LIST
+          const geometry = new THREE.BufferGeometry().setFromPoints(points)
+          geometry.computeVertexNormals()
+          object = new THREE.Mesh(geometry, material)
+          break
+        }
+        default:
+          material.dispose()
+          return null
       }
-      
-      group.userData = { topic, messageType: 'visualization_msgs/msg/MarkerArray', fixedFrameApplied: true }
-      setDisplayStatus(topic, transformError)
-      
-      scene.add(group)
-      visualizationObjects.set(topic, group)
+
+      applyMarkerPose(object, message, applyScale)
+      return object
+    }
+
+    const disposeMarkerObject = (object) => {
+      object.traverse?.(child => {
+        child.geometry?.dispose?.()
+        const materials = Array.isArray(child.material)
+          ? child.material
+          : [child.material]
+        materials.filter(Boolean).forEach(material => {
+          material.map?.dispose?.()
+          material.dispose?.()
+        })
+      })
+    }
+
+    const markerKey = (message) => `${message.ns || ''}:${message.id ?? 0}`
+    const markerTimerKey = (topic, key) => `${topic}\u0000${key}`
+
+    const clearMarkerGroup = (topic, group) => {
+      group.children.slice().forEach(child => {
+        group.remove(child)
+        disposeMarkerObject(child)
+      })
+      const prefix = `${topic}\u0000`
+      markerLifetimeTimers.forEach((timer, key) => {
+        if (key.startsWith(prefix)) {
+          clearTimeout(timer)
+          markerLifetimeTimers.delete(key)
+        }
+      })
+    }
+
+    const updateMarker = (topic, message, displayConfig = displayConfigs.get(topic) || {}) => {
+      let group = visualizationObjects.get(topic)
+      if (!group || group.userData?.markerGroup !== true) {
+        removeVisualization(topic)
+        group = new THREE.Group()
+        group.userData = {
+          topic,
+          messageType: 'visualization_msgs/msg/Marker',
+          markerGroup: true,
+          fixedFrameApplied: true
+        }
+        scene.add(group)
+        visualizationObjects.set(topic, group)
+      }
+
+      if (message.action === 3) { // DELETEALL
+        clearMarkerGroup(topic, group)
+        setDisplayStatus(topic)
+        return
+      }
+
+      const key = markerKey(message)
+      const timerKey = markerTimerKey(topic, key)
+      const existing = group.children.find(child => child.userData?.markerKey === key)
+      if (existing) {
+        group.remove(existing)
+        disposeMarkerObject(existing)
+      }
+      if (markerLifetimeTimers.has(timerKey)) {
+        clearTimeout(markerLifetimeTimers.get(timerKey))
+        markerLifetimeTimers.delete(timerKey)
+      }
+      if (message.action === 2) { // DELETE
+        setDisplayStatus(topic)
+        return
+      }
+
+      const object = createMarkerObject(message, displayConfig)
+      if (!object) {
+        setDisplayStatus(topic, `暂不支持 Marker 类型 ${message.type}`)
+        return
+      }
+      object.userData.markerKey = key
+      object.userData.messageType = 'visualization_msgs/msg/Marker'
+      if (!applyFixedFrame(topic, message, object, false)) {
+        const frame = frameIdFromMessage(message) || 'unknown'
+        setDisplayStatus(topic, `缺少 ${frame} → ${fixedFrameId} 的 TF`)
+      } else {
+        setDisplayStatus(topic)
+      }
+      group.add(object)
+
+      const lifetimeMs = (
+        Number(message.lifetime?.sec || 0) * 1000 +
+        Number(message.lifetime?.nanosec || 0) / 1e6
+      )
+      if (lifetimeMs > 0) {
+        markerLifetimeTimers.set(timerKey, setTimeout(() => {
+          if (object.parent === group) {
+            group.remove(object)
+            disposeMarkerObject(object)
+          }
+          markerLifetimeTimers.delete(timerKey)
+        }, lifetimeMs))
+      }
+    }
+
+    const updateMarkerArray = (topic, message) => {
+      const displayConfig = displayConfigs.get(topic) || {}
+      if (!Array.isArray(message.markers)) {
+        setDisplayStatus(topic, 'MarkerArray 缺少 markers 数组')
+        return
+      }
+      message.markers.forEach(marker => updateMarker(topic, marker, displayConfig))
+      const group = visualizationObjects.get(topic)
+      if (group) {
+        group.userData.messageType = 'visualization_msgs/msg/MarkerArray'
+      }
     }
     
     const updatePath = (topic, message) => {
@@ -2899,13 +3115,13 @@ export default {
       }
     }
 
-    const handleNavigationToolClick = (position, orientation) => {
+    const handleNavigationToolClick = async (position, orientation) => {
       switch (currentNavigationTool) {
         case '2d_goal':
-          publishGoalPose(position, orientation, goalPublishTopic)
+          await publishGoalPose(position, orientation, goalPublishTopic)
           break
         case '2d_pose':
-          publishPoseEstimate(position, orientation)
+          await publishPoseEstimate(position, orientation)
           break
       }
 
@@ -2913,7 +3129,7 @@ export default {
       setNavigationTool('move')
     }
 
-    const publishGoalPose = (position, orientation, topicName = '') => {
+    const publishGoalPose = async (position, orientation, topicName = '') => {
       debugLog('[Navigation] 开始发布2D目标点')
       debugLog('[Navigation] 连接状态检查:', {
         isConnected: rosbridge.isConnected,
@@ -2960,7 +3176,11 @@ export default {
       debugLog('[Navigation] 发布2D目标点消息:', JSON.stringify(goalMsg, null, 2))
 
       try {
-        const publishResult = rosbridge.publish(publishTopic, 'geometry_msgs/msg/PoseStamped', goalMsg)
+        const publishResult = await rosbridge.publish(
+          publishTopic,
+          'geometry_msgs/msg/PoseStamped',
+          goalMsg
+        )
         // debugLog('[Navigation] rosbridge.publish返回结果:', publishResult)
 
         if (publishResult) {
@@ -3011,7 +3231,7 @@ export default {
       return publishGoalPose(position, getDefaultGoalOrientation(), topicName)
     }
 
-    const publishPoseEstimate = (position, orientation) => {
+    const publishPoseEstimate = async (position, orientation) => {
       debugLog('[Navigation] 开始发布2D位置估计')
       debugLog('[Navigation] 连接状态检查:', {
         isConnected: rosbridge.isConnected,
@@ -3069,7 +3289,11 @@ export default {
       debugLog('[Navigation] 发布2D位置估计消息:', JSON.stringify(poseMsg, null, 2))
 
       try {
-        const publishResult = rosbridge.publish(ROS_TOPICS.initialPose, 'geometry_msgs/msg/PoseWithCovarianceStamped', poseMsg)
+        const publishResult = await rosbridge.publish(
+          ROS_TOPICS.initialPose,
+          'geometry_msgs/msg/PoseWithCovarianceStamped',
+          poseMsg
+        )
         // debugLog('[Navigation] rosbridge.publish返回结果:', publishResult)
 
         if (publishResult) {
