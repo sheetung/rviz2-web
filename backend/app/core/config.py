@@ -2,13 +2,12 @@
 应用配置管理
 """
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-from functools import lru_cache
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -50,15 +49,6 @@ class Settings(BaseSettings):
         default="http://localhost:3000,http://127.0.0.1:3000",
         description="允许访问 API 的前端来源",
     )
-    api_access_token: str = Field(
-        default="",
-        description="公网访问 API 和 WebSocket 时使用的统一访问令牌",
-    )
-    allow_unauthenticated_lan: bool = Field(
-        default=True,
-        description="是否允许 RFC1918/ULA 局域网客户端免认证访问",
-    )
-    auth_session_ttl: int = Field(default=28_800, ge=300, le=86_400)
     ros_subscribe_topic_allowlist: str = Field(
         default="*",
         description="允许订阅的 ROS topic glob，逗号分隔",
@@ -92,10 +82,6 @@ class Settings(BaseSettings):
         default=30,
         ge=1,
         le=1000,
-    )
-    config_api_token: str = Field(
-        default="",
-        description="已弃用；仅用于兼容旧配置，优先使用 API_ACCESS_TOKEN",
     )
     config_max_bytes: int = Field(default=1_048_576, ge=1024, le=10_485_760)
     config_name_max_length: int = Field(default=96, ge=8, le=200)

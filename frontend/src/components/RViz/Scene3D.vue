@@ -31,6 +31,11 @@ import { useRosbridge } from '../../composables/useRosbridge'
 import { useConnectionStore } from '../../composables/useConnectionStore'
 import { ROS_TOPICS, getDefaultVisualizationTopics, getPositionTopics } from '../../config/rosTopics'
 import { FollowFrameTracker, TfBuffer, frameIdFromMessage, messageTimestampMs } from '../../utils/tfBuffer'
+import {
+  markerLifetimeMilliseconds,
+  markerTransformTimestamp,
+  refreshMarkerGroupTransforms
+} from '../../utils/markerState'
 import { debugLog } from '../../utils/debug'
 import { getThemeColor } from '../../utils/theme'
 import { systemMessage } from '../../composables/useSystemMessage'
@@ -227,7 +232,13 @@ export default {
       emit('display-status', { topic, error })
     }
 
-    const applyFixedFrame = (topic, message, object = visualizationObjects.get(topic), report = true) => {
+    const applyFixedFrame = (
+      topic,
+      message,
+      object = visualizationObjects.get(topic),
+      report = true,
+      transformTimestamp = messageTimestampMs(message)
+    ) => {
       if (!object) return true
       if (object.userData?.fixedFrameApplied) return true
       const sourceFrame = frameIdFromMessage(message) || frameIdFromMessage(message?.markers?.[0])
@@ -241,7 +252,7 @@ export default {
         if (report) setDisplayStatus(topic)
         return true
       }
-      const transform = tfBuffer.lookupTransform(fixedFrameId, sourceFrame, messageTimestampMs(message))
+      const transform = tfBuffer.lookupTransform(fixedFrameId, sourceFrame, transformTimestamp)
       if (!transform) {
         object.visible = false
         if (report) setDisplayStatus(topic, `缺少 ${sourceFrame} → ${fixedFrameId} 的 TF`)
@@ -275,6 +286,19 @@ export default {
       }
     }
 
+    const refreshMarkerTransforms = (topic) => {
+      const group = visualizationObjects.get(topic)
+      if (!group?.userData?.markerGroup) return
+
+      const error = refreshMarkerGroupTransforms(group, (marker, object) => {
+        const timestamp = markerTransformTimestamp(marker, messageTimestampMs(marker))
+        if (applyFixedFrame(topic, marker, object, false, timestamp)) return ''
+        const frame = frameIdFromMessage(marker) || 'unknown'
+        return `缺少 ${frame} → ${fixedFrameId} 的 TF`
+      })
+      setDisplayStatus(topic, error)
+    }
+
     const refreshFixedFrameObjects = () => {
       transformFrameRequest = null
       latestDisplayMessages.forEach(({ messageType, message }, topic) => {
@@ -283,8 +307,9 @@ export default {
         if (!rosSubscriptions.has(topic)) return
         if ((messageType || '').includes('Odometry')) {
           updateOdometry(topic, message)
-        } else if ((messageType || '').includes('MarkerArray')) {
-          updateMarkerArray(topic, message)
+        } else if ((messageType || '').includes('Marker')) {
+          // Marker 对象在原位重新应用 TF，避免重建对象和重置 lifetime。
+          refreshMarkerTransforms(topic)
         } else {
           applyFixedFrame(topic, message)
         }
@@ -2454,7 +2479,16 @@ export default {
       })
     }
 
-    const updateMarker = (topic, message, displayConfig = displayConfigs.get(topic) || {}) => {
+    const updateMarker = (
+      topic,
+      message,
+      displayConfig = displayConfigs.get(topic) || {},
+      reportStatus = true
+    ) => {
+      const reportMarkerStatus = (error = '') => {
+        if (reportStatus) setDisplayStatus(topic, error)
+        return error
+      }
       let group = visualizationObjects.get(topic)
       if (!group || group.userData?.markerGroup !== true) {
         removeVisualization(topic)
@@ -2471,8 +2505,7 @@ export default {
 
       if (message.action === 3) { // DELETEALL
         clearMarkerGroup(topic, group)
-        setDisplayStatus(topic)
-        return
+        return reportMarkerStatus()
       }
 
       const key = markerKey(message)
@@ -2487,29 +2520,28 @@ export default {
         markerLifetimeTimers.delete(timerKey)
       }
       if (message.action === 2) { // DELETE
-        setDisplayStatus(topic)
-        return
+        return reportMarkerStatus()
       }
 
       const object = createMarkerObject(message, displayConfig)
       if (!object) {
-        setDisplayStatus(topic, `暂不支持 Marker 类型 ${message.type}`)
-        return
+        return reportMarkerStatus(`暂不支持 Marker 类型 ${message.type}`)
       }
       object.userData.markerKey = key
       object.userData.messageType = 'visualization_msgs/msg/Marker'
-      if (!applyFixedFrame(topic, message, object, false)) {
+      object.userData.originalMessage = message
+      let transformError = ''
+      const transformTimestamp = markerTransformTimestamp(
+        message,
+        messageTimestampMs(message)
+      )
+      if (!applyFixedFrame(topic, message, object, false, transformTimestamp)) {
         const frame = frameIdFromMessage(message) || 'unknown'
-        setDisplayStatus(topic, `缺少 ${frame} → ${fixedFrameId} 的 TF`)
-      } else {
-        setDisplayStatus(topic)
+        transformError = `缺少 ${frame} → ${fixedFrameId} 的 TF`
       }
       group.add(object)
 
-      const lifetimeMs = (
-        Number(message.lifetime?.sec || 0) * 1000 +
-        Number(message.lifetime?.nanosec || 0) / 1e6
-      )
+      const lifetimeMs = markerLifetimeMilliseconds(message)
       if (lifetimeMs > 0) {
         markerLifetimeTimers.set(timerKey, setTimeout(() => {
           if (object.parent === group) {
@@ -2519,6 +2551,7 @@ export default {
           markerLifetimeTimers.delete(timerKey)
         }, lifetimeMs))
       }
+      return reportMarkerStatus(transformError)
     }
 
     const updateMarkerArray = (topic, message) => {
@@ -2527,11 +2560,16 @@ export default {
         setDisplayStatus(topic, 'MarkerArray 缺少 markers 数组')
         return
       }
-      message.markers.forEach(marker => updateMarker(topic, marker, displayConfig))
+      let firstError = ''
+      message.markers.forEach(marker => {
+        const error = updateMarker(topic, marker, displayConfig, false)
+        if (!firstError && error) firstError = error
+      })
       const group = visualizationObjects.get(topic)
       if (group) {
         group.userData.messageType = 'visualization_msgs/msg/MarkerArray'
       }
+      setDisplayStatus(topic, firstError)
     }
     
     const updatePath = (topic, message) => {

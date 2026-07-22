@@ -55,8 +55,6 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 | `CHOKIDAR_USEPOLLING` | 开发模式使用轮询代替 inotify；正常模式不读取该变量 |
 | `CHOKIDAR_INTERVAL` | 开发模式的文件轮询间隔，单位为毫秒 |
 | `CORS_ORIGINS` | 允许访问后端 API 的前端来源，使用英文逗号分隔 |
-| `API_ACCESS_TOKEN` | 公网访问的统一令牌，至少 32 字符；换取 HttpOnly 会话 |
-| `ALLOW_UNAUTHENTICATED_LAN` | 允许 RFC1918/ULA 局域网免认证访问，默认开启 |
 | `ROS_SUBSCRIBE_TOPIC_ALLOWLIST` | WebSocket 可订阅 Topic glob |
 | `ROS_PUBLISH_TOPIC_ALLOWLIST` | HTTP/WebSocket 可发布 Topic glob |
 | `ROS_PUBLISH_TYPE_ALLOWLIST` | 可发布 ROS 消息类型 |
@@ -65,6 +63,8 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 | `VITE_DEBUG` | 是否输出前端调试日志 |
 
 ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、目标话题和样式等用户状态属于 `.rvizweb` 配置。
+
+应用层不提供登录鉴权。局域网部署应通过绑定地址、防火墙或 VPN 限制访问范围，不能将后端、前端或反向代理端口直接暴露到公网。
 
 ## 安装与启动
 

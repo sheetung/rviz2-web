@@ -4,10 +4,9 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { debugLog } from '../utils/debug'
-import { createWebSocketUrl } from '../utils/websocketUrl'
-import { ensureAuthenticated } from '../services/api'
-import { systemMessage } from './useSystemMessage'
+import { debugLog } from '../utils/debug.js'
+import { createWebSocketUrl } from '../utils/websocketUrl.js'
+import { systemMessage } from './useSystemMessage.js'
 
 export const useConnectionStore = defineStore('connection', () => {
   // 连接状态
@@ -26,10 +25,9 @@ export const useConnectionStore = defineStore('connection', () => {
   const browserLocation = typeof window === 'undefined' ? null : window.location
   const wsUrl = ref(createWebSocketUrl(
     browserLocation,
-    import.meta.env.VITE_BACKEND_PUBLIC_URL
+    import.meta.env?.VITE_BACKEND_PUBLIC_URL
   ))
   const reconnectAttempts = ref(0)
-  const maxReconnectAttempts = ref(5)
   const reconnectInterval = ref(3000)
   
   // 订阅的主题
@@ -75,15 +73,16 @@ export const useConnectionStore = defineStore('connection', () => {
   // 连接 WebSocket
   const connect = async () => {
     if (isConnected.value || isConnecting.value) return
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
     const generation = ++socketGeneration
     intentionalDisconnect = false
 
     try {
       isConnecting.value = true
       connectionError.value = null
-
-      await ensureAuthenticated()
-      if (generation !== socketGeneration) return
 
       const socket = new WebSocket(wsUrl.value)
       websocket.value = socket
@@ -127,8 +126,9 @@ export const useConnectionStore = defineStore('connection', () => {
         stopLatencyTracking()
         clearPendingRequests()
         
-        if (!intentionalDisconnect && event.code !== 1000) {
-          // 非正常关闭，尝试重连
+        if (!intentionalDisconnect) {
+          // 只要不是用户主动断开，就持续定时重连。服务端重启时也可能
+          // 使用 1000 正常关闭码，因此不能按关闭码停止恢复连接。
           connectionError.value = `连接关闭 (${event.code})`
           console.warn('WebSocket closed unexpectedly:', event)
           attemptReconnect()
@@ -141,16 +141,21 @@ export const useConnectionStore = defineStore('connection', () => {
         if (generation !== socketGeneration) return
         isConnected.value = false
         isConnecting.value = false
+        websocket.value = null
+        subscribedTopics.value.clear()
+        advertisedTopics.value.clear()
         stopLatencyTracking()
+        clearPendingRequests()
         connectionError.value = '连接失败'
         console.error('WebSocket error:', error)
-        systemMessage.error('连接失败')
+        attemptReconnect()
       }
       
     } catch (error) {
       isConnecting.value = false
       connectionError.value = error.message
       console.error('Failed to connect:', error)
+      attemptReconnect()
     }
   }
   
@@ -169,6 +174,7 @@ export const useConnectionStore = defineStore('connection', () => {
     }
     isConnected.value = false
     isConnecting.value = false
+    reconnectAttempts.value = 0
     connectionError.value = null
     subscribedTopics.value.clear()
     subscriptionRequests.clear()
@@ -181,14 +187,12 @@ export const useConnectionStore = defineStore('connection', () => {
   // 重连逻辑
   const attemptReconnect = () => {
     if (intentionalDisconnect || reconnectTimer) return
-    if (reconnectAttempts.value >= maxReconnectAttempts.value) {
-      console.error('Max reconnect attempts reached')
-      systemMessage.error('连接失败，请检查服务器状态')
-      return
-    }
-    
+
     reconnectAttempts.value++
-    debugLog(`Attempting to reconnect (${reconnectAttempts.value}/${maxReconnectAttempts.value})`)
+    if (reconnectAttempts.value === 1) {
+      systemMessage.warning('连接已断开，正在自动重连')
+    }
+    debugLog(`Attempting to reconnect (${reconnectAttempts.value})`)
     
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
@@ -636,11 +640,11 @@ export const useConnectionStore = defineStore('connection', () => {
     connectionStatus,
     connectionStatusText,
     websocket,
+    reconnectAttempts,
     subscribedTopics: computed(() => Array.from(subscribedTopics.value)),
     
     // 配置
     wsUrl,
-    maxReconnectAttempts,
     reconnectInterval,
     
     // 方法

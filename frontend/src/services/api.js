@@ -14,42 +14,10 @@ const api = axios.create({
     import.meta.env.VITE_BACKEND_PUBLIC_URL
   ),
   timeout: 10000,
-  withCredentials: true,
   headers: {
     'Content-Type': 'application/json'
   }
 })
-
-let authenticationPromise = null
-
-const requestAccessToken = () => {
-  if (typeof window === 'undefined') return ''
-  return window.prompt('请输入 RVizWeb 访问令牌')?.trim() || ''
-}
-
-export const ensureAuthenticated = async () => {
-  if (authenticationPromise) return authenticationPromise
-
-  authenticationPromise = (async () => {
-    const status = await api.get('/auth/status')
-    if (status.authenticated) return true
-    if (!status.required) {
-      throw new Error('服务仅允许从本机访问')
-    }
-
-    const accessToken = requestAccessToken()
-    if (!accessToken) throw new Error('未提供访问令牌')
-    const result = await api.post('/auth/session', { access_token: accessToken })
-    if (!result.authenticated) throw new Error('访问令牌验证失败')
-    return true
-  })()
-
-  try {
-    return await authenticationPromise
-  } finally {
-    authenticationPromise = null
-  }
-}
 
 // 响应拦截器
 api.interceptors.response.use(
@@ -57,7 +25,7 @@ api.interceptors.response.use(
     return response.data
   },
   (error) => {
-    console.error('API Error:', error)
+    console.error('API Error:', error?.message || 'Unknown error')
     
     return Promise.reject(error)
   }

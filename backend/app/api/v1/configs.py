@@ -11,13 +11,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ...core.config import get_settings
-from ...core.security import require_api_access
 
-router = APIRouter(dependencies=[Depends(require_api_access)])
+router = APIRouter()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 CONFIG_DIR = PROJECT_ROOT / "rvizweb_configs"

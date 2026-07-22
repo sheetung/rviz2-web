@@ -229,11 +229,10 @@ a second resolution.
 In normal mode, re-run `./start.sh` after changes to rebuild the frontend. In dev mode, changes take effect on Vite restart or environment reload.
 
 Both servers bind to `127.0.0.1` by default. For LAN exposure, set
-`FRONTEND_HOST` and, when needed, `BACKEND_HOST`. RFC1918, IPv6 ULA, and
-link-local clients are admitted without authentication by default; set
-`ALLOW_UNAUTHENTICATED_LAN=false` to disable that behavior explicitly. Public
-access requires an `API_ACCESS_TOKEN` of at least 32 characters. Set
-`CORS_ORIGINS` to the exact frontend origins.
+`FRONTEND_HOST` and, when needed, `BACKEND_HOST`, and set `CORS_ORIGINS` to the
+exact frontend origins. The application does not provide login authentication;
+restrict access with a firewall, trusted LAN, or VPN, and never expose its
+service ports directly to the public Internet.
 
 ROS publishing is restricted by `ROS_PUBLISH_TOPIC_ALLOWLIST` and
 `ROS_PUBLISH_TYPE_ALLOWLIST`; extend these lists explicitly for robot-specific

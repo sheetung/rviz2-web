@@ -3,19 +3,20 @@ FastAPI 应用入口
 支持 RViz2 Web 可视化系统
 """
 
-from fastapi import Depends, FastAPI, WebSocket
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from .api.v1 import configs, ros, video
 from .core.config import get_settings
+from .core.security import origin_is_allowed
 from .core.version import APP_VERSION
-from .api.v1 import auth, configs, ros, video
-from .core.security import require_api_access, websocket_is_authenticated
 from .services.dependencies import get_rosbridge_service
 
 # 配置日志
@@ -30,18 +31,6 @@ DOCS_ASSETS_DIR = Path(__file__).resolve().parent / "static" / "swagger-ui"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info("Starting RViz2 Web Visualization System")
-    if settings.api_access_token and len(settings.api_access_token) < 32:
-        raise RuntimeError("API_ACCESS_TOKEN 至少需要 32 个字符")
-    if (
-        settings.backend_host not in {"127.0.0.1", "::1", "localhost"}
-        and not settings.api_access_token
-        and not settings.allow_unauthenticated_lan
-    ):
-        raise RuntimeError(
-            "BACKEND_HOST 暴露到非回环地址时必须设置 API_ACCESS_TOKEN，"
-            "或显式启用 ALLOW_UNAUTHENTICATED_LAN"
-        )
-
     service = get_rosbridge_service()
     await service.start()
     logger.info("Server started on port %s", settings.backend_port)
@@ -93,11 +82,7 @@ app.mount(
 )
 
 
-@app.get(
-    "/docs",
-    include_in_schema=False,
-    dependencies=[Depends(require_api_access)],
-)
+@app.get("/docs", include_in_schema=False)
 async def swagger_ui_html():
     """使用仓库内静态资源提供 Swagger UI。"""
     return HTMLResponse("""<!doctype html>
@@ -117,11 +102,7 @@ async def swagger_ui_html():
 """)
 
 
-@app.get(
-    "/openapi.json",
-    include_in_schema=False,
-    dependencies=[Depends(require_api_access)],
-)
+@app.get("/openapi.json", include_in_schema=False)
 async def openapi_schema():
     return JSONResponse(app.openapi())
 
@@ -129,7 +110,6 @@ async def openapi_schema():
 # 全局 Rosbridge 服务实例将通过依赖注入管理
 
 # 注册 API 路由
-app.include_router(auth.router, prefix="/api/v1", tags=["Auth"])
 app.include_router(ros.router, prefix="/api/v1", tags=["ROS"])
 app.include_router(configs.router, prefix="/api/v1", tags=["Configs"])
 app.include_router(video.router, prefix="/api/v1", tags=["Video"])
@@ -162,8 +142,8 @@ async def version_info():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket 端点 - Rosbridge 协议"""
-    if not websocket_is_authenticated(websocket, settings):
-        await websocket.close(code=4401, reason="Authentication required")
+    if not origin_is_allowed(websocket.headers.get("origin"), settings):
+        await websocket.close(code=4403, reason="Origin not allowed")
         return
     service = get_rosbridge_service()
     await service.handle_websocket(websocket)

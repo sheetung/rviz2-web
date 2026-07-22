@@ -12,14 +12,13 @@ import time
 from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ...core.config import Settings, get_settings
-from ...core.security import require_api_access
 
-router = APIRouter(dependencies=[Depends(require_api_access)])
+router = APIRouter()
 logger = logging.getLogger(__name__)
 
 JPEG_START = b"\xff\xd8"

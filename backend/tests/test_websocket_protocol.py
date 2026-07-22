@@ -196,6 +196,48 @@ async def test_rest_publish_releases_temporary_publisher(settings):
 
 
 @pytest.mark.asyncio
+async def test_concurrent_rest_publishes_keep_shared_publisher_alive(settings):
+    service = RosbridgeService(settings)
+    service.node = Mock()
+    publisher = Mock()
+    service.node.create_publisher.return_value = publisher
+    service._converter.from_dict = Mock(side_effect=lambda _type, message: message)
+
+    original_ensure = service._ensure_publisher
+    both_owners_registered = asyncio.Event()
+    registered_count = 0
+
+    async def ensure_then_wait(topic, msg_type, owner_id):
+        nonlocal registered_count
+        await original_ensure(topic, msg_type, owner_id)
+        registered_count += 1
+        if registered_count == 2:
+            both_owners_registered.set()
+        await both_owners_registered.wait()
+
+    service._ensure_publisher = ensure_then_wait
+
+    results = await asyncio.gather(
+        service.publish_message(
+            "/goal_pose",
+            {"request": 1},
+            "geometry_msgs/msg/PoseStamped",
+        ),
+        service.publish_message(
+            "/goal_pose",
+            {"request": 2},
+            "geometry_msgs/msg/PoseStamped",
+        ),
+    )
+
+    assert results == [True, True]
+    service.node.create_publisher.assert_called_once()
+    assert publisher.publish.call_count == 2
+    assert "/goal_pose" not in service.publishers
+    service.node.destroy_publisher.assert_called_once_with(publisher)
+
+
+@pytest.mark.asyncio
 async def test_client_publisher_is_destroyed_on_disconnect(settings):
     service = RosbridgeService(settings)
     publisher = object()

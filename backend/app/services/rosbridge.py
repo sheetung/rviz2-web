@@ -8,29 +8,28 @@ import json
 import logging
 import os
 import subprocess
-import uuid
-from typing import Dict, List, Optional, Any
-from collections import deque
 import time
+import uuid
+from collections import deque
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-from fastapi import WebSocket, WebSocketDisconnect
 import rclpy
+from fastapi import WebSocket, WebSocketDisconnect
 from rclpy.node import Node
 from rclpy.qos import (
-    QoSProfile,
-    QoSReliabilityPolicy,
     QoSDurabilityPolicy,
     QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
 )
 
 from ..core.config import Settings
 from ..models.ros import NodeInfo, SystemStatus, TopicInfo
-
 from .connection_manager import ConnectionManager
-from .message_types import get_message_class
-from .message_converter import MessageConverter
 from .frequency_tracker import FrequencyTracker
+from .message_converter import MessageConverter
+from .message_types import get_message_class
 from .ws_handlers import WebSocketRequestHandler
 
 logger = logging.getLogger(__name__)
@@ -1181,7 +1180,9 @@ class RosbridgeService:
                 logger.error(f"Cannot publish to {topic_name}: unknown message type")
                 return False
 
-            rest_owner = "__rest__"
+            # REST 请求可能并发发布到同一 topic。每个请求必须持有独立 owner，
+            # 否则先结束的请求会移除共享 owner，并销毁仍被其他请求使用的 Publisher。
+            rest_owner = f"rest_{uuid.uuid4().hex}"
             await self._ensure_publisher(topic_name, msg_type, rest_owner)
             try:
                 publisher_record = self.publishers.get(topic_name)
@@ -1464,7 +1465,7 @@ class RosbridgeService:
         self,
         topic: str,
         msg_type: str,
-        owner_id: str | None = None,
+        owner_id: str,
     ):
         """创建或返回已存在的Publisher"""
         async with self._publisher_lock:
@@ -1474,7 +1475,7 @@ class RosbridgeService:
         self,
         topic: str,
         msg_type: str,
-        owner_id: str | None = None,
+        owner_id: str,
     ) -> None:
         if not self.node:
             raise RuntimeError("ROS2 node not initialized")
@@ -1485,8 +1486,7 @@ class RosbridgeService:
                 raise ValueError(
                     f"{topic} 已按 {record['msg_type']} 创建，不能改用 {msg_type}"
                 )
-            if owner_id:
-                record.setdefault("owners", set()).add(owner_id)
+            record.setdefault("owners", set()).add(owner_id)
             return
 
         if len(self.publishers) >= self.settings.ros_max_publishers:
@@ -1522,7 +1522,7 @@ class RosbridgeService:
             "publisher": publisher,
             "msg_class": msg_class,
             "msg_type": msg_type,
-            "owners": {owner_id} if owner_id else {"__rest__"},
+            "owners": {owner_id},
         }
         logger.info(f"🆕 Created publisher for {topic} ({msg_type})")
 

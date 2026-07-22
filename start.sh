@@ -151,22 +151,11 @@ start_local() {
   local frontend_public_host="${FRONTEND_PUBLIC_HOST:-127.0.0.1}"
   local backend_health_host
   local frontend_health_host
-  local allow_unauthenticated_lan="${ALLOW_UNAUTHENTICATED_LAN:-true}"
   local default_rvizweb_config="${RVIZWEB_CONFIG:?Set RVIZWEB_CONFIG in $ENV_FILE}"
   backend_health_host="$(health_host_for_bind "$backend_host")"
   frontend_health_host="$(health_host_for_bind "$frontend_host")"
   check_port "$backend_port"
   check_port "$frontend_port"
-
-  if [[ "$backend_host" != "127.0.0.1" && "$backend_host" != "::1" && "$backend_host" != "localhost" && -z "${API_ACCESS_TOKEN:-}" && "${allow_unauthenticated_lan,,}" != "true" ]]; then
-    fail "API_ACCESS_TOKEN or ALLOW_UNAUTHENTICATED_LAN=true is required when BACKEND_HOST is not loopback"
-  fi
-  if [[ "$frontend_host" != "127.0.0.1" && "$frontend_host" != "::1" && "$frontend_host" != "localhost" && -z "${API_ACCESS_TOKEN:-}" && "${allow_unauthenticated_lan,,}" != "true" ]]; then
-    fail "API_ACCESS_TOKEN or ALLOW_UNAUTHENTICATED_LAN=true is required when FRONTEND_HOST is not loopback"
-  fi
-  if [[ -n "${API_ACCESS_TOKEN:-}" && "${#API_ACCESS_TOKEN}" -lt 32 ]]; then
-    fail "API_ACCESS_TOKEN must contain at least 32 characters"
-  fi
 
   [[ "$default_rvizweb_config" == *.rvizweb ]] || fail "Default frontend config must use the .rvizweb suffix"
   [[ -f "$PROJECT_ROOT/rvizweb_configs/$default_rvizweb_config" ]] || fail "Default frontend config not found: rvizweb_configs/$default_rvizweb_config"

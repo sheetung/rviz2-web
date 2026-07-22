@@ -2,19 +2,19 @@
 ROS2 相关 API 端点
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import List, Dict, Any, Optional
 import logging
+from typing import Any, Dict, List, Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from ...models.ros import TopicInfo, NodeInfo, SystemStatus
-from ...services.rosbridge import RosbridgeService
-from ...services.dependencies import get_rosbridge_service
 from ...core.config import get_settings
-from ...core.security import ensure_ros_operation_allowed, require_api_access
+from ...core.security import ensure_ros_operation_allowed
+from ...models.ros import NodeInfo, SystemStatus, TopicInfo
+from ...services.dependencies import get_rosbridge_service
+from ...services.rosbridge import RosbridgeService
 
-router = APIRouter(dependencies=[Depends(require_api_access)])
+router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
