@@ -614,7 +614,7 @@ wheels = [
 
 [[package]]
 name = "rviz-web-backend"
-version = "1.1.5"
+version = "1.2.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
