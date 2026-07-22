@@ -207,6 +207,16 @@ cp .env.example .env
 VITE_APP_TITLE=RVizWeb
 ```
 
+需要让浏览器直接连接指定 ROS 后端时，可以配置完整 WebSocket 地址：
+
+```env
+VITE_ROS_WS_URL=ws://192.168.1.66:8090/ws
+```
+
+留空时使用当前页面同源的 `/ws`。该变量只控制浏览器连接目标，后端进程仍由
+`BACKEND_HOST` 和 `BACKEND_PORT` 控制绑定地址与监听端口。修改 Vite 环境变量后
+需要重启开发服务或重新执行正常模式构建。
+
 点击点云视图工具栏中的相机监视器按钮后，会在按钮下方展开连接配置浮层。输入地址并连接，例如：
 
 ```text

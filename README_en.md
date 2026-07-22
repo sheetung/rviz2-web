@@ -206,6 +206,18 @@ The browser tab and top-left title can be changed in `.env`:
 VITE_APP_TITLE=RVizWeb
 ```
 
+To connect the browser directly to a specific ROS backend, configure the full
+WebSocket endpoint:
+
+```env
+VITE_ROS_WS_URL=ws://192.168.1.66:8090/ws
+```
+
+When left empty, the frontend uses the same-origin `/ws` endpoint. This variable
+only selects the browser connection target; `BACKEND_HOST` and `BACKEND_PORT`
+still control the Uvicorn bind address and listening port. Restart the Vite dev
+server or rebuild normal mode after changing a Vite environment variable.
+
 Click the camera monitor button in the point cloud toolbar to open the connection popover below the button, then enter a source such as:
 
 ```text

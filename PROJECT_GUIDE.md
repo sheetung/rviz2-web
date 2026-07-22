@@ -52,6 +52,7 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 | `FRONTEND_HOST` | Vite 实际绑定地址，默认 `127.0.0.1` |
 | `FRONTEND_PUBLIC_HOST` | 仅用于启动完成后显示访问地址 |
 | `VITE_APP_TITLE` | 浏览器标签页和页面左上角显示的应用标题 |
+| `VITE_ROS_WS_URL` | 浏览器连接 ROS 后端的完整 WebSocket 地址；留空使用同源 `/ws` |
 | `CHOKIDAR_USEPOLLING` | 开发模式使用轮询代替 inotify；正常模式不读取该变量 |
 | `CHOKIDAR_INTERVAL` | 开发模式的文件轮询间隔，单位为毫秒 |
 | `CORS_ORIGINS` | 允许访问后端 API 的前端来源，使用英文逗号分隔 |
@@ -65,6 +66,9 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、目标话题和样式等用户状态属于 `.rvizweb` 配置。
 
 应用层不提供登录鉴权。局域网部署应通过绑定地址、防火墙或 VPN 限制访问范围，不能将后端、前端或反向代理端口直接暴露到公网。
+
+`VITE_ROS_WS_URL` 只控制浏览器的 WebSocket 目标，不替代 `BACKEND_HOST` 和
+`BACKEND_PORT`；后两者仍用于控制 Uvicorn 的绑定地址和监听端口。
 
 ## 安装与启动
 
