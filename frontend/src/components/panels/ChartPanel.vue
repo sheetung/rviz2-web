@@ -338,6 +338,11 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { VideoPause, VideoPlay, Delete, Plus, Close, Search, ArrowRight, ArrowLeft, Refresh, View, Hide } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { systemMessage } from '../../composables/useSystemMessage'
+import {
+  getTopicFrequencyState,
+  parseNumericMessageFields,
+  supportsDynamicChartFields
+} from '../../utils/chartTopics'
 
 export default {
   name: 'ChartPanel',
@@ -676,102 +681,24 @@ export default {
 
     // 主题管理
     const subscriptions = new Map() // topic -> subscription
+    const fieldDiscoverySubscriptions = new Map() // topic -> 一次性字段发现订阅
+    const fieldDiscoveryTimers = new Map() // topic -> 字段发现超时定时器
     const parsedTopicFields = ref(new Map()) // topic -> fields[] 存储解析后的字段
-    const topicFieldsBuffer = ref(new Map()) // topic -> fields[] 临时备份，便于返回时恢复
     
     // 判断某topic的字段是否为空或仅包含解析占位
     const isFieldsParsingOrEmpty = (topicName) => {
       if (!parsedTopicFields.value.has(topicName)) return true
       const fields = parsedTopicFields.value.get(topicName) || []
       if (!Array.isArray(fields) || fields.length === 0) return true
-      return fields.every(f => f?.isParsing === true || String(f?.type || '').toLowerCase() === 'parsing')
+      return fields.every(f =>
+        f?.isParsing === true ||
+        f?.needsDiscovery === true ||
+        String(f?.type || '').toLowerCase() === 'parsing'
+      )
     }
 
     // 动态解析消息结构，寻找可绘制的数值字段
-    const parseMessageStructure = (message, prefix = '', maxDepth = 1, currentDepth = 0) => {
-      const fields = []
-      
-      if (currentDepth >= maxDepth) return fields
-      
-      if (message && typeof message === 'object') {
-        for (const [key, value] of Object.entries(message)) {
-          const fieldPath = prefix ? `${prefix}.${key}` : key
-          const fieldName = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')
-          
-          if (typeof value === 'number') {
-            // 数值类型字段
-            let type = 'float64'
-            if (Number.isInteger(value)) {
-              type = value >= 0 ? 'uint32' : 'int32'
-            } else {
-              type = 'float64'
-            }
-            fields.push({
-              name: fieldName,
-              path: fieldPath,
-              type: type
-            })
-          } else if (typeof value === 'boolean') {
-            // 布尔类型字段
-            fields.push({
-              name: fieldName,
-              path: fieldPath,
-              type: 'bool'
-            })
-          } else if (Array.isArray(value) && value.length > 0) {
-            // 数组类型字段
-            if (typeof value[0] === 'number') {
-              // 数值数组，提供统计信息
-              fields.push({
-                name: `${fieldName} (Min)`,
-                path: `${fieldPath}_computed_min`,
-                type: 'computed'
-              })
-              fields.push({
-                name: `${fieldName} (Max)`,
-                path: `${fieldPath}_computed_max`,
-                type: 'computed'
-              })
-              fields.push({
-                name: `${fieldName} (Avg)`,
-                path: `${fieldPath}_computed_avg`,
-                type: 'computed'
-              })
-            }
-          } else if (value && typeof value === 'object' && currentDepth < maxDepth - 1) {
-            // 递归解析嵌套对象
-            const nestedFields = parseMessageStructure(value, fieldPath, maxDepth, currentDepth + 1)
-            fields.push(...nestedFields)
-          }
-        }
-      }
-      
-      return fields
-    }
-
-    // 在覆盖解析结果前备份当前字段列表
-    const backupTopicFields = (topicName) => {
-      if (topicFieldsBuffer.value.has(topicName)) return
-      // 优先备份已解析过的字段
-      if (parsedTopicFields.value.has(topicName)) {
-        topicFieldsBuffer.value.set(topicName, parsedTopicFields.value.get(topicName))
-        return
-      }
-      // 没有解析过则尝试基于已知类型获取默认字段
-      const topicInfo = availableTopics.value.find(t => t.value === topicName)
-      if (topicInfo) {
-        const defaults = getTopicFields(topicInfo)
-        topicFieldsBuffer.value.set(topicName, defaults)
-      }
-    }
-
-    // 恢复备份的字段列表
-    const restoreTopicFields = (topicName) => {
-      if (!topicFieldsBuffer.value.has(topicName)) return
-      const buffered = topicFieldsBuffer.value.get(topicName)
-      parsedTopicFields.value.set(topicName, buffered)
-      topicFieldsBuffer.value.delete(topicName)
-    }
+    const parseMessageStructure = parseNumericMessageFields
 
     // 确保在展开时有可显示的字段（如无则使用默认字段）
     const ensureTopicFieldsOnExpand = (topic) => {
@@ -780,6 +707,10 @@ export default {
       if (!Array.isArray(existing) || existing.length === 0 || isFieldsParsingOrEmpty(topicName)) {
         const defaults = getTopicFields(topic)
         parsedTopicFields.value.set(topicName, defaults)
+      }
+
+      if (isFieldsParsingOrEmpty(topicName)) {
+        startFieldDiscovery(topic)
       }
     }
 
@@ -1373,6 +1304,98 @@ export default {
       return { category: 'unknown', description: '未知类型', icon: '❓' }
     }
 
+    const markTopicHasData = (topicName) => {
+      const topic = availableTopics.value.find(item => item.value === topicName)
+      if (!topic) return
+
+      topic.isActive = true
+      const measuredFrequency = topicFrequencies.value.get(topicName)
+      topic.status = measuredFrequency > 0
+        ? `${measuredFrequency.toFixed(1)} Hz`
+        : '有数据'
+    }
+
+    const updateParsedTopicFields = (topicName, message) => {
+      const plottableFields = parseMessageStructure(message)
+        .filter(field => isFieldPlottable(field.type))
+
+      if (plottableFields.length === 0) return false
+
+      parsedTopicFields.value.set(topicName, plottableFields)
+      nextTick(() => {
+        console.log(
+          `[ChartPanel] 已从 ${topicName} 发现 ${plottableFields.length} 个可绘制字段`
+        )
+      })
+      return true
+    }
+
+    const stopFieldDiscovery = (topicName) => {
+      const timer = fieldDiscoveryTimers.get(topicName)
+      if (timer) {
+        clearTimeout(timer)
+        fieldDiscoveryTimers.delete(topicName)
+      }
+
+      const subscription = fieldDiscoverySubscriptions.get(topicName)
+      if (subscription) {
+        fieldDiscoverySubscriptions.delete(topicName)
+        rosbridge.unsubscribe(subscription)
+      }
+    }
+
+    const startFieldDiscovery = (topic) => {
+      const topicName = topic.value
+      if (
+        !rosbridge.isConnected ||
+        subscriptions.has(topicName) ||
+        fieldDiscoverySubscriptions.has(topicName)
+      ) {
+        return
+      }
+
+      parsedTopicFields.value.set(topicName, [{
+        name: '正在等待第一条消息...',
+        path: '_parsing',
+        type: 'parsing',
+        isParsing: true
+      }])
+
+      const subscription = rosbridge.subscribe(
+        topicName,
+        topic.messageType,
+        message => {
+          markTopicHasData(topicName)
+          if (updateParsedTopicFields(topicName, message)) {
+            stopFieldDiscovery(topicName)
+          }
+        }
+      )
+
+      if (!subscription) {
+        parsedTopicFields.value.set(topicName, [{
+          name: '订阅失败，请返回后重试',
+          path: '_discovery_failed',
+          type: 'unavailable',
+          needsDiscovery: true
+        }])
+        return
+      }
+
+      fieldDiscoverySubscriptions.set(topicName, subscription)
+      fieldDiscoveryTimers.set(topicName, setTimeout(() => {
+        stopFieldDiscovery(topicName)
+        if (isFieldsParsingOrEmpty(topicName)) {
+          parsedTopicFields.value.set(topicName, [{
+            name: '暂未收到消息，请返回后重试',
+            path: '_discovery_timeout',
+            type: 'unavailable',
+            needsDiscovery: true
+          }])
+        }
+      }, 5000))
+    }
+
     // 展开/折叠主题
     const expandTopic = (topic) => {
       const index = expandedTopics.value.indexOf(topic.value)
@@ -1382,8 +1405,7 @@ export default {
         ensureTopicFieldsOnExpand(topic)
       } else {
         expandedTopics.value.splice(index, 1)
-        // 折叠时尝试恢复之前的字段
-        restoreTopicFields(topic.value)
+        stopFieldDiscovery(topic.value)
       }
     }
 
@@ -1459,36 +1481,17 @@ export default {
     // 订阅主题
     const subscribeToTopic = (topicName, messageType) => {
       console.log(`Subscribing to topic: ${topicName}, type: ${messageType}`)
+      stopFieldDiscovery(topicName)
 
       const subscription = rosbridge.subscribe(topicName, messageType, (message) => {
         const timestamp = Date.now()
         if (!isPaused.value) renderNow.value = timestamp
+        markTopicHasData(topicName)
 
         // 如果是未知类型且还没有解析过字段，尝试解析消息结构
         if (!parsedTopicFields.value.has(topicName) || isFieldsParsingOrEmpty(topicName)) {
           console.log(`[ChartPanel] 尝试解析未知类型topic: ${topicName}`)
-          const parsedFields = parseMessageStructure(message)
-          
-          if (parsedFields.length > 0) {
-            // 过滤出可绘制的字段
-            const plottableFields = parsedFields.filter(field => isFieldPlottable(field.type))
-            
-            if (plottableFields.length > 0) {
-              console.log(`[ChartPanel] 发现 ${plottableFields.length} 个可绘制字段:`, plottableFields)
-              // 覆盖前进行备份，便于返回恢复
-              backupTopicFields(topicName)
-              parsedTopicFields.value.set(topicName, plottableFields)
-              
-              // 触发UI更新
-              nextTick(() => {
-                console.log(`[ChartPanel] 已更新topic ${topicName} 的字段列表`)
-              })
-            } else {
-              console.log(`[ChartPanel] topic ${topicName} 没有发现可绘制的字段`)
-              // 存储空结果，避免重复解析
-              parsedTopicFields.value.set(topicName, [])
-            }
-          }
+          updateParsedTopicFields(topicName, message)
         }
 
         // 为该主题的所有系列更新数据
@@ -1502,7 +1505,11 @@ export default {
         })
       })
 
-      subscriptions.set(topicName, subscription)
+      if (subscription) {
+        subscriptions.set(topicName, subscription)
+      } else {
+        systemMessage.error(`订阅 ${topicName} 失败`)
+      }
     }
 
     // 提取字段值
@@ -1882,56 +1889,22 @@ export default {
           // 检查是否是明确支持的类型
           const isExplicitlySupported = supportedTypes.includes(messageType)
 
-          // 启发式判断：如果消息类型可能包含数值字段
-          const isLikelyNumeric = messageType && (
-            messageType.includes('msgs/msg/') && (
-              messageType.includes('Float') ||
-              messageType.includes('Int') ||
-              messageType.includes('UInt') ||
-              messageType.includes('Double') ||
-              messageType.includes('Bool') ||
-              messageType.includes('Twist') ||
-              messageType.includes('Pose') ||
-              messageType.includes('Point') ||
-              messageType.includes('Vector') ||
-              messageType.includes('Quaternion') ||
-              messageType.includes('Transform') ||
-              messageType.includes('Imu') ||
-              messageType.includes('Odom') ||
-              messageType.includes('Joint') ||
-              messageType.includes('Laser') ||
-              messageType.includes('Battery') ||
-              messageType.includes('Temperature') ||
-              messageType.includes('Pressure') ||
-              messageType.includes('Range') ||
-              messageType.includes('Nav')
-            )
-          )
+          // 自定义 ROS 消息在展开时从首条消息动态发现数值字段。
+          const isLikelyNumeric = supportsDynamicChartFields(messageType)
 
           if (isExplicitlySupported || isLikelyNumeric) {
             supportedTopicCount++
 
-            // 检查topic是否有数据传输（频率>0）
-            const frequency = topicFrequencies && topicFrequencies[topicName] ? topicFrequencies[topicName] : 0
-            let isActive = frequency > 0
-            
-            // 如果没有频率信息，尝试通过其他方式判断是否活跃
-            // 比如检查topic名称是否包含活跃的标识
-            if (!isActive && !topicFrequencies) {
-              // 如果完全没有频率信息，假设所有topic都是活跃的（用于测试）
-              const isLikelyActive = topicName.includes('odom') || 
-                                   topicName.includes('pose') || 
-                                   topicName.includes('scan') || 
-                                   topicName.includes('cloud') ||
-                                   topicName.includes('cmd_vel') ||
-                                   topicName.includes('map')
-              if (isLikelyActive) {
-                isActive = true
-              }
-            }
+            // 未订阅的话题没有频率样本，不能等同于 0 Hz/无数据。
+            const frequencyState = getTopicFrequencyState(
+              topicFrequencies?.[topicName]
+            )
+            const { frequency, isActive, status } = frequencyState
 
-            const supportType = isExplicitlySupported ? '明确支持' : '启发式支持'
-            console.log(`[ChartPanel] ✅ ${supportType}的topic: ${topicName}, 频率: ${frequency} Hz`)
+            const supportType = isExplicitlySupported ? '明确支持' : '动态解析'
+            console.log(
+              `[ChartPanel] ✅ ${supportType}的topic: ${topicName}, 状态: ${status}`
+            )
 
             if (isActive) {
               activeTopicCount++
@@ -1956,7 +1929,7 @@ export default {
               messageType: messageType,
               frequency: frequency,
               isActive: isActive,
-              status: isActive ? `${frequency.toFixed(1)} Hz` : '无数据',
+              status: status,
               supportType: supportType
             })
           } else {
@@ -1977,7 +1950,7 @@ export default {
         topicList.sort((a, b) => {
           if (a.isActive && !b.isActive) return -1
           if (!a.isActive && b.isActive) return 1
-          return b.frequency - a.frequency
+          return (b.frequency ?? -1) - (a.frequency ?? -1)
         })
 
         availableTopics.value = topicList
@@ -1992,7 +1965,7 @@ export default {
             systemMessage.warning(`没有找到支持的消息类型。不支持的类型包括: ${Array.from(unsupportedTypes).slice(0, 3).join(', ')}`)
           }
         } else if (notifySuccess) {
-          systemMessage.success(`发现 ${supportedTopicCount} 个支持的topic（${activeTopicCount} 个活跃，${supportedTopicCount - activeTopicCount} 个无数据传输）`)
+          systemMessage.success(`发现 ${supportedTopicCount} 个可绘图 topic（${activeTopicCount} 个已测得频率）`)
         }
 
       } catch (error) {
@@ -2093,6 +2066,12 @@ export default {
     })
 
     onUnmounted(() => {
+      Array.from(fieldDiscoverySubscriptions.keys()).forEach(topicName => {
+        stopFieldDiscovery(topicName)
+      })
+      fieldDiscoveryTimers.forEach(timer => clearTimeout(timer))
+      fieldDiscoveryTimers.clear()
+
       // 清理所有订阅
       subscriptions.forEach(subscription => {
         rosbridge.unsubscribe(subscription)

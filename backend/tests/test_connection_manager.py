@@ -2,10 +2,11 @@ from datetime import datetime
 from unittest.mock import AsyncMock
 
 import asyncio
+import json
 import pytest
 
 from app.models.ros import ConnectionInfo
-from app.services.connection_manager import ConnectionManager
+from app.services.connection_manager import ConnectionManager, _serialize_json_message
 
 
 @pytest.mark.asyncio
@@ -31,3 +32,25 @@ async def test_slow_client_close_preserves_ownership_until_service_cleanup():
     )
     assert "client-1" in manager.connection_info
     assert manager.connection_info["client-1"].subscribed_topics == ["/scan"]
+
+
+def test_websocket_json_replaces_non_finite_numbers_with_null():
+    message_text = _serialize_json_message(
+        {
+            "op": "publish",
+            "topic": "/fmu/out/vehicle_local_position",
+            "msg": {
+                "x": -0.003,
+                "vxy_max": float("inf"),
+                "ref_lat": float("nan"),
+            },
+        }
+    )
+
+    assert "NaN" not in message_text
+    assert "Infinity" not in message_text
+    assert json.loads(message_text)["msg"] == {
+        "x": -0.003,
+        "vxy_max": None,
+        "ref_lat": None,
+    }

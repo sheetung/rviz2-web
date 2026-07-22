@@ -7,6 +7,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 from datetime import datetime
 from typing import Dict
 
@@ -15,6 +16,31 @@ from fastapi import WebSocket
 from ..models.ros import ConnectionInfo
 
 logger = logging.getLogger(__name__)
+
+
+def _replace_non_finite_numbers(value):
+    """将 JSON 不支持的 NaN/Infinity 递归替换为 null。"""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {
+            key: _replace_non_finite_numbers(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_replace_non_finite_numbers(item) for item in value]
+    return value
+
+
+def _serialize_json_message(message: dict) -> str:
+    """生成浏览器可严格解析的 JSON，并避免正常消息的额外遍历。"""
+    try:
+        return json.dumps(message, allow_nan=False)
+    except ValueError:
+        return json.dumps(
+            _replace_non_finite_numbers(message),
+            allow_nan=False,
+        )
 
 
 class ConnectionManager:
@@ -131,7 +157,7 @@ class ConnectionManager:
         queue = self._send_queues.get(client_id)
         if queue is None:
             return False
-        message_text = json.dumps(message)
+        message_text = _serialize_json_message(message)
         if len(message_text.encode("utf-8")) > self.max_outbound_message_bytes:
             logger.warning("Dropping oversized outbound WebSocket response")
             return False
@@ -158,7 +184,7 @@ class ConnectionManager:
             logger.debug("📭 No active connections for broadcast")
             return False
 
-        message_text = await asyncio.to_thread(json.dumps, message)
+        message_text = await asyncio.to_thread(_serialize_json_message, message)
         if len(message_text.encode("utf-8")) > self.max_outbound_message_bytes:
             logger.warning("Dropping oversized outbound WebSocket broadcast")
             return False
