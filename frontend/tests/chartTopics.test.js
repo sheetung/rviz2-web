@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  formatYAxisTick,
   getTopicFrequencyState,
+  getYAxisLabelPrecision,
   parseNumericMessageFields,
   supportsDynamicChartFields
 } from '../src/utils/chartTopics.js'
@@ -33,6 +35,20 @@ test('accepts PX4 custom messages for dynamic chart field discovery', () => {
     true
   )
   assert.equal(supportsDynamicChartFields('sensor_msgs/msg/Image'), false)
+})
+
+
+test('formats small Y-axis intervals without collapsing labels', () => {
+  const hundredthTicks = [-0.15, -0.14, -0.13, -0.12]
+  assert.equal(getYAxisLabelPrecision(hundredthTicks), 2)
+  assert.deepEqual(
+    hundredthTicks.map(value => formatYAxisTick(value, hundredthTicks)),
+    ['-0.15', '-0.14', '-0.13', '-0.12']
+  )
+
+  const finerTicks = [-0.105, -0.1, -0.095]
+  assert.equal(getYAxisLabelPrecision(finerTicks), 3)
+  assert.equal(formatYAxisTick(-0.0001, hundredthTicks), '0.00')
 })
 
 

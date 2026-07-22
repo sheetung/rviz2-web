@@ -1,7 +1,15 @@
 <template>
   <div class="position-panel">
     <div class="odom-selector">
-      <span class="label">Odom:</span>
+      <div
+        class="odom-label"
+        :class="positionStatusClass"
+        :title="positionStatusText"
+        :aria-label="positionStatusText"
+      >
+        <span class="status-dot" aria-hidden="true"></span>
+        <span class="label">Odom:</span>
+      </div>
       <el-select
         v-model="selectedOdomTopic"
         filterable
@@ -52,12 +60,6 @@
       </div>
     </div>
 
-    <div class="position-status">
-      <div class="status-indicator" :class="positionStatusClass">
-        <div class="status-dot"></div>
-        <span>{{ positionStatusText }}</span>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -411,6 +413,12 @@ export default {
   margin-bottom: 8px;
 }
 
+.odom-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .model-toggle {
   display: flex;
   justify-content: flex-end;
@@ -458,18 +466,6 @@ export default {
 
 .accuracy-poor {
   color: var(--danger);
-}
-
-.position-status {
-  margin-top: 8px;
-}
-
-.status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-secondary);
 }
 
 .status-dot {

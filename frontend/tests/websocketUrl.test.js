@@ -19,17 +19,17 @@ test('websocket URL uses same-origin proxy by default', () => {
   )
 })
 
-test('websocket URL uses an explicitly configured public backend URL', () => {
+test('websocket URL uses the full configured ROS endpoint without appending a path', () => {
   assert.equal(
     createWebSocketUrl(
       {
-        protocol: 'https:',
-        hostname: 'rviz.example.com',
-        host: 'rviz.example.com'
+        protocol: 'http:',
+        hostname: 'localhost',
+        host: 'localhost:3000'
       },
-      'https://api.example.com/bridge'
+      'ws://192.168.1.66:8090/ws'
     ),
-    'wss://api.example.com/bridge/ws'
+    'ws://192.168.1.66:8090/ws'
   )
 })
 

@@ -235,7 +235,7 @@
               text-anchor="end"
               class="axis-label"
             >
-              {{ tick.value.toFixed(1) }}
+              {{ formatYAxisTick(tick.value, yTicks) }}
             </text>
           </g>
         </g>
@@ -339,6 +339,7 @@ import { VideoPause, VideoPlay, Delete, Plus, Close, Search, ArrowRight, ArrowLe
 import { useRosbridge } from '../../composables/useRosbridge'
 import { systemMessage } from '../../composables/useSystemMessage'
 import {
+  formatYAxisTick,
   getTopicFrequencyState,
   parseNumericMessageFields,
   supportsDynamicChartFields
@@ -2190,6 +2191,7 @@ export default {
       // 图表计算
       yTicks,
       xTicks,
+      formatYAxisTick,
       getX,
       getY,
       getLinePath,

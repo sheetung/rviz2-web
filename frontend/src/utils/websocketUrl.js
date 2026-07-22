@@ -18,18 +18,18 @@ export const createApiBaseUrl = (location, explicitBackendUrl = '') => {
   return url.toString().replace(/\/$/, '')
 }
 
-export const createWebSocketUrl = (location, explicitBackendUrl = '') => {
+export const createWebSocketUrl = (location, explicitWebSocketUrl = '') => {
   const protocol = location?.protocol === 'https:' ? 'wss:' : 'ws:'
   const hostname = location?.hostname || 'localhost'
   const sameOriginAuthority = location?.host || hostname
-  const explicit = String(explicitBackendUrl || '').trim()
+  const explicitSocket = String(explicitWebSocketUrl || '').trim()
 
-  if (!explicit) return `${protocol}//${sameOriginAuthority}/ws`
+  if (explicitSocket) {
+    const url = new URL(explicitSocket, `${protocol}//${sameOriginAuthority}`)
+    url.protocol = url.protocol === 'https:' || url.protocol === 'wss:' ? 'wss:' : 'ws:'
+    url.hash = ''
+    return url.toString()
+  }
 
-  const url = new URL(explicit, `${protocol}//${sameOriginAuthority}`)
-  url.protocol = url.protocol === 'https:' || url.protocol === 'wss:' ? 'wss:' : 'ws:'
-  url.pathname = `${url.pathname.replace(/\/$/, '')}/ws`
-  url.search = ''
-  url.hash = ''
-  return url.toString()
+  return `${protocol}//${sameOriginAuthority}/ws`
 }

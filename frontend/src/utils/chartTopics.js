@@ -44,6 +44,31 @@ export const getTopicFrequencyState = (rawFrequency) => {
   }
 }
 
+export const getYAxisLabelPrecision = (ticks = [], minPrecision = 1, maxPrecision = 4) => {
+  const values = ticks
+    .map(tick => typeof tick === 'number' ? tick : tick?.value)
+    .filter(Number.isFinite)
+  const steps = values
+    .slice(1)
+    .map((value, index) => Math.abs(value - values[index]))
+    .filter(step => step > 0)
+
+  if (steps.length === 0) return minPrecision
+
+  const smallestStep = Math.min(...steps)
+  const requiredPrecision = Math.ceil(-Math.log10(smallestStep) - 1e-10)
+  return Math.min(maxPrecision, Math.max(minPrecision, requiredPrecision))
+}
+
+export const formatYAxisTick = (value, ticks = []) => {
+  if (!Number.isFinite(value)) return ''
+
+  const precision = getYAxisLabelPrecision(ticks)
+  const zeroThreshold = 0.5 * (10 ** -precision)
+  const normalizedValue = Math.abs(value) < zeroThreshold ? 0 : value
+  return normalizedValue.toFixed(precision)
+}
+
 const numericFieldType = (value) => {
   if (!Number.isInteger(value)) return 'float64'
   if (value >= 0) return value <= 0xffffffff ? 'uint32' : 'uint64'
