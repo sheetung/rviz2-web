@@ -34,6 +34,23 @@ from .ws_handlers import WebSocketRequestHandler
 
 logger = logging.getLogger(__name__)
 
+_POINTCLOUD_MESSAGE_TYPES = {
+    "sensor_msgs/msg/PointCloud2",
+    "sensor_msgs/PointCloud2",
+}
+
+# These messages describe a complete current sample. Replacing an unsent
+# sample with a newer one is safe. Marker/MarkerArray are deliberately absent:
+# they may contain DELETE/DELETEALL deltas that must remain ordered.
+_LATEST_ONLY_MESSAGE_TYPES = _POINTCLOUD_MESSAGE_TYPES | {
+    "sensor_msgs/msg/LaserScan",
+    "sensor_msgs/LaserScan",
+    "sensor_msgs/msg/Image",
+    "sensor_msgs/Image",
+    "sensor_msgs/msg/CompressedImage",
+    "sensor_msgs/CompressedImage",
+}
+
 try:
     import psutil
 except ImportError:
@@ -61,6 +78,8 @@ class RosbridgeService:
         self._ws_handler = WebSocketRequestHandler(self)
         self.node: Optional[Node] = None
         self.subscribers = {}
+        self._subscription_types: Dict[str, str] = {}
+        self._topic_forward_buckets: Dict[str, tuple[float, float]] = {}
         self.publishers = {}
         self.message_cache = deque(maxlen=settings.message_buffer_size)
         self.start_time = time.time()
@@ -119,6 +138,18 @@ class RosbridgeService:
 
     def _get_message_class(self, msg_type: str):
         return get_message_class(msg_type)
+
+    @staticmethod
+    def _subscriber_history_settings(msg_type: str, publisher_qos_profiles):
+        """高带宽快照只缓存最新样本，其他类型保持原有兼容策略。"""
+        if msg_type in _LATEST_ONLY_MESSAGE_TYPES:
+            return QoSHistoryPolicy.KEEP_LAST, 1
+        if (
+            publisher_qos_profiles
+            and publisher_qos_profiles[0].history == QoSHistoryPolicy.KEEP_ALL
+        ):
+            return QoSHistoryPolicy.KEEP_ALL, 1000
+        return QoSHistoryPolicy.KEEP_LAST, 10
 
     def _topic_frequency(
         self, topic_name: str, now: Optional[float] = None
@@ -486,8 +517,10 @@ class RosbridgeService:
                 if topic == "/tf_static"
                 else QoSDurabilityPolicy.VOLATILE
             )
-            history = QoSHistoryPolicy.KEEP_LAST
-            depth = 10
+            history, depth = self._subscriber_history_settings(
+                msg_type,
+                publisher_qos_profiles,
+            )
 
             if publisher_qos_profiles:
                 first_pub_qos = publisher_qos_profiles[0]
@@ -503,9 +536,6 @@ class RosbridgeService:
                 if first_pub_qos.reliability == QoSReliabilityPolicy.BEST_EFFORT:
                     reliability = QoSReliabilityPolicy.BEST_EFFORT
 
-                if first_pub_qos.history == QoSHistoryPolicy.KEEP_ALL:
-                    history = QoSHistoryPolicy.KEEP_ALL
-                    depth = 1000
                 if first_pub_qos.durability == QoSDurabilityPolicy.TRANSIENT_LOCAL:
                     durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
 
@@ -560,6 +590,7 @@ class RosbridgeService:
                 )
 
                 self.subscribers[topic] = subscriber
+                self._subscription_types[topic] = msg_type
                 self._freq.mark_observation_start(topic)
                 logger.info(f"✅ Successfully created subscriber for {topic}")
                 logger.info(
@@ -757,6 +788,41 @@ class RosbridgeService:
         finally:
             logger.info("ROS2 spin loop stopped")
 
+    def _claim_topic_forward_slot(
+        self,
+        topic: str,
+        now: Optional[float] = None,
+    ) -> bool:
+        """在昂贵的转换前限制点云转发频率。"""
+        message_type = self._subscription_types.get(topic, "")
+        if message_type not in _POINTCLOUD_MESSAGE_TYPES:
+            return True
+
+        max_hz = self.settings.ros_pointcloud_max_hz
+        if max_hz <= 0:
+            return True
+
+        current_time = time.monotonic() if now is None else now
+        # A two-token bucket keeps the long-run rate bounded while absorbing
+        # normal publisher jitter. A strict ``elapsed >= 1 / max_hz`` gate can
+        # turn a nominal 10 Hz source into roughly 6-7 Hz when adjacent samples
+        # arrive a few milliseconds early.
+        capacity = 2.0
+        bucket = self._topic_forward_buckets.get(topic)
+        if bucket is None:
+            self._topic_forward_buckets[topic] = (current_time, capacity - 1.0)
+            return True
+
+        updated_at, tokens = bucket
+        elapsed = max(0.0, current_time - updated_at)
+        tokens = min(capacity, tokens + elapsed * max_hz)
+        if tokens < 1.0:
+            self._topic_forward_buckets[topic] = (current_time, tokens)
+            return False
+
+        self._topic_forward_buckets[topic] = (current_time, tokens - 1.0)
+        return True
+
     async def _on_message_received(self, topic: str, msg):
         """处理接收到的 ROS 消息"""
         try:
@@ -767,6 +833,9 @@ class RosbridgeService:
             active_subscribers = self._topic_client_subscription_count(topic)
             if active_subscribers == 0:
                 logger.debug(f"📭 Dropping {topic}: no active frontend subscribers")
+                return
+
+            if not self._claim_topic_forward_slot(topic):
                 return
 
             # 转换消息为字典格式
@@ -814,8 +883,10 @@ class RosbridgeService:
                 )
 
                 # 广播给所有订阅该主题的客户端
+                message_type = self._subscription_types.get(topic, "")
                 broadcast_result = await self.connection_manager.broadcast(
-                    rosbridge_msg
+                    rosbridge_msg,
+                    coalesce_topic=message_type in _LATEST_ONLY_MESSAGE_TYPES,
                 )
 
                 if broadcast_result:
@@ -1151,6 +1222,8 @@ class RosbridgeService:
             subscriber = self.subscribers.pop(topic_name, None)
             if subscriber and self.node:
                 self.node.destroy_subscription(subscriber)
+            self._subscription_types.pop(topic_name, None)
+            self._topic_forward_buckets.pop(topic_name, None)
             self._freq.cleanup_topic(topic_name)
             self._message_counts.pop(topic_name, None)
             return True

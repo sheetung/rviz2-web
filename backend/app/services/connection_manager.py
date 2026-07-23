@@ -8,6 +8,7 @@ import contextlib
 import json
 import logging
 import math
+from collections import OrderedDict
 from datetime import datetime
 from typing import Dict
 
@@ -23,10 +24,7 @@ def _replace_non_finite_numbers(value):
     if isinstance(value, float) and not math.isfinite(value):
         return None
     if isinstance(value, dict):
-        return {
-            key: _replace_non_finite_numbers(item)
-            for key, item in value.items()
-        }
+        return {key: _replace_non_finite_numbers(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_replace_non_finite_numbers(item) for item in value]
     return value
@@ -35,11 +33,12 @@ def _replace_non_finite_numbers(value):
 def _serialize_json_message(message: dict) -> str:
     """生成浏览器可严格解析的 JSON，并避免正常消息的额外遍历。"""
     try:
-        return json.dumps(message, allow_nan=False)
+        return json.dumps(message, allow_nan=False, separators=(",", ":"))
     except ValueError:
         return json.dumps(
             _replace_non_finite_numbers(message),
             allow_nan=False,
+            separators=(",", ":"),
         )
 
 
@@ -59,7 +58,14 @@ class ConnectionManager:
         self.max_outbound_message_bytes = max_outbound_message_bytes
         self.active_connections: Dict[str, WebSocket] = {}
         self.connection_info: Dict[str, ConnectionInfo] = {}
+        # Control-plane responses remain ordered and reliable. Delta/event topics
+        # have their own bounded FIFO, while replaceable sensor snapshots use a
+        # latest-value store so slow clients never accumulate stale frames.
         self._send_queues: Dict[str, asyncio.Queue[str]] = {}
+        self._ordered_topic_queues: Dict[str, asyncio.Queue[str]] = {}
+        self._latest_topic_messages: Dict[str, OrderedDict[str, dict]] = {}
+        self._prefer_latest_topics: Dict[str, bool] = {}
+        self._sender_events: Dict[str, asyncio.Event] = {}
         self._sender_tasks: Dict[str, asyncio.Task] = {}
         self._connection_lock = asyncio.Lock()
 
@@ -81,6 +87,12 @@ class ConnectionManager:
             self._send_queues[client_id] = asyncio.Queue(
                 maxsize=self.outbound_queue_size
             )
+            self._ordered_topic_queues[client_id] = asyncio.Queue(
+                maxsize=self.outbound_queue_size
+            )
+            self._latest_topic_messages[client_id] = OrderedDict()
+            self._prefer_latest_topics[client_id] = True
+            self._sender_events[client_id] = asyncio.Event()
             self._sender_tasks[client_id] = asyncio.create_task(
                 self._sender_loop(client_id),
                 name=f"websocket-sender-{client_id}",
@@ -93,6 +105,10 @@ class ConnectionManager:
         self.active_connections.pop(client_id, None)
         self.connection_info.pop(client_id, None)
         self._send_queues.pop(client_id, None)
+        self._ordered_topic_queues.pop(client_id, None)
+        self._latest_topic_messages.pop(client_id, None)
+        self._prefer_latest_topics.pop(client_id, None)
+        self._sender_events.pop(client_id, None)
         task = self._sender_tasks.pop(client_id, None)
         if task and task is not asyncio.current_task():
             task.cancel()
@@ -102,10 +118,45 @@ class ConnectionManager:
         try:
             while True:
                 queue = self._send_queues.get(client_id)
+                ordered_topic_queue = self._ordered_topic_queues.get(client_id)
+                latest_topics = self._latest_topic_messages.get(client_id)
+                sender_event = self._sender_events.get(client_id)
                 websocket = self.active_connections.get(client_id)
-                if queue is None or websocket is None:
+                if (
+                    queue is None
+                    or ordered_topic_queue is None
+                    or latest_topics is None
+                    or sender_event is None
+                    or websocket is None
+                ):
                     return
-                message_text = await queue.get()
+
+                await sender_event.wait()
+
+                queued_message_source = None
+                try:
+                    message_text = queue.get_nowait()
+                    queued_message_source = queue
+                except asyncio.QueueEmpty:
+                    message_text, queued_message_source = (
+                        await self._take_next_topic_message(
+                            client_id,
+                            ordered_topic_queue,
+                            latest_topics,
+                        )
+                    )
+                    if message_text is None:
+                        sender_event.clear()
+                        # No await occurs between clear and this check, but the
+                        # recheck protects the wake-up invariant.
+                        if (
+                            not queue.empty()
+                            or not ordered_topic_queue.empty()
+                            or latest_topics
+                        ):
+                            sender_event.set()
+                        continue
+
                 try:
                     await asyncio.wait_for(
                         websocket.send_text(message_text),
@@ -115,7 +166,8 @@ class ConnectionManager:
                     if info:
                         info.message_count += 1
                 finally:
-                    queue.task_done()
+                    if queued_message_source is not None:
+                        queued_message_source.task_done()
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -127,6 +179,35 @@ class ConnectionManager:
                 code=1011,
                 reason="WebSocket send failed",
             )
+
+    async def _take_next_topic_message(
+        self,
+        client_id: str,
+        ordered_topic_queue: asyncio.Queue[str],
+        latest_topics: OrderedDict[str, dict],
+    ):
+        """在顺序事件和最新快照之间轮转，避免任一数据通道饥饿。"""
+        prefer_latest = self._prefer_latest_topics.get(client_id, True)
+        if not ordered_topic_queue.empty() and (not prefer_latest or not latest_topics):
+            self._prefer_latest_topics[client_id] = True
+            return ordered_topic_queue.get_nowait(), ordered_topic_queue
+
+        if latest_topics:
+            self._prefer_latest_topics[client_id] = False
+            topic, message = latest_topics.popitem(last=False)
+            message_text = await asyncio.to_thread(
+                _serialize_json_message,
+                message,
+            )
+            if len(message_text) > self.max_outbound_message_bytes:
+                logger.warning(
+                    "Dropping oversized outbound topic update %s",
+                    topic,
+                )
+                return None, None
+            return message_text, None
+
+        return None, None
 
     async def _close_client_socket(
         self,
@@ -154,11 +235,21 @@ class ConnectionManager:
 
     async def send_to_client(self, client_id: str, message: dict) -> bool:
         """发送消息给指定客户端"""
+        message_text = _serialize_json_message(message)
+        return await self._send_text_to_client(client_id, message_text)
+
+    async def _send_text_to_client(
+        self,
+        client_id: str,
+        message_text: str,
+    ) -> bool:
+        """将已序列化的可靠消息加入控制/事件 FIFO。"""
         queue = self._send_queues.get(client_id)
         if queue is None:
             return False
-        message_text = _serialize_json_message(message)
-        if len(message_text.encode("utf-8")) > self.max_outbound_message_bytes:
+        # json.dumps defaults to ensure_ascii=True, so character and UTF-8 byte
+        # lengths are identical; avoid allocating another full-size bytes copy.
+        if len(message_text) > self.max_outbound_message_bytes:
             logger.warning("Dropping oversized outbound WebSocket response")
             return False
         try:
@@ -166,6 +257,9 @@ class ConnectionManager:
                 queue.put(message_text),
                 timeout=self.send_timeout,
             )
+            sender_event = self._sender_events.get(client_id)
+            if sender_event is not None:
+                sender_event.set()
             return True
         except asyncio.TimeoutError:
             logger.warning("Closing slow WebSocket client %s", client_id)
@@ -178,16 +272,12 @@ class ConnectionManager:
             )
             return False
 
-    async def broadcast(self, message: dict):
-        """广播消息给所有客户端"""
+    async def broadcast(self, message: dict, *, coalesce_topic: bool = True):
+        """广播消息；可替换的 topic 更新按客户端只保留最新一条。"""
         if not self.active_connections:
             logger.debug("📭 No active connections for broadcast")
             return False
 
-        message_text = await asyncio.to_thread(_serialize_json_message, message)
-        if len(message_text.encode("utf-8")) > self.max_outbound_message_bytes:
-            logger.warning("Dropping oversized outbound WebSocket broadcast")
-            return False
         sent_count = 0
 
         # 如果是主题消息，只发送给订阅了该主题的客户端
@@ -198,19 +288,50 @@ class ConnectionManager:
                 for client_id, info in list(self.connection_info.items())
                 if topic in info.subscribed_topics
             ]
-            for client_id in recipients:
-                queue = self._send_queues.get(client_id)
-                if queue is None:
-                    continue
-                try:
-                    queue.put_nowait(message_text)
+            if not recipients:
+                return False
+            if coalesce_topic:
+                for client_id in recipients:
+                    latest_topics = self._latest_topic_messages.get(client_id)
+                    sender_event = self._sender_events.get(client_id)
+                    if latest_topics is None or sender_event is None:
+                        continue
+                    replaced = topic in latest_topics
+                    latest_topics[topic] = message
+                    sender_event.set()
                     sent_count += 1
-                except asyncio.QueueFull:
-                    logger.debug(
-                        "Dropping topic update for slow client %s (%s)",
-                        client_id,
-                        topic,
-                    )
+                    if replaced:
+                        logger.debug(
+                            "Replaced stale topic update for client %s (%s)",
+                            client_id,
+                            topic,
+                        )
+            else:
+                # Marker and other delta/event topics cannot be overwritten
+                # without changing their semantics. Preserve their order in a
+                # separate bounded FIFO and keep control responses responsive.
+                message_text = await asyncio.to_thread(
+                    _serialize_json_message,
+                    message,
+                )
+                if len(message_text) > self.max_outbound_message_bytes:
+                    logger.warning("Dropping oversized ordered topic update")
+                    return False
+                for client_id in recipients:
+                    ordered_topic_queue = self._ordered_topic_queues.get(client_id)
+                    sender_event = self._sender_events.get(client_id)
+                    if ordered_topic_queue is None or sender_event is None:
+                        continue
+                    try:
+                        ordered_topic_queue.put_nowait(message_text)
+                        sender_event.set()
+                        sent_count += 1
+                    except asyncio.QueueFull:
+                        logger.debug(
+                            "Dropping ordered topic update for slow client %s (%s)",
+                            client_id,
+                            topic,
+                        )
         else:
             # 非主题消息广播给所有客户端
             results = await asyncio.gather(
@@ -244,5 +365,9 @@ class ConnectionManager:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._sender_tasks.clear()
         self._send_queues.clear()
+        self._ordered_topic_queues.clear()
+        self._latest_topic_messages.clear()
+        self._prefer_latest_topics.clear()
+        self._sender_events.clear()
         self.active_connections.clear()
         self.connection_info.clear()
