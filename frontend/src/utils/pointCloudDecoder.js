@@ -1,0 +1,204 @@
+const POINT_FIELD_READERS = {
+  1: (view, offset) => view.getInt8(offset),
+  2: (view, offset) => view.getUint8(offset),
+  3: (view, offset, littleEndian) => view.getInt16(offset, littleEndian),
+  4: (view, offset, littleEndian) => view.getUint16(offset, littleEndian),
+  5: (view, offset, littleEndian) => view.getInt32(offset, littleEndian),
+  6: (view, offset, littleEndian) => view.getUint32(offset, littleEndian),
+  7: (view, offset, littleEndian) => view.getFloat32(offset, littleEndian),
+  8: (view, offset, littleEndian) => view.getFloat64(offset, littleEndian)
+}
+
+const POINT_FIELD_BYTES = {
+  1: 1,
+  2: 1,
+  3: 2,
+  4: 2,
+  5: 4,
+  6: 4,
+  7: 4,
+  8: 8
+}
+
+const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value))
+
+const hueChannel = (minimum, maximum, hue) => {
+  let normalizedHue = hue
+  if (normalizedHue < 0) normalizedHue += 1
+  if (normalizedHue > 1) normalizedHue -= 1
+  if (normalizedHue < 1 / 6) return minimum + (maximum - minimum) * 6 * normalizedHue
+  if (normalizedHue < 1 / 2) return maximum
+  if (normalizedHue < 2 / 3) return minimum + (maximum - minimum) * (2 / 3 - normalizedHue) * 6
+  return minimum
+}
+
+const writeHeightColor = (colors, offset, z) => {
+  const normalizedZ = clamp((z + 2) / 4, 0, 1)
+  const hue = (1 - normalizedZ) * (240 / 360)
+  const saturation = 0.8
+  const lightness = 0.6
+  const maximum = lightness + saturation - lightness * saturation
+  const minimum = 2 * lightness - maximum
+  colors[offset] = hueChannel(minimum, maximum, hue + 1 / 3)
+  colors[offset + 1] = hueChannel(minimum, maximum, hue)
+  colors[offset + 2] = hueChannel(minimum, maximum, hue - 1 / 3)
+}
+
+const decodeBase64 = (value) => {
+  const binary = globalThis.atob(value)
+  const result = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index++) {
+    result[index] = binary.charCodeAt(index)
+  }
+  return result
+}
+
+const normalizePointData = (message) => {
+  if (typeof message.data === 'string') return decodeBase64(message.data)
+  if (message.data instanceof Uint8Array) return message.data
+  if (ArrayBuffer.isView(message.data)) {
+    return new Uint8Array(message.data.buffer, message.data.byteOffset, message.data.byteLength)
+  }
+  if (message.data instanceof ArrayBuffer) return new Uint8Array(message.data)
+  if (Array.isArray(message.data)) return new Uint8Array(message.data)
+  return new Uint8Array()
+}
+
+const pointField = (fields, name, fallbackOffset) => {
+  const field = fields.find(candidate => candidate?.name === name)
+  return {
+    offset: Number(field?.offset ?? fallbackOffset),
+    datatype: Number(field?.datatype ?? 7)
+  }
+}
+
+const readField = (view, byteOffset, field, littleEndian) => {
+  const reader = POINT_FIELD_READERS[field.datatype]
+  if (!reader) return Number.NaN
+  return reader(view, byteOffset + field.offset, littleEndian)
+}
+
+const validCoordinate = (value) => Number.isFinite(value) && Math.abs(value) < 1000
+
+const emptyResult = (error, totalPoints = 0) => ({
+  error,
+  pointCount: 0,
+  totalPoints,
+  positions: new Float32Array(),
+  colors: new Float32Array(),
+  bounds: null
+})
+
+const finalizeResult = (positions, colors, pointCount, totalPoints, bounds) => ({
+  error: '',
+  pointCount,
+  totalPoints,
+  positions: positions.subarray(0, pointCount * 3),
+  colors: colors.subarray(0, pointCount * 3),
+  bounds
+})
+
+const decodeStructuredPoints = (points) => {
+  const totalPoints = Math.min(points.length, 5000)
+  const positions = new Float32Array(totalPoints * 3)
+  const colors = new Float32Array(totalPoints * 3)
+  const minimum = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
+  const maximum = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
+  let pointCount = 0
+
+  for (let index = 0; index < totalPoints; index++) {
+    const point = points[index]
+    const x = Number(point?.x ?? 0)
+    const y = Number(point?.y ?? 0)
+    const z = Number(point?.z ?? 0)
+    if (!validCoordinate(x) || !validCoordinate(y) || !validCoordinate(z)) continue
+
+    const outputOffset = pointCount * 3
+    positions[outputOffset] = x
+    positions[outputOffset + 1] = y
+    positions[outputOffset + 2] = z
+    writeHeightColor(colors, outputOffset, z)
+    minimum[0] = Math.min(minimum[0], x)
+    minimum[1] = Math.min(minimum[1], y)
+    minimum[2] = Math.min(minimum[2], z)
+    maximum[0] = Math.max(maximum[0], x)
+    maximum[1] = Math.max(maximum[1], y)
+    maximum[2] = Math.max(maximum[2], z)
+    pointCount++
+  }
+
+  if (pointCount === 0) return emptyResult('点云为空或数据格式无效', totalPoints)
+  return finalizeResult(positions, colors, pointCount, totalPoints, { minimum, maximum })
+}
+
+export const decodePointCloudMessage = (message) => {
+  if (!message || typeof message !== 'object') return emptyResult('点云消息为空')
+  if (message.error) return emptyResult(String(message.error))
+  if (Array.isArray(message.points)) return decodeStructuredPoints(message.points)
+  if (!Array.isArray(message.fields) || message.data === undefined) {
+    return emptyResult('点云缺少 fields 或 data')
+  }
+
+  const width = Math.max(0, Number(message.width) || 0)
+  const height = Math.max(0, Number(message.height) || 0)
+  const totalPoints = width * height
+  const pointStep = Math.max(1, Number(message.point_step) || 16)
+  const rowStep = Math.max(pointStep * width, Number(message.row_step) || 0)
+  if (totalPoints === 0) return emptyResult('点云为空或数据格式无效')
+
+  let data
+  try {
+    data = normalizePointData(message)
+  } catch (error) {
+    return emptyResult(`Base64 解码失败: ${error.message}`, totalPoints)
+  }
+  if (data.byteLength === 0) return emptyResult('点云数据为空', totalPoints)
+
+  const xField = pointField(message.fields, 'x', 0)
+  const yField = pointField(message.fields, 'y', 4)
+  const zField = pointField(message.fields, 'z', 8)
+  const fields = [xField, yField, zField]
+  const requiredBytes = Math.max(
+    ...fields.map(field => field.offset + (POINT_FIELD_BYTES[field.datatype] || 0))
+  )
+  if (requiredBytes <= 0 || requiredBytes > pointStep) {
+    return emptyResult('点云 XYZ 字段超出 point_step', totalPoints)
+  }
+
+  const positions = new Float32Array(totalPoints * 3)
+  const colors = new Float32Array(totalPoints * 3)
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+  const littleEndian = message.is_bigendian !== true
+  const hasRowPadding = message.sampled !== true && height > 1 && rowStep >= width * pointStep
+  const minimum = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
+  const maximum = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
+  let pointCount = 0
+
+  for (let index = 0; index < totalPoints; index++) {
+    const row = Math.floor(index / width)
+    const column = index % width
+    const byteOffset = hasRowPadding ? row * rowStep + column * pointStep : index * pointStep
+    if (byteOffset + requiredBytes > data.byteLength) break
+
+    const x = readField(view, byteOffset, xField, littleEndian)
+    const y = readField(view, byteOffset, yField, littleEndian)
+    const z = readField(view, byteOffset, zField, littleEndian)
+    if (!validCoordinate(x) || !validCoordinate(y) || !validCoordinate(z)) continue
+
+    const outputOffset = pointCount * 3
+    positions[outputOffset] = x
+    positions[outputOffset + 1] = y
+    positions[outputOffset + 2] = z
+    writeHeightColor(colors, outputOffset, z)
+    minimum[0] = Math.min(minimum[0], x)
+    minimum[1] = Math.min(minimum[1], y)
+    minimum[2] = Math.min(minimum[2], z)
+    maximum[0] = Math.max(maximum[0], x)
+    maximum[1] = Math.max(maximum[1], y)
+    maximum[2] = Math.max(maximum[2], z)
+    pointCount++
+  }
+
+  if (pointCount === 0) return emptyResult('点云为空或数据格式无效', totalPoints)
+  return finalizeResult(positions, colors, pointCount, totalPoints, { minimum, maximum })
+}

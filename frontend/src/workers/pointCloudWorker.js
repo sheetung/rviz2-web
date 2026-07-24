@@ -1,0 +1,25 @@
+import { decodePointCloudMessage } from '../utils/pointCloudDecoder.js'
+
+self.onmessage = (event) => {
+  const { topic, generation, message } = event.data || {}
+  try {
+    const decoded = decodePointCloudMessage(message)
+    self.postMessage(
+      { topic, generation, decoded },
+      [decoded.positions.buffer, decoded.colors.buffer]
+    )
+  } catch (error) {
+    self.postMessage({
+      topic,
+      generation,
+      decoded: {
+        error: error instanceof Error ? error.message : String(error),
+        pointCount: 0,
+        totalPoints: 0,
+        positions: new Float32Array(),
+        colors: new Float32Array(),
+        bounds: null
+      }
+    })
+  }
+}

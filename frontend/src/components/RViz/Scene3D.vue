@@ -194,8 +194,12 @@ export default {
     const followFrameTracker = new FollowFrameTracker()
     const observedFrameIds = new Set()
     const pendingPointClouds = new Map()
+    const pointCloudDecodesInFlight = new Map()
     const latestDisplayMessages = new Map()
     let pointCloudFrameRequest = null
+    let pointCloudWorker = null
+    let pointCloudWorkerDisabled = false
+    let pointCloudGeneration = 0
     let transformFrameRequest = null
     let frameListSignature = ''
 
@@ -231,6 +235,10 @@ export default {
     const setDisplayStatus = (topic, error = '') => {
       emit('display-status', { topic, error })
     }
+
+    const pointCloudTransformMessage = (message) => ({
+      header: message?.header
+    })
 
     const applyFixedFrame = (
       topic,
@@ -270,20 +278,89 @@ export default {
       return true
     }
 
+    const schedulePointCloudFlush = () => {
+      if (pointCloudFrameRequest === null && pendingPointClouds.size > 0) {
+        pointCloudFrameRequest = requestAnimationFrame(flushPointCloudUpdates)
+      }
+    }
+
+    const disablePointCloudWorker = (error) => {
+      if (pointCloudWorkerDisabled) return
+      pointCloudWorkerDisabled = true
+      pointCloudWorker?.terminate()
+      pointCloudWorker = null
+      pointCloudDecodesInFlight.forEach(({ message }, topic) => {
+        if (!pendingPointClouds.has(topic)) pendingPointClouds.set(topic, message)
+      })
+      pointCloudDecodesInFlight.clear()
+      console.warn('[Scene3D] PointCloud Worker 不可用，回退到主线程解码:', error)
+      schedulePointCloudFlush()
+    }
+
+    const ensurePointCloudWorker = () => {
+      if (pointCloudWorker || pointCloudWorkerDisabled) return pointCloudWorker
+      if (typeof Worker === 'undefined') {
+        pointCloudWorkerDisabled = true
+        return null
+      }
+      try {
+        pointCloudWorker = new Worker(
+          new URL('../../workers/pointCloudWorker.js', import.meta.url),
+          { type: 'module' }
+        )
+        pointCloudWorker.onmessage = (event) => {
+          const { topic, generation, decoded } = event.data || {}
+          const inFlight = pointCloudDecodesInFlight.get(topic)
+          if (!inFlight || inFlight.generation !== generation) return
+          pointCloudDecodesInFlight.delete(topic)
+
+          if (rosSubscriptions.has(topic)) {
+            updateDecodedPointCloud(topic, inFlight.message, decoded)
+            applyFixedFrame(topic, inFlight.message)
+          }
+          schedulePointCloudFlush()
+        }
+        pointCloudWorker.onerror = (event) => {
+          disablePointCloudWorker(event?.message || 'Worker error')
+        }
+        pointCloudWorker.onmessageerror = () => {
+          disablePointCloudWorker('Worker message decode error')
+        }
+      } catch (error) {
+        disablePointCloudWorker(error)
+      }
+      return pointCloudWorker
+    }
+
     const flushPointCloudUpdates = () => {
       pointCloudFrameRequest = null
+      const worker = ensurePointCloudWorker()
       pendingPointClouds.forEach((message, topic) => {
-        updatePointCloud(topic, message)
-        applyFixedFrame(topic, message)
+        if (pointCloudDecodesInFlight.has(topic)) return
+        pendingPointClouds.delete(topic)
+
+        if (!worker || pointCloudWorkerDisabled) {
+          updatePointCloud(topic, message)
+          applyFixedFrame(topic, message)
+          return
+        }
+
+        const generation = ++pointCloudGeneration
+        pointCloudDecodesInFlight.set(topic, { generation, message })
+        try {
+          worker.postMessage({ topic, generation, message })
+        } catch (error) {
+          pointCloudDecodesInFlight.delete(topic)
+          disablePointCloudWorker(error)
+          updatePointCloud(topic, message)
+          applyFixedFrame(topic, message)
+        }
       })
-      pendingPointClouds.clear()
     }
 
     const queuePointCloudUpdate = (topic, message) => {
       pendingPointClouds.set(topic, message)
-      if (pointCloudFrameRequest === null) {
-        pointCloudFrameRequest = requestAnimationFrame(flushPointCloudUpdates)
-      }
+      schedulePointCloudFlush()
     }
 
     const refreshMarkerTransforms = (topic) => {
@@ -1364,6 +1441,7 @@ export default {
       const subscription = rosSubscriptions.get(topicName)
       latestDisplayMessages.delete(topicName)
       pendingPointClouds.delete(topicName)
+      pointCloudDecodesInFlight.delete(topicName)
       if (subscription) {
         try {
           // debugLog(`[Scene3D] 取消订阅主题: ${topicName}`)
@@ -1427,7 +1505,10 @@ export default {
       try {
         if (!(messageType || '').includes('TFMessage')) {
           observeMessageFrames(message)
-          latestDisplayMessages.set(topic, { messageType, message })
+          const cachedMessage = (messageType || '').includes('PointCloud2')
+            ? pointCloudTransformMessage(message)
+            : message
+          latestDisplayMessages.set(topic, { messageType, message: cachedMessage })
         }
         if (isPositionCommandMessage(topic, messageType, message)) {
           debugLog(`[Scene3D] 🔄 处理位置指令轨迹消息...`)
@@ -1548,7 +1629,11 @@ export default {
 
         if ((renderStyle !== currentStyle || boxSizeChanged) && object.userData.originalMessage) {
           const message = object.userData.originalMessage
-          updatePointCloud(topic, message)
+          if (object.userData.decodedPointCloud) {
+            updateDecodedPointCloud(topic, message, object.userData.decodedPointCloud)
+          } else {
+            updatePointCloud(topic, message)
+          }
           applyFixedFrame(topic, message)
           return
         }
@@ -1686,6 +1771,177 @@ export default {
     // 可视化更新方法
     // 点云更新计数器
     let pointCloudUpdateCount = 0
+
+    const pointCloudCapacity = (pointCount) => {
+      return 2 ** Math.ceil(Math.log2(Math.max(1, pointCount)))
+    }
+
+    const pointCloudBounds = (decoded, padding = 0) => {
+      const minimum = decoded?.bounds?.minimum
+      const maximum = decoded?.bounds?.maximum
+      if (!minimum || !maximum) return null
+      return new THREE.Box3(
+        new THREE.Vector3(minimum[0] - padding, minimum[1] - padding, minimum[2] - padding),
+        new THREE.Vector3(maximum[0] + padding, maximum[1] + padding, maximum[2] + padding)
+      )
+    }
+
+    const applyDecodedBounds = (geometry, decoded, padding = 0) => {
+      const box = pointCloudBounds(decoded, padding)
+      if (!box) return null
+      geometry.boundingBox = box
+      const center = box.getCenter(new THREE.Vector3())
+      geometry.boundingSphere = new THREE.Sphere(center, center.distanceTo(box.max))
+      return box
+    }
+
+    const resetPointCloudTransform = (visualization) => {
+      visualization.matrixAutoUpdate = true
+      visualization.position.set(0, 0, 0)
+      visualization.quaternion.identity()
+      visualization.scale.set(1, 1, 1)
+      visualization.updateMatrix()
+      delete visualization.userData.fixedFrameBaseMatrix
+    }
+
+    const updateDecodedPointCloud = (topic, message, decoded) => {
+      pointCloudUpdateCount++
+      if (!decoded || decoded.error || decoded.pointCount <= 0) {
+        removeVisualization(topic)
+        setDisplayStatus(topic, decoded?.error || '点云为空或数据格式无效')
+        return
+      }
+
+      const displayConfig = displayConfigs.get(topic) || {}
+      const renderStyle = displayConfig.renderStyle === 'boxes' ? 'boxes' : 'points'
+      const opacity = persistentSettings.pointcloud.opacity ?? 1.0
+      const positions = decoded.positions
+      const colors = decoded.colors
+      const pointsProcessed = decoded.pointCount
+      const box = pointCloudBounds(decoded)
+      const size = box
+        ? Math.max(
+            box.max.x - box.min.x,
+            box.max.y - box.min.y,
+            box.max.z - box.min.z
+          )
+        : 1
+      let visualization = visualizationObjects.get(topic)
+
+      if (renderStyle === 'points') {
+        const canReuse = visualization?.isPoints &&
+          visualization.userData?.renderStyle === 'points' &&
+          visualization.userData?.pointCapacity >= pointsProcessed
+
+        if (!canReuse) {
+          if (visualization) removeVisualization(topic)
+          const capacity = pointCloudCapacity(pointsProcessed)
+          const geometry = new THREE.BufferGeometry()
+          geometry.setAttribute(
+            'position',
+            new THREE.BufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage)
+          )
+          geometry.setAttribute(
+            'color',
+            new THREE.BufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage)
+          )
+          const material = new THREE.PointsMaterial({
+            vertexColors: true,
+            sizeAttenuation: true
+          })
+          visualization = new THREE.Points(geometry, material)
+          visualization.userData.pointCapacity = capacity
+          scene.add(visualization)
+          visualizationObjects.set(topic, visualization)
+        }
+
+        const positionAttribute = visualization.geometry.getAttribute('position')
+        const colorAttribute = visualization.geometry.getAttribute('color')
+        positionAttribute.array.set(positions, 0)
+        colorAttribute.array.set(colors, 0)
+        positionAttribute.needsUpdate = true
+        colorAttribute.needsUpdate = true
+        visualization.geometry.setDrawRange(0, pointsProcessed)
+        applyDecodedBounds(visualization.geometry, decoded)
+        visualization.material.size = displayConfig.pointSize ||
+          persistentSettings.pointcloud.pointSize ||
+          Math.max(0.06, size / 300)
+        visualization.material.opacity = opacity
+        visualization.material.transparent = opacity < 1.0
+        visualization.material.depthWrite = opacity >= 1.0
+        visualization.material.needsUpdate = true
+      } else {
+        const configuredBoxSize = Number(displayConfig.boxSize)
+        const boxSize = Number.isFinite(configuredBoxSize) && configuredBoxSize > 0
+          ? configuredBoxSize
+          : 0.1
+        const canReuse = visualization?.isInstancedMesh &&
+          visualization.userData?.renderStyle === 'boxes' &&
+          visualization.userData?.pointCapacity >= pointsProcessed &&
+          visualization.userData?.boxSize === boxSize
+
+        if (!canReuse) {
+          if (visualization) removeVisualization(topic)
+          const capacity = pointCloudCapacity(pointsProcessed)
+          const geometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize)
+          const material = new THREE.MeshBasicMaterial({ color: 0xffffff })
+          visualization = new THREE.InstancedMesh(geometry, material, capacity)
+          visualization.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+          visualization.userData.pointCapacity = capacity
+          visualization.userData.boxSize = boxSize
+          scene.add(visualization)
+          visualizationObjects.set(topic, visualization)
+        }
+
+        visualization.count = pointsProcessed
+        const instanceMatrix = new THREE.Matrix4()
+        const instanceColor = new THREE.Color()
+        for (let index = 0; index < pointsProcessed; index++) {
+          const offset = index * 3
+          instanceMatrix.makeTranslation(
+            positions[offset],
+            positions[offset + 1],
+            positions[offset + 2]
+          )
+          visualization.setMatrixAt(index, instanceMatrix)
+          instanceColor.setRGB(colors[offset], colors[offset + 1], colors[offset + 2])
+          visualization.setColorAt(index, instanceColor)
+        }
+        visualization.instanceMatrix.needsUpdate = true
+        if (visualization.instanceColor) visualization.instanceColor.needsUpdate = true
+        visualization.material.opacity = opacity
+        visualization.material.transparent = opacity < 1.0
+        visualization.material.depthWrite = opacity >= 1.0
+        visualization.material.needsUpdate = true
+        visualization.boundingBox = pointCloudBounds(decoded, boxSize / 2)
+        if (visualization.boundingBox) {
+          const center = visualization.boundingBox.getCenter(new THREE.Vector3())
+          visualization.boundingSphere = new THREE.Sphere(
+            center,
+            center.distanceTo(visualization.boundingBox.max)
+          )
+        }
+      }
+
+      visualization.userData = {
+        ...visualization.userData,
+        topic,
+        messageType: 'sensor_msgs/msg/PointCloud2',
+        renderStyle,
+        pointCount: pointsProcessed,
+        originalMessage: pointCloudTransformMessage(message),
+        decodedPointCloud: decoded
+      }
+      resetPointCloudTransform(visualization)
+      visualization.visible = persistentSettings.laser.showLaserPoints !== undefined
+        ? persistentSettings.laser.showLaserPoints
+        : true
+      setDisplayStatus(topic)
+
+      if (pointCloudUpdateCount <= 3) {
+        systemMessage.success(`成功显示点云 ${topic}: ${pointsProcessed} 个点`)
+      }
+    }
 
     const updatePointCloud = (topic, message) => {
       pointCloudUpdateCount++
@@ -2940,6 +3196,10 @@ export default {
       }
       if (pointCloudFrameRequest !== null) cancelAnimationFrame(pointCloudFrameRequest)
       if (transformFrameRequest !== null) cancelAnimationFrame(transformFrameRequest)
+      pointCloudWorker?.terminate()
+      pointCloudWorker = null
+      pointCloudDecodesInFlight.clear()
+      pendingPointClouds.clear()
 
       // 停止消息验证
       stopMessageVerification()
